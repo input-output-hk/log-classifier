@@ -1,6 +1,12 @@
 {-# LANGUAGE OverloadedStrings, RecordWildCards, LambdaCase #-}
 
-module Main where
+module Zendesk
+  ( Config
+  , defaultConfig
+  , Comment(..)
+  , Attachment(..)
+  , TicketId(..)
+  ) where
 
 import Network.HTTP.Simple
 import qualified Data.ByteString.Char8 as B8
@@ -14,9 +20,7 @@ import System.Environment (getEnv)
 
 import Control.Exception (throwIO)
 import Data.Aeson
-import Data.Aeson.Types (Parser, parseMaybe)
-
-import qualified Data.ByteString as BS
+import Data.Aeson.Types (Parser, parseEither)
 
 data Config = Config
               { cfgZendesk :: Text
@@ -38,9 +42,14 @@ data Attachment = Attachment
   , attachmentSize :: Int
   } deriving (Show, Eq)
 
+newtype TicketId = TicketId Int deriving (Eq)
+
+instance Show TicketId where
+  show (TicketId tid) = show tid
+
 main :: IO ()
 main = do
-  token <- BS.readFile "token"
+  token <- B8.readFile "token"
   let cfg = defaultConfig { cfgToken = T.decodeUtf8 token }
   agentId <- getAgentId cfg
   ticketIds <- listTicketIds cfg agentId
@@ -54,18 +63,17 @@ getAttachment Attachment{..} = getResponseBody <$> httpLBS req
 tshow :: Show a => a -> Text
 tshow = T.pack . show
 
-newtype TicketId = TicketId Int deriving (Eq)
-
-instance Show TicketId where
-  show (TicketId tid) = show tid
+apiCall :: FromJSON a => (Value -> Parser a) -> Request -> IO a
+apiCall parser req = do
+  v <- getResponseBody <$> httpJSON req
+  case parseEither parser v of
+    Right o -> pure o
+    Left e -> error $ "couldn't parse response" ++ show e
 
 listTicketIds :: Config -> Integer -> IO [TicketId]
 listTicketIds cfg agentId = do
   let req = apiRequest cfg ("/users/" <> tshow agentId <> "/tickets/requested.json")
-  r <- getResponseBody <$> httpJSON req
-  case parseMaybe parseTickets r of
-    Just id -> pure id
-    Nothing -> error "couldn't parse ticket ids"
+  apiCall parseTickets req
 
 parseTickets :: Value -> Parser [TicketId]
 parseTickets = withObject "tickets" $ \o -> o .: "tickets"
@@ -87,10 +95,7 @@ instance FromJSON Attachment where
 getTicketComments :: Config -> TicketId -> IO [Comment]
 getTicketComments cfg (TicketId tid) = do
   let req = apiRequest cfg ("tickets/" <> tshow tid <> "/comments.json")
-  r <- getResponseBody <$> httpJSON req
-  case parseMaybe parseComments r of
-    Just cs -> pure cs
-    Nothing -> error "couldn't parse ticket comments"
+  apiCall parseComments req
 
 apiRequest :: Config -> Text -> Request
 apiRequest Config{..} u = setRequestPath (T.encodeUtf8 path) $
@@ -106,10 +111,7 @@ parseAgentId = withObject "user" $ \o -> (o .: "user") >>= (.: "id")
 getAgentId :: Config -> IO Integer
 getAgentId cfg = do
   let req = apiRequest cfg "users/me.json"
-  r <- getResponseBody <$> httpJSON req
-  case parseMaybe parseAgentId r of
-    Just id -> pure id
-    Nothing -> error $ "couldn't parse agent id" <> show r
+  apiCall parseAgentId req
 
 {-
 
