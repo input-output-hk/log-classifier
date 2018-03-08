@@ -6,75 +6,83 @@
 
 module Main where
 
-import           Codec.Archive.Zip
-                 (Entry, eRelativePath, eUncompressedSize, fromEntry,
-                 toArchive, zEntries)
-import qualified Data.Array                      as Array
-import qualified Data.ByteString.Lazy            as LBS
-import           Data.Either                     (either)
-import           Data.Reflection                 (Given, give, given)
-import           Text.Regex.Base.RegexLike
-                 (MatchArray, RegexOptions (blankCompOpt, blankExecOpt))
-import qualified Text.Regex.Base.RegexLike       as Regex
-import qualified Text.Regex.TDFA                 as TDFA
-import qualified Text.Regex.TDFA.ByteString.Lazy as TDFA
-import           Data.Text                       (Text)
-import qualified Data.Text                       as Text
-import           Data.Map.Strict                 (Map)
-import qualified Data.Map.Strict                 as Map
+import qualified Codec.Archive.Zip    as Zip
 
-type HasRegexCache = Given RegexCache
+import           Control.Monad        (forM)
+
+import qualified Data.ByteString      as BS
+
+import qualified Data.ByteString.Lazy as LBS
+
+import           Regex
+
+import           Data.Text            (Text)
+import qualified Data.Text            as Text
+
+import           Data.Map.Strict      (Map)
+import qualified Data.Map.Strict      as Map
+
 type Tag = Text
+
 type ErrorName = Text
 
-withRegexCache :: RegexCache -> (HasRegexCache => r) -> r
-withRegexCache = give
+data ErrorHandler
+  = ErrorHandler
+    { errorHandlerFileRegex :: !Regex
+    , errorHandlerRegex     :: !Regex
+    , errorHandlerMessage   :: !(Maybe Text)
+    , errorHandlerTags      :: ![Tag]
+    }
 
-getRegexCache :: HasRegexCache => RegexCache
-getRegexCache = given
+newtype Behavior
+  = Behavior (Map ErrorName ErrorHandler)
 
-type RegexString = LBS.ByteString
+compileBehavior :: [(ErrorName, (RegexString, RegexString, Maybe Text, [Tag]))]
+                -> Either RegexCompileError Behavior
+compileBehavior input = do
+  pairs <- forM input $ \(errName, (frx, rx, msg, tags)) -> do
+    frxCompiled <- compileRegex frx
+    rxCompiled  <- compileRegex rx
+    let errHandler = ErrorHandler
+                     { errorHandlerFileRegex = frxCompiled
+                     , errorHandlerRegex     = rxCompiled
+                     , errorHandlerMessage   = msg
+                     , errorHandlerTags      = tags
+                     }
+    pure (errName, errHandler)
+  pure (Behavior (Map.fromList pairs))
 
-type Regex = LBS.ByteString -> [MatchArray]
+runBehavior :: Behavior
+            -> Map FilePath LBS.ByteString
+            -> (Maybe Text -> [Tag] -> IO ())
+            -> IO ()
+runBehavior = _
 
-compileRegex :: RegexString -> Either String Regex
-compileRegex rx = Regex.matchAll <$> TDFA.compile blankCompOpt blankExecOpt rx
+readZip :: LBS.ByteString -> Map FilePath LBS.ByteString
+readZip = Map.fromList . map handleEntry . Zip.zEntries . Zip.toArchive
+  where
+    handleEntry :: Zip.Entry -> (FilePath, LBS.ByteString)
+    handleEntry entry = (Zip.eRelativePath entry, Zip.fromEntry entry)
 
-data RegexCache = RegexCache (Map ErrorName (Regex, ErrorHandler))
-
-data ErrorHandler = ErrorHandler {
-    errorHandlerFileRegex :: !Regex
-  , errorHandlerRegex   :: !Regex
-  , errorHandlerMessage :: !(Maybe Text)
-  , errorHandlerTags    :: ![Tag]
-}
-
-compileAllTheRegex :: Either String RegexCache
-compileAllTheRegex = do
-  staleLockFile <- compileRegex "Wallet-1.0/open.lock: Locked by [0-9]+: resource busy"
-  connRefused <- compileRegex "\"message\": \"connect ECONNREFUSED [^\"]*\""
-  pure (RegexCache {..})
+classifyLogs :: Behavior -> Map FilePath LBS.ByteString -> IO ()
+classifyLogs behavior zip = do
+  undefined
 
 main :: IO ()
 main = do
-  rawzip <- LBS.readFile "logs.zip"
-  regexCache <- either fail pure compileAllTheRegex
-  withRegexCache regexCache $ do
-    classifyLogs rawzip
-
-classifyLogs :: HasRegexCache => LBS.ByteString -> IO ()
-classifyLogs rawzip = do
-  let archive = toArchive rawzip
-  let entries = zEntries archive
-  mapM_ parseFile entries
-
-parseFile :: HasRegexCache => Entry -> IO ()
-parseFile entry = do
-  let rawlog = fromEntry entry
-  let name = eRelativePath entry
-  print name
-  let
-    result1 = connRefused getRegexCache rawlog
-    result2 = staleLockFile getRegexCache rawlog
-  print result1
-  print result2
+  zip <- readZip <$> LBS.readFile "logs.zip"
+  let behaviorList
+        = [ ( "conn-refused"
+            , ( ".*"
+              , "\"message\": \"connect ECONNREFUSED [^\"]*\""
+              , Just "FIXME: message"
+              , ["FIXME: tags"] ) )
+          , ( "stale-lock-file"
+            , ( ".*"
+              , "Wallet-1.0/open.lock: Locked by [0-9]+: resource busy"
+              , Just "FIXME: message"
+              , ["FIXME: tags"] ) )
+          ]
+  behavior <- either (fail . Text.unpack) pure
+              $ compileBehavior behaviorList
+  classifyLogs behavior zip

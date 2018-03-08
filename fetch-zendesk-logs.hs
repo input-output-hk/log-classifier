@@ -16,6 +16,8 @@ import Control.Exception (throwIO)
 import Data.Aeson
 import Data.Aeson.Types (Parser, parseMaybe)
 
+import qualified Data.ByteString as BS
+
 data Config = Config
               { cfgZendesk :: Text
               , cfgToken :: Text
@@ -38,8 +40,8 @@ data Attachment = Attachment
 
 main :: IO ()
 main = do
-  token <- T.pack <$> getEnv "TOKEN"
-  let cfg = defaultConfig { cfgToken = token }
+  token <- BS.readFile "token"
+  let cfg = defaultConfig { cfgToken = T.decodeUtf8 token }
   agentId <- getAgentId cfg
   ticketIds <- listTicketIds cfg agentId
   tickets <- mapM (getTicketComments cfg) (take 10 ticketIds)
@@ -107,7 +109,7 @@ getAgentId cfg = do
   r <- getResponseBody <$> httpJSON req
   case parseMaybe parseAgentId r of
     Just id -> pure id
-    Nothing -> error "couldn't parse agent id"
+    Nothing -> error $ "couldn't parse agent id" <> show r
 
 {-
 
