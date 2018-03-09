@@ -50,11 +50,17 @@ instance Show TicketId where
 main :: IO ()
 main = do
   token <- B8.readFile "token"
-  let cfg = defaultConfig { cfgToken = T.decodeUtf8 token }
+  let cfg = defaultConfig { cfgToken = T.stripEnd $ T.decodeUtf8 token }
   agentId <- getAgentId cfg
   ticketIds <- listTicketIds cfg agentId
-  tickets <- mapM (getTicketComments cfg) (take 10 ticketIds)
-  putStrLn (show tickets)
+  --mapM_ (printTicketAndId cfg) (take 10 ticketIds)
+  printTicketAndId cfg $ TicketId 9248
+
+printTicketAndId :: Config -> TicketId -> IO ()
+printTicketAndId cfg id = do
+  print id
+  ticket <- getTicketComments cfg id
+  print ticket
 
 getAttachment :: Attachment -> IO BL.ByteString
 getAttachment Attachment{..} = getResponseBody <$> httpLBS req
@@ -120,5 +126,5 @@ curl -o logs.zip -L $(curl https://iohk.zendesk.com/api/v2/tickets/$TICKET_ID/co
 
 curl -o ll.zip -L  'https://iohk.zendesk.com/attachments/token/7adbjqvwvDondyNcW0iVPr9yG/?name=logs.zip' \
   -H "Content-Type: application/json" \
-  -u 'daedalus-bug-reports@iohk.io/token:G1pTOWNDC1Tr5rNTOXHJPayK4uE7f15N5DluvHNP'
+  -u 'daedalus-bug-reports@iohk.io/token:TOKEN'
 -}
