@@ -66,24 +66,19 @@ printTicketAndId cfg id = do
   print id
   comments <- getTicketComments cfg id
   let
-    checkComment :: Comment -> IO ()
-    checkComment c = do
-      print c
-  mapM_ checkComment comments
-  let
     commentsWithAttachments :: [ Comment ]
     commentsWithAttachments = filter (\x -> length (commentAttachments x) > 0) comments
     attachments :: [ Attachment ]
     attachments = concat $ map commentAttachments commentsWithAttachments
     justLogs = filter (\x -> "application/zip" == attachmentContentType x) attachments
-  print justLogs
   mapM_ inspectAttachment justLogs
   pure ()
 
 inspectAttachment :: Attachment -> IO ()
 inspectAttachment att = do
   rawlog <- getAttachment att
-  classifyZip rawlog
+  results <- classifyZip rawlog
+  print results
 
 getAttachment :: Attachment -> IO BL.ByteString
 getAttachment Attachment{..} = getResponseBody <$> httpLBS req
