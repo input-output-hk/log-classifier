@@ -6,21 +6,21 @@ module Zendesk
   , Comment(..)
   , Attachment(..)
   , TicketId(..)
+  , main
   ) where
 
-import Network.HTTP.Simple
+import           Network.HTTP.Simple         (Request, getResponseBody, httpLBS, parseRequest_, httpJSON, setRequestPath, addRequestHeader, setRequestBasicAuth)
 import qualified Data.ByteString.Char8 as B8
 import qualified Data.ByteString.Lazy as BL
-import Data.Text (Text)
+import           Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
-import Data.Monoid
-import Data.Function ((&))
-import System.Environment (getEnv)
+import           Data.Monoid                 ( (<>) )
+import           System.Environment          (getArgs)
 
-import Control.Exception (throwIO)
-import Data.Aeson
-import Data.Aeson.Types (Parser, parseEither)
+import           Data.Aeson                  (FromJSON, Value, parseJSON, withObject, (.:) )
+import           Data.Aeson.Types (Parser, parseEither)
+import           Classify                    (classifyZip)
 
 data Config = Config
               { cfgZendesk :: Text
@@ -54,13 +54,36 @@ main = do
   agentId <- getAgentId cfg
   ticketIds <- listTicketIds cfg agentId
   --mapM_ (printTicketAndId cfg) (take 10 ticketIds)
-  printTicketAndId cfg $ TicketId 9248
+  --printTicketAndId cfg $ TicketId 9248
+  args <- getArgs
+  print args
+  case args of
+    [ "getTicket", idNumber ] -> do
+      printTicketAndId cfg $ TicketId $ read idNumber
 
 printTicketAndId :: Config -> TicketId -> IO ()
 printTicketAndId cfg id = do
   print id
-  ticket <- getTicketComments cfg id
-  print ticket
+  comments <- getTicketComments cfg id
+  let
+    checkComment :: Comment -> IO ()
+    checkComment c = do
+      print c
+  mapM_ checkComment comments
+  let
+    commentsWithAttachments :: [ Comment ]
+    commentsWithAttachments = filter (\x -> length (commentAttachments x) > 0) comments
+    attachments :: [ Attachment ]
+    attachments = concat $ map commentAttachments commentsWithAttachments
+    justLogs = filter (\x -> "application/zip" == attachmentContentType x) attachments
+  print justLogs
+  mapM_ inspectAttachment justLogs
+  pure ()
+
+inspectAttachment :: Attachment -> IO ()
+inspectAttachment att = do
+  rawlog <- getAttachment att
+  classifyZip rawlog
 
 getAttachment :: Attachment -> IO BL.ByteString
 getAttachment Attachment{..} = getResponseBody <$> httpLBS req
