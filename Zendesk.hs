@@ -62,9 +62,9 @@ main = do
       printTicketAndId cfg $ TicketId $ read idNumber
 
 printTicketAndId :: Config -> TicketId -> IO ()
-printTicketAndId cfg id = do
-  print id
-  comments <- getTicketComments cfg id
+printTicketAndId cfg ticketId = do
+  print ticketId
+  comments <- getTicketComments cfg ticketId
   let
     commentsWithAttachments :: [ Comment ]
     commentsWithAttachments = filter (\x -> length (commentAttachments x) > 0) comments

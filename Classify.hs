@@ -10,21 +10,18 @@ import qualified Codec.Archive.Zip    as Zip
 
 import           Control.Monad        (forM)
 
-import qualified Data.ByteString      as BS
 
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.ByteString.Lazy.Char8 as LBSC
 
-import           Regex
+import           Regex                (Regex, MatchWithCaptures, RegexString, RegexCompileError, compileRegex, matchTest, matchAll)
 
 import           Data.Text            (Text)
 import qualified Data.Text            as Text
 
 import           Data.Map.Strict      (Map)
 import qualified Data.Map.Strict      as Map
-import           GHC.Stack
-
-type Tag = Text
+import           GHC.Stack            (HasCallStack)
 
 type ErrorName = Text
 
@@ -60,9 +57,8 @@ compileBehavior input = do
 
 runBehavior :: HasCallStack => Behavior
             -> Map FilePath LBS.ByteString
-            -> (Maybe Text -> [Tag] -> IO ())
             -> IO (Map FilePath [(ErrorName, ErrorCode)])
-runBehavior (Behavior behavior) files handler = do
+runBehavior (Behavior behavior) files = do
   let
     checkFile :: FilePath -> LBS.ByteString -> IO (Maybe [(ErrorName, ErrorCode)])
     checkFile fp contents = do
@@ -72,7 +68,7 @@ runBehavior (Behavior behavior) files handler = do
       else
         pure Nothing
     checkBehaviorOnFile :: FilePath -> LBS.ByteString -> ErrorName -> ErrorHandler -> IO (Maybe ErrorCode)
-    checkBehaviorOnFile fp contents errname errhandler = do
+    checkBehaviorOnFile fp contents _ errhandler = do
       if matchTest (errorHandlerFileRegex errhandler) (LBSC.pack fp) then do
         let
           matches = matchAll (errorHandlerRegex errhandler) contents
@@ -91,11 +87,8 @@ readZip = Map.fromList . map handleEntry . Zip.zEntries . Zip.toArchive
     handleEntry entry = (Zip.eRelativePath entry, Zip.fromEntry entry)
 
 classifyLogs :: HasCallStack => Behavior -> Map FilePath LBS.ByteString -> IO (Map FilePath [(ErrorName, ErrorCode)])
-classifyLogs behavior zip = do
-  runBehavior behavior zip printResults
-
-printResults :: Maybe Text -> [ Tag ] -> IO ()
-printResults = undefined
+classifyLogs behavior zipmap = do
+  runBehavior behavior zipmap
 
 countRefused :: LBS.ByteString -> [ MatchWithCaptures ] -> Maybe ErrorCode
 countRefused _ matches = Just $ ConnectionRefused $ length matches
@@ -110,8 +103,10 @@ classifyZip :: HasCallStack => LBS.ByteString -> IO (Map FilePath [(ErrorName, E
 classifyZip rawzip = do
   --zip <- readZip <$> LBS.readFile "logs.zip"
   let
-    zip = readZip rawzip
-  let behaviorList
+    zipmap = readZip rawzip
+  let
+    behaviorList :: [ (ErrorName, (RegexString, RegexString, LBS.ByteString -> [MatchWithCaptures] -> Maybe ErrorCode) ) ]
+    behaviorList
         = [ ( "conn-refused"
             , ( "Daedalus.log"
               , "\"message\": \"connect ECONNREFUSED [^\"]*\""
@@ -119,7 +114,7 @@ classifyZip rawzip = do
           , ( "stale-lock-file"
             , ( "node.pub$"
               , "Wallet.*/open.lock: Locked by [0-9]+: resource busy"
-              , (\contents matches -> Just $ StateLockFile matches) ) )
+              , (\_ matches -> Just $ StateLockFile matches) ) )
           , ( "file-not-found"
             , ( "node.pub$"
               , ": [^ ]*: openBinaryFile: does not exist \\(No such file or directory\\)"
@@ -127,4 +122,4 @@ classifyZip rawzip = do
           ]
   behavior <- either (fail . Text.unpack) pure
               $ compileBehavior behaviorList
-  classifyLogs behavior zip
+  classifyLogs behavior zipmap
