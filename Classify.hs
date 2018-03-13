@@ -89,7 +89,7 @@ runBehavior (Behavior behavior) files = do
 
 readZip :: HasCallStack => LBS.ByteString -> Either String (Map FilePath LBS.ByteString)
 readZip rawzip = case Zip.toArchiveOrFail rawzip of
-    Left error -> Left error
+    Left err -> Left err
     Right archive -> Right $ finishProcessing archive
   where
     finishProcessing :: Zip.Archive -> Map FilePath LBS.ByteString
@@ -138,7 +138,7 @@ classifyZip rawzip = do
   behavior <- either (fail . Text.unpack) pure
               $ compileBehavior behaviorList
   case zipmap' of
-    Left error -> pure $ Left error
+    Left err -> pure $ Left err
     Right zipmap -> do
       result <- classifyLogs behavior zipmap
       pure $ Right result

@@ -57,6 +57,11 @@ data Ticket = Ticket {
   , ticketAssignee :: Integer
   } deriving (Show, Eq)
 
+data TicketList = TicketList {
+    ticketListTickets :: [ TicketId ]
+  , next_page :: Maybe Text
+  } deriving (Show, Eq)
+
 newtype TicketId = TicketId Int deriving (Eq)
 
 instance Show TicketId where
@@ -131,24 +136,39 @@ apiCall parser req = do
   v <- getResponseBody <$> httpJSON req
   case parseEither parser v of
     Right o -> pure o
-    Left e -> error $ "couldn't parse response" ++ show e ++ "\n" ++ show v
+    Left e -> error $ "couldn't parse response " ++ e ++ "\n" ++ (T.unpack $ T.decodeUtf8 $ BL.toStrict $ encode v)
 
 listTicketIds :: Config -> Integer -> IO [TicketId]
 listTicketIds cfg agentId = do
   let req = apiRequest cfg ("/users/" <> tshow agentId <> "/tickets/requested.json")
-  apiCall parseTickets req
+  (TicketList page0 next_page) <- apiCall parseTickets req
+  pure page0
 
-listAssignedTickets :: Config -> Integer -> IO [ TicketId ]
+listAssignedTickets :: Config -> Integer ->  IO [ TicketId ]
 listAssignedTickets cfg agentId = do
   let
     req = apiRequest cfg ("/users/" <> tshow agentId <> "/tickets/assigned.json")
-  apiCall parseTickets req
+    go :: [ TicketId ] -> Text -> IO [ TicketId ]
+    go list next_page' = do
+      let req' = apiRequestAbsolute cfg next_page'
+      (TicketList pagen next_pagen) <- apiCall parseTickets req'
+      case next_pagen of
+        Just url -> go (list <> pagen) url
+        Nothing -> pure (list <> pagen)
 
-parseTickets :: Value -> Parser [TicketId]
-parseTickets = withObject "tickets" $ \o -> o .: "tickets"
+  (TicketList page0 next_page) <- apiCall parseTickets req
+  case next_page of
+    Just url -> go page0 url
+    Nothing -> pure page0
+
+parseTickets :: Value -> Parser TicketList
+parseTickets = withObject "tickets" $ \o -> TicketList <$> o .: "tickets" <*> o .: "next_page"
 
 instance FromJSON TicketId where
   parseJSON = withObject "ticket" $ \o -> TicketId <$> (o .: "id")
+
+instance FromJSON TicketList where
+  parseJSON = withObject "ticketList" $ \o -> TicketList <$> o .: "tickets" <*> o .: "next_page"
 
 parseComments :: Value -> Parser [ Comment ]
 parseComments = withObject "comments" $ \o -> o .: "comments"
@@ -197,6 +217,11 @@ apiRequest Config{..} u = setRequestPath (T.encodeUtf8 path) $
                           parseRequest_ (T.unpack (cfgZendesk <> path))
   where
     path ="/api/v2/" <> u
+
+apiRequestAbsolute :: Config -> Text -> Request
+apiRequestAbsolute Config{..} u = addRequestHeader "Content-Type" "application/json" $
+                                  setRequestBasicAuth (T.encodeUtf8 cfgEmail <> "/token") (T.encodeUtf8 cfgToken) $
+                                  parseRequest_ (T.unpack u)
 
 parseAgentId :: Value -> Parser Integer
 parseAgentId = withObject "user" $ \o -> (o .: "user") >>= (.: "id")
