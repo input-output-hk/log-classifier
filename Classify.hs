@@ -147,12 +147,13 @@ isStaleLockFile :: Map FilePath [(ErrorName, ErrorCode)] -> Maybe LT.Text
 isStaleLockFile map = Map.foldl' checkFile Nothing map
   where
     checkFile :: Maybe LT.Text -> [(ErrorName, ErrorCode)] -> Maybe LT.Text
-    checkFile state list = foldl' isStale Nothing list
+    checkFile state list = foldl' isStale state list
       where
         matches = foldl' isStale Nothing list
         isStale :: Maybe LT.Text -> (ErrorName, ErrorCode) -> Maybe LT.Text
         isStale (Just x) _ = Just x
         isStale Nothing (_, StateLockFile str) = Just str
+        isStale x _ = x
 
 postProcessError :: Map FilePath [(ErrorName, ErrorCode)] -> Either (Map FilePath [(ErrorName, ErrorCode)]) ConfirmedError
 postProcessError input = finalAnswer

@@ -3,7 +3,6 @@
 module Main
   ( Config
   , defaultConfig
-  , Comment(..)
   , Attachment(..)
   , TicketId(..)
   , main
@@ -15,11 +14,13 @@ import qualified Data.ByteString.Lazy as BL
 import           Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as LT
+import qualified Data.Text.Lazy.IO as LT
 import qualified Data.Text.Encoding as T
 import           Data.Monoid                 ( (<>) )
 import           System.Environment          (getArgs)
 
-import           Data.Aeson                  (FromJSON, Value, parseJSON, withObject, (.:), ToJSON, toJSON, object, (.=) )
+import           Data.Aeson                  (FromJSON, Value, parseJSON, withObject, (.:), ToJSON, toJSON, object, (.=), encode)
+import           Data.Aeson.Text             (encodeToLazyText)
 import           Data.Aeson.Types (Parser, parseEither)
 import           Classify                    (classifyZip, ErrorName, ErrorCode, postProcessError, ConfirmedError(..))
 import           Data.Map.Strict      (Map)
@@ -28,21 +29,32 @@ data Config = Config
               { cfgZendesk :: Text
               , cfgToken :: Text
               , cfgEmail :: Text
+              , cfgAssignTo :: Integer
               } deriving (Show, Eq)
 
 defaultConfig :: Config
-defaultConfig = Config "https://iohk.zendesk.com" "" "daedalus-bug-reports@iohk.io"
+defaultConfig = Config "https://iohk.zendesk.com" "" "daedalus-bug-reports@iohk.io" 0
 
 data Comment = Comment
   { commentBody :: Text
   , commentAttachments :: [Attachment]
   , commentPublic :: Bool
+  , commentAuthor :: Integer
+  } deriving (Show, Eq)
+
+data CommentOuter = CommentOuter {
+    coComment :: Comment
   } deriving (Show, Eq)
 
 data Attachment = Attachment
   { attachmentURL :: Text
   , attachmentContentType :: Text
   , attachmentSize :: Int
+  } deriving (Show, Eq)
+
+data Ticket = Ticket {
+    ticketComment :: Comment
+  , ticketAssignee :: Integer
   } deriving (Show, Eq)
 
 newtype TicketId = TicketId Int deriving (Eq)
@@ -53,24 +65,33 @@ instance Show TicketId where
 main :: IO ()
 main = do
   token <- B8.readFile "token"
-  let cfg = defaultConfig { cfgToken = T.stripEnd $ T.decodeUtf8 token }
+  assignto <- B8.readFile "assign_to"
+  let cfg = defaultConfig { cfgToken = T.stripEnd $ T.decodeUtf8 token, cfgAssignTo = read $ T.unpack $ T.decodeUtf8 assignto }
   agentId <- getAgentId cfg
-  ticketIds <- listTicketIds cfg agentId
+  --ticketIds <- listTicketIds cfg agentId
   --mapM_ (printTicketAndId cfg) (take 10 ticketIds)
   --printTicketAndId cfg $ TicketId 9248
   args <- getArgs
   print args
   case args of
-    [ "getTicket", idNumber ] -> do
-      printTicketAndId cfg $ TicketId $ read idNumber
-    [ "printTickets" ] -> do
+    [ "processTicket", idNumber ] -> do
+      processTicketAndId cfg agentId $ TicketId $ read idNumber
+    [ "listAssigned" ] -> do
+      tickets <- listAssignedTickets cfg agentId
+      print tickets
+    [ "processTickets" ] -> do
       ticketIds <- listAssignedTickets cfg agentId
       print $ "found: " <> (show $ length ticketIds) <> " tickets"
       print ticketIds
-      mapM_ (printTicketAndId cfg) ticketIds
+      mapM_ (processTicketAndId cfg agentId) ticketIds
+    [ "raw_request", url ] -> do
+      let
+        req = apiRequest cfg (T.pack url)
+      res <- apiCall (\x -> pure $ (encodeToLazyText x))  req
+      LT.putStrLn res
 
-printTicketAndId :: Config -> TicketId -> IO ()
-printTicketAndId cfg ticketId = do
+processTicketAndId :: Config -> Integer -> TicketId -> IO ()
+processTicketAndId cfg agentId ticketId = do
   comments <- getTicketComments cfg ticketId
   let
     commentsWithAttachments :: [ Comment ]
@@ -78,11 +99,11 @@ printTicketAndId cfg ticketId = do
     attachments :: [ Attachment ]
     attachments = concat $ map commentAttachments commentsWithAttachments
     justLogs = filter (\x -> "application/zip" == attachmentContentType x) attachments
-  mapM_ (inspectAttachment cfg ticketId) justLogs
+  mapM_ (inspectAttachment cfg agentId ticketId) justLogs
   pure ()
 
-inspectAttachment :: Config -> TicketId -> Attachment -> IO ()
-inspectAttachment cfg ticketId att = do
+inspectAttachment :: Config -> Integer -> TicketId -> Attachment -> IO ()
+inspectAttachment cfg agentId ticketId att = do
   print ticketId
   rawlog <- getAttachment att
   results <- classifyZip rawlog
@@ -94,7 +115,7 @@ inspectAttachment cfg ticketId att = do
       case postProcessError result of
         Right (ConfirmedStaleLockFile msg) -> do
           print msg
-          postTicketComment cfg ticketId (LT.toStrict msg) False
+          postTicketComment cfg agentId ticketId (LT.toStrict msg) False
         Left result -> do
           print result
 
@@ -129,32 +150,39 @@ parseTickets = withObject "tickets" $ \o -> o .: "tickets"
 instance FromJSON TicketId where
   parseJSON = withObject "ticket" $ \o -> TicketId <$> (o .: "id")
 
-parseComments :: Value -> Parser [Comment]
+parseComments :: Value -> Parser [ Comment ]
 parseComments = withObject "comments" $ \o -> o .: "comments"
 
-postTicketComment :: Config -> TicketId -> Text -> Bool -> IO ()
-postTicketComment cfg (TicketId tid) body public = do
+postTicketComment :: Config -> Integer -> TicketId -> Text -> Bool -> IO ()
+postTicketComment cfg agentId (TicketId tid) body public = do
   let
     req1 = apiRequest cfg ("tickets/" <> tshow tid <> ".json")
-    req2 = addJsonBody (Comment body [] False) req1
-  _ <- apiCall (\x -> pure ()) req2
+    req2 = addJsonBody (Ticket (Comment body [] False agentId) (cfgAssignTo cfg)) req1
+  v <- apiCall (\x -> pure $ (encodeToLazyText x)) req2
+  LT.putStrLn v
   pure ()
 
 instance FromJSON Comment where
   parseJSON = withObject "comment" $ \o ->
-    Comment <$> o .: "body" <*> o .: "attachments" <*> o .: "public"
+    Comment <$> o .: "body" <*> o .: "attachments" <*> o .: "public" <*> o .: "author_id"
 
 instance ToJSON Comment where
-  toJSON (Comment b as public) = object [ "comment" .= object [ "body" .= b, "attachments" .= as, "public" .= public ] ]
+  toJSON (Comment b as public author) = object [ "body" .= b, "attachments" .= as, "public" .= public, "author_id" .= author ]
+
+instance ToJSON CommentOuter where
+  toJSON (CommentOuter c) = object [ "comment" .= c ]
 
 instance FromJSON Attachment where
   parseJSON = withObject "attachment" $ \o ->
     Attachment <$> o .: "content_url" <*> o .: "content_type" <*> o .: "size"
 
+instance ToJSON Ticket where
+  toJSON (Ticket comment assignee) = object [ "ticket" .= object [ "comment" .= comment, "assignee_id" .= assignee ] ]
+
 instance ToJSON Attachment where
   toJSON (Attachment url contenttype size) = object [ "content_url" .= url, "content_type" .= contenttype, "size" .= size]
 
-getTicketComments :: Config -> TicketId -> IO [Comment]
+getTicketComments :: Config -> TicketId -> IO [ Comment ]
 getTicketComments cfg (TicketId tid) = do
   let req = apiRequest cfg ("tickets/" <> tshow tid <> "/comments.json")
   apiCall parseComments req
