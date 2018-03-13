@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings, RecordWildCards, LambdaCase #-}
 
-module Zendesk
+module Main
   ( Config
   , defaultConfig
   , Comment(..)

@@ -36,6 +36,7 @@ data ErrorCode =
     ConnectionRefused Int
   | StateLockFile [MatchWithCaptures]
   | FileNotFound [ LBS.ByteString ]
+  | NetworkError [ LBS.ByteString ]
   deriving Show
 
 newtype Behavior
@@ -119,6 +120,10 @@ classifyZip rawzip = do
             , ( "node.pub$"
               , ": [^ ]*: openBinaryFile: does not exist \\(No such file or directory\\)"
               , (\contents matches -> Just $ FileNotFound $ getMatches contents matches) ) )
+          , ( "TransportError"
+            , ( "node"
+              , "TransportError[^\n]*"
+              , (\contents matches -> Just $ NetworkError $ getMatches contents matches) ) )
           ]
   behavior <- either (fail . Text.unpack) pure
               $ compileBehavior behaviorList

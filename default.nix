@@ -7,6 +7,5 @@ in runCommand "unify" { buildInputs = [ ghc haskellPackages.ghcid ]; } ''
   chmod -R +w src
   cd src
   mkdir -p $out/bin/
-  ghc Entry.hs
-  ghc -no-hs-main Entry.hs main.c -o $out/bin/main
+  ghc Zendesk.hs -o $out/bin/log-classifier
 ''
