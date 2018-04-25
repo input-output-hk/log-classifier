@@ -1,4 +1,3 @@
-{-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
 
@@ -97,6 +96,11 @@ newtype TicketId = TicketId Int deriving (Eq)
 instance Show TicketId where
   show (TicketId tid) = show tid
 
+data TicketStatus = AnalyzedByScript
+
+instance Show TicketStatus where
+  show AnalyzedByScript = "analyzed-by-script"
+
 main :: IO ()
 main = do
   token <- B8.readFile "token"        -- Zendesk token
@@ -149,7 +153,7 @@ processTicketAndId cfg agentId ticketId = do
     commentsWithAttachments = filter (\x -> length (commentAttachments x) > 0) comments
     -- Filter out ticket without logs
     attachments :: [ Attachment ]
-    attachments = concat $ map commentAttachments commentsWithAttachments
+    attachments = concatMap commentAttachments commentsWithAttachments
     justLogs = filter (\x -> "application/zip" == attachmentContentType x) attachments
   mapM_ (inspectAttachment cfg agentId ticketId) justLogs
   pure ()
@@ -163,7 +167,10 @@ inspectAttachment cfg@Config{..} agentId ticketId att = do
   case results of
     Left error -> do
       print "error parsing zip"
-      print error
+      postTicketComment cfg agentId ticketId
+        (LT.toStrict "Log file is corruputed")
+        [toTag SentLogCorrupted]
+        False
     Right result -> do
       let analysisEnv = setupAnalysis cfgKnowledgebase
           eitherAnalysisResult = extractIssuesFromLogs result analysisEnv
@@ -172,12 +179,15 @@ inspectAttachment cfg@Config{..} agentId ticketId att = do
           let errorCodes = extractErrorCodes analysisResult
           let commentRes = prettyPrintAnalysis analysisResult
           mapM_ print errorCodes
-          postTicketComment cfg agentId ticketId (LT.toStrict commentRes) ("analyzed-by-script" : errorCodes) False
+          postTicketComment cfg agentId ticketId
+            (LT.toStrict commentRes) 
+            errorCodes
+            False
         Left result -> do
           putStrLn result
           postTicketComment cfg agentId ticketId 
             (LT.toStrict (LT.pack result)) 
-            ["analyzed-by-script", "no-known-issue"]
+            ["no-known-issue"]
             False
 
 -- | Given attachmentUrl, return attachment in bytestring
@@ -194,7 +204,8 @@ apiCall parser req = do
   v <- getResponseBody <$> httpJSON req
   case parseEither parser v of
     Right o -> pure o
-    Left e -> error $ "couldn't parse response " ++ e ++ "\n" ++ (T.unpack $ T.decodeUtf8 $ BL.toStrict $ encode v)
+    Left e -> error $ "couldn't parse response " 
+      <> e <> "\n" <> (T.unpack $ T.decodeUtf8 $ BL.toStrict $ encode v)
 
 -- | Return list of ticketIds that has been requested by config user (don't need..?)
 listRequestedTicketIds :: Config -> Integer -> IO [TicketId]
@@ -240,7 +251,11 @@ postTicketComment :: Config -> Integer -> TicketId -> Text -> [Text] -> Bool -> 
 postTicketComment cfg agentId (TicketId tid) body tags public = do
   let
     req1 = apiRequest cfg ("tickets/" <> tshow tid <> ".json")
-    req2 = addJsonBody (Ticket (Comment body [] False agentId) (cfgAssignTo cfg) tags) req1
+    req2 = addJsonBody (Ticket 
+             (Comment body [] False agentId) 
+             (cfgAssignTo cfg)
+             (tshow AnalyzedByScript:tags))
+             req1
   v <- apiCall (\x -> pure $ (encodeToLazyText x)) req2
   pure ()
 
@@ -265,7 +280,8 @@ instance ToJSON Ticket where
     object [ "ticket" .= object [ "comment" .= comment, "assignee_id" .= assignee, "tags" .= tags] ]
 
 instance ToJSON Attachment where
-  toJSON (Attachment url contenttype size) = object [ "content_url" .= url, "content_type" .= contenttype, "size" .= size]
+  toJSON (Attachment url contenttype size) = 
+    object [ "content_url" .= url, "content_type" .= contenttype, "size" .= size]
 
 -- | Get ticket's comments
 getTicketComments :: Config -> TicketId -> IO [ Comment ]

@@ -22,6 +22,7 @@ data ErrorCode
     | TimeSync          -- ^ User's PC's time is out of sync
     | FileNotFound      -- ^ Some of the files were not installed properly
     | StaleLockFile     -- ^ Open.lock file is corrupted
+    | SentLogCorrupted  -- ^ Log file sent to the Zendesk is corrupted
     | DBError           -- ^ Local block data is corrupted
     | DBPath            -- ^ Daedalus cannot find certain files
     | CannotGetDBSize   -- ^ Error message of Couidn't pack log files shows up
@@ -47,6 +48,7 @@ toTag UserNameError     = "user-name-error"
 toTag TimeSync          = "time-out-of-sync"
 toTag FileNotFound      = "directory-not-found"
 toTag StaleLockFile     = "stale-lock-file"
+toTag SentLogCorrupted  = "sent-log-corrupted"
 toTag DBError           = "DB-corrupted"
 toTag DBPath            = "DB-path-error"
 toTag CannotGetDBSize   = "cannot-get-db-size"
