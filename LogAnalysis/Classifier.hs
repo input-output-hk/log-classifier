@@ -7,7 +7,7 @@ module LogAnalysis.Classifier
          extractIssuesFromLogs
        , extractLogsFromZip
        , extractErrorCodes
-       , prettyPrintAnalysis
+       , prettyFormatAnalysis
        ) where
 
 import qualified Codec.Archive.Zip        as Zip
@@ -75,14 +75,14 @@ extractLogsFromZip numberOfFiles file = do
 extractErrorCodes :: Analysis -> [Text]
 extractErrorCodes as = map (\(Knowledge{..}, _) -> toTag kErrorCode) $ Map.toList as
 
-prettyPrintAnalysis :: Analysis -> LT.Text
-prettyPrintAnalysis as = 
+prettyFormatAnalysis :: Analysis -> LT.Text
+prettyFormatAnalysis as = 
     let aList = Map.toList as
     in foldr (\(Knowledge{..}, txts) acc -> 
-        "\n" <> LT.pack (show kErrorCode)
-     <> "\n" <> kProblem
-     <> "\n **" <> kSolution
-     <> "** \n" <> LT.pack (show txts)
-     <> "\n" <> acc 
-     <> "\n\n"        
-    ) LT.empty aList
+         "\n" <> LT.pack (show kErrorCode)
+      <> "\n" <> kProblem
+      <> "\n **" <> kSolution
+      <> "** \n" <> foldr (\txt ts -> "\n" <> txt <> "\n" <> ts) LT.empty txts -- List errors
+      <> "\n" <> acc 
+      <> "\n\n"        
+      ) LT.empty aList

@@ -11,6 +11,8 @@ module Regex
   , matchAll
   ) where
 
+-- Not used, but want to use it in the future.
+
 import qualified Data.Array                      as Array
 
 import qualified Data.ByteString.Lazy            as LBS

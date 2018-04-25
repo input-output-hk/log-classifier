@@ -3,13 +3,11 @@
 module LogAnalysis.KnowledgeCSVParser
        (
          parseKnowLedgeBase
-       , setupKnowledgebaseEnv
        ) where
 
 import           Control.Applicative
 import           Data.Attoparsec.Text.Lazy
 import qualified Data.Text.Lazy            as LT
-import qualified Data.Text.Lazy.IO         as LT
 
 import           LogAnalysis.Types         (ErrorCode (..), Knowledge (..))
 
@@ -67,12 +65,3 @@ parseKnowledge = do
 -- |Parse CSV file and create knowledgebase
 parseKnowLedgeBase :: Parser [Knowledge]
 parseKnowLedgeBase = many $ parseKnowledge <* endOfLine
-
-
-setupKnowledgebaseEnv :: FilePath -> IO [Knowledge]
-setupKnowledgebaseEnv path = do
-    kfile <- LT.readFile path
-    let kb = parse parseKnowLedgeBase kfile
-    case eitherResult kb of
-        Left e   -> error e
-        Right ks -> return ks

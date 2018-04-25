@@ -9,6 +9,7 @@ module Main
   , main
   ) where
 
+import           Data.Attoparsec.Text.Lazy      (parse, eitherResult)
 import qualified Data.ByteString.Char8          as B8
 import qualified Data.ByteString.Lazy           as BL
 import           Data.Monoid                    ((<>))
@@ -37,8 +38,8 @@ import           Data.Map.Strict                (Map)
 import           LogAnalysis.Classifier         (extractErrorCodes,
                                                  extractIssuesFromLogs,
                                                  extractLogsFromZip,
-                                                 prettyPrintAnalysis)
-import           LogAnalysis.KnowledgeCSVParser (setupKnowledgebaseEnv)
+                                                 prettyFormatAnalysis)
+import           LogAnalysis.KnowledgeCSVParser (parseKnowLedgeBase)
 import           LogAnalysis.Types              (ErrorCode (..), Knowledge,
                                                  setupAnalysis, toTag, toComment)
 import           Types                          (Attachment (..), Comment (..),
@@ -108,6 +109,15 @@ main = do
       mapM_ putStrLn cmdItem
   putStrLn "Process finished!"
 
+-- | Read CSV file and setup knowledge base
+setupKnowledgebaseEnv :: FilePath -> IO [Knowledge]
+setupKnowledgebaseEnv path = do
+    kfile <- LT.readFile path
+    let kb = parse parseKnowLedgeBase kfile
+    case eitherResult kb of
+        Left e   -> error e
+        Right ks -> return ks
+
 -- | Process specifig ticket id (can be used for testing) only inspects the one's with logs
 processTicketAndId :: Config -> Integer -> TicketId -> IO ()
 processTicketAndId cfg agentId ticketId = do
@@ -149,7 +159,7 @@ inspectAttachment num ks att = do
       case eitherAnalysisResult of
         Right analysisResult -> do -- do something!
           let errorCodes = extractErrorCodes analysisResult
-          let commentRes = prettyPrintAnalysis analysisResult
+          let commentRes = prettyFormatAnalysis analysisResult
           mapM_ T.putStrLn errorCodes
           return (LT.toStrict commentRes, errorCodes, False)
         Left result -> do
