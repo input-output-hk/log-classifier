@@ -1,4 +1,6 @@
-{-# LANGUAGE OverloadedStrings, RecordWildCards, LambdaCase #-}
+{-# LANGUAGE LambdaCase        #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards   #-}
 
 module Main
   ( Config
@@ -8,43 +10,60 @@ module Main
   , main
   ) where
 
-import           Network.HTTP.Simple         (Request, getResponseBody, httpLBS, parseRequest_, httpJSON, setRequestPath, addRequestHeader, setRequestBasicAuth, setRequestMethod, setRequestBodyJSON)
-import qualified Data.ByteString.Char8 as B8
-import qualified Data.ByteString.Lazy as BL
-import           Data.Text (Text)
-import qualified Data.Text as T
-import qualified Data.Text.IO as T
-import qualified Data.Text.Lazy as LT
-import qualified Data.Text.Lazy.IO as LT
-import qualified Data.Text.Encoding as T
-import           Data.Monoid                 ( (<>) )
-import           System.Environment          (getArgs)
+import qualified Data.ByteString.Char8          as B8
+import qualified Data.ByteString.Lazy           as BL
+import           Data.Monoid                    ((<>))
+import           Data.Text                      (Text)
+import qualified Data.Text                      as T
+import qualified Data.Text.Encoding             as T
+import qualified Data.Text.IO                   as T
+import qualified Data.Text.Lazy                 as LT
+import qualified Data.Text.Lazy.IO              as LT
+import           Network.HTTP.Simple            (Request, addRequestHeader,
+                                                 getResponseBody, httpJSON,
+                                                 httpLBS, parseRequest_,
+                                                 setRequestBasicAuth,
+                                                 setRequestBodyJSON,
+                                                 setRequestMethod,
+                                                 setRequestPath)
+import           System.Environment             (getArgs)
 
-import           Data.Aeson                  (FromJSON, Value, parseJSON, withObject, (.:), ToJSON, toJSON, object, (.=), encode)
-import           Data.Aeson.Text             (encodeToLazyText)
-import           Data.Aeson.Types (Parser, parseEither)
-import           Classify                    (classifyZip, ErrorName, ErrorCode, postProcessError, ConfirmedError(..))
-import           Data.Map.Strict      (Map)
+import           Data.Aeson                     (FromJSON, ToJSON, Value,
+                                                 encode, object, parseJSON,
+                                                 toJSON, withObject, (.:), (.=))
+import           Data.Aeson.Text                (encodeToLazyText)
+import           Data.Aeson.Types               (Parser, parseEither)
+import           Data.Map.Strict                (Map)
+
+import           LogAnalysis.Classifier         (extractIssuesFromLogs,
+                                                 extractLogsFromZip)
+import           LogAnalysis.KnowledgeCSVParser (setupKnowledgebaseEnv)
+import           LogAnalysis.Types
 
 data Config = Config
-              { cfgZendesk :: Text
-              , cfgToken :: Text
-              , cfgEmail :: Text
-              , cfgAssignTo :: Integer
+              { cfgZendesk       :: Text
+              , cfgToken         :: Text
+              , cfgEmail         :: Text
+              , cfgAssignTo      :: Integer
+              , cfgKnowledgebase :: [Knowledge]
+              , cfgNumberOfLog   :: Int
               } deriving (Show, Eq)
 
 -- | This scirpt will look through tickets that are assigned by cfgEmail
 defaultConfig :: Config
-defaultConfig = Config "https://iohk.zendesk.com" "" "daedalus-bug-reports@iohk.io" 0
+defaultConfig = Config "https://iohk.zendesk.com" "" "daedalus-bug-reports@iohk.io" 0 [] 5
+
+-- | Path to knowledgebase
+knowledgebasePath :: FilePath
+knowledgebasePath = "./knowledgebase/knowledge.csv"
 
 -- | Comments
 data Comment = Comment
-  { commentBody :: Text
+  { commentBody        :: Text
   , commentAttachments :: [Attachment]
-  , commentPublic :: Bool
-  , commentAuthor :: Integer
-  -- Add tags here
-  -- Add status here
+  , commentPublic      :: Bool
+  , commentAuthor      :: Integer
+  , commentTags        :: [Text]
   } deriving (Show, Eq)
 
 -- | Outer comment ??
@@ -54,21 +73,21 @@ data CommentOuter = CommentOuter {
 
 -- | Attachment of the ticket
 data Attachment = Attachment
-  { attachmentURL :: Text
+  { attachmentURL         :: Text
   , attachmentContentType :: Text
-  , attachmentSize :: Int
+  , attachmentSize        :: Int
   } deriving (Show, Eq)
 
 -- | Zendexk ticket
 data Ticket = Ticket {
-    ticketComment :: Comment
+    ticketComment  :: Comment
   , ticketAssignee :: Integer
   } deriving (Show, Eq)
 
 -- | List of zendesk ticket
 data TicketList = TicketList {
     ticketListTickets :: [ TicketId ]
-  , next_page :: Maybe Text
+  , next_page         :: Maybe Text
   } deriving (Show, Eq)
 
 newtype TicketId = TicketId Int deriving (Eq)
@@ -80,21 +99,27 @@ main :: IO ()
 main = do
   token <- B8.readFile "token"        -- Zendesk token
   assignto <- B8.readFile "assign_to" -- Select assignee
-  let cfg = defaultConfig { cfgToken = T.stripEnd $ T.decodeUtf8 token, cfgAssignTo = read $ T.unpack $ T.decodeUtf8 assignto }
+  putStrLn "Reading knowledge base"
+  knowledges <- setupKnowledgebaseEnv knowledgebasePath
+  putStrLn "Knowledgebase setup complete"
+  let cfg = defaultConfig { cfgToken = T.stripEnd $ T.decodeUtf8 token
+                          , cfgAssignTo = read $ T.unpack $ T.decodeUtf8 assignto
+                          , cfgKnowledgebase = knowledges
+                          }
   agentId <- getAgentId cfg
-  --ticketIds <- listTicketIds cfg agentId
-  --mapM_ (printTicketAndId cfg) (take 10 ticketIds)
-  --printTicketAndId cfg $ TicketId 9248
   args <- getArgs
-  print args
-  T.putStrLn $  "The script is going to look through tickets assign to: " <> cfgEmail cfg
+  putStrLn $ "Command is: " <> head args
   case args of
     [ "processTicket", idNumber ] -> do
+      putStrLn $  "The script is going to process tickets id: " <> idNumber
       processTicketAndId cfg agentId $ TicketId $ read idNumber
     [ "listAssigned" ] -> do
+      T.putStrLn $  "The script is going to look through tickets assign to: " <> cfgEmail cfg
       tickets <- listAssignedTickets cfg agentId
-      print tickets
+      T.putStrLn $ "Done: there are currently" <> tshow (length tickets)
+                   <> " tickets in the system assigned to " <> cfgEmail cfg
     [ "processTickets" ] -> do
+      T.putStrLn $  "The script is going to process tickets assign to: " <> cfgEmail cfg
       ticketIds <- listAssignedTickets cfg agentId
       print $ "found: " <> (show $ length ticketIds) <> " tickets"
       print ticketIds
@@ -120,7 +145,7 @@ processTicketAndId cfg agentId ticketId = do
     -- Could implement comment inspection function (although I don't see it useful)
     commentsWithAttachments :: [ Comment ]
     commentsWithAttachments = filter (\x -> length (commentAttachments x) > 0) comments
-    -- filter out ticket without logs
+    -- Filter out ticket without logs
     attachments :: [ Attachment ]
     attachments = concat $ map commentAttachments commentsWithAttachments
     justLogs = filter (\x -> "application/zip" == attachmentContentType x) attachments
@@ -129,19 +154,22 @@ processTicketAndId cfg agentId ticketId = do
 
 -- | Inspect the attachment i.e. archived zip file
 inspectAttachment :: Config -> Integer -> TicketId -> Attachment -> IO ()
-inspectAttachment cfg agentId ticketId att = do
+inspectAttachment cfg@Config{..} agentId ticketId att = do
   print ticketId
-  rawlog <- getAttachment att   -- get attachment
-  results <- classifyZip rawlog -- replace here
+  rawlog <- getAttachment att   -- Get attachment
+  let results = extractLogsFromZip cfgNumberOfLogs rawlog
   case results of
     Left error -> do
       print "error parsing zip"
       print error
-    Right result ->
-      case postProcessError result of
-        Right (ConfirmedStaleLockFile msg) -> do
-          print msg
-          postTicketComment cfg agentId ticketId (LT.toStrict msg) False
+    Right result -> do
+      let analysisEnv = setupAnalysis cfgKnowledgebase
+          eitherAnalysisResult = extractIssuesFromLogs result analysisEnv
+      case eitherAnalysisResult of
+        Right analysisResult -> do -- do something!
+          print "hello"            -- 1 Take out error codes, add them as tags
+                                   -- Print analysis nicely..
+          postTicketComment cfg agentId ticketId (LT.toStrict "hello") ["Just","Analyzed"] False
         Left result -> print result
 
 -- | Given attachmentUrl, return attachment in bytestring
@@ -178,12 +206,12 @@ listAssignedTickets cfg agentId = do
       (TicketList pagen next_pagen) <- apiCall parseTickets req'
       case next_pagen of
         Just url -> go (list <> pagen) url
-        Nothing -> pure (list <> pagen)
+        Nothing  -> pure (list <> pagen)
 
   (TicketList page0 next_page) <- apiCall parseTickets req
   case next_page of
     Just url -> go page0 url
-    Nothing -> pure page0
+    Nothing  -> pure page0
 
 -- | Parse tickets
 parseTickets :: Value -> Parser TicketList
@@ -200,21 +228,23 @@ parseComments :: Value -> Parser [ Comment ]
 parseComments = withObject "comments" $ \o -> o .: "comments"
 
 -- | Send API request to post comment
-postTicketComment :: Config -> Integer -> TicketId -> Text -> Bool -> IO ()
-postTicketComment cfg agentId (TicketId tid) body public = do
+postTicketComment :: Config -> Integer -> TicketId -> Text -> [Text] -> Bool -> IO ()
+postTicketComment cfg agentId (TicketId tid) body tags public = do
   let
     req1 = apiRequest cfg ("tickets/" <> tshow tid <> ".json")
-    req2 = addJsonBody (Ticket (Comment body [] False agentId) (cfgAssignTo cfg)) req1
+    req2 = addJsonBody (Ticket (Comment body [] False agentId tags) (cfgAssignTo cfg)) req1
   v <- apiCall (\x -> pure $ (encodeToLazyText x)) req2
   LT.putStrLn v
   pure ()
 
 instance FromJSON Comment where
   parseJSON = withObject "comment" $ \o ->
-    Comment <$> o .: "body" <*> o .: "attachments" <*> o .: "public" <*> o .: "author_id"
+    Comment <$> o .: "body" <*> o .: "attachments" <*> o .: "public" <*> o .: "author_id" <*> o .: "tags"
 
-instance ToJSON Comment where -- add tag and status
-  toJSON (Comment b as public author) = object [ "body" .= b, "attachments" .= as, "public" .= public, "author_id" .= author ]
+instance ToJSON Comment where -- Add tag and status
+  toJSON (Comment b as public author tags)
+    = object [ "body" .= b, "attachments" .= as,
+      "public" .= public, "author_id" .= author, "tags" .= tags]
 
 instance ToJSON CommentOuter where
   toJSON (CommentOuter c) = object [ "comment" .= c ]
@@ -263,12 +293,3 @@ getAgentId cfg = do
   let req = apiRequest cfg "users/me.json"
   apiCall parseAgentId req
 
-{-
-
-# download first attachment
-curl -o logs.zip -L $(curl https://iohk.zendesk.com/api/v2/tickets/$TICKET_ID/comments.json -H "Content-Type: application/json" -u "$AUTH" | jq -r '.comments[].attachments[].content_url')
-
-curl -o ll.zip -L  'https://iohk.zendesk.com/attachments/token/7adbjqvwvDondyNcW0iVPr9yG/?name=logs.zip' \
-  -H "Content-Type: application/json" \
-  -u 'daedalus-bug-reports@iohk.io/token:TOKEN'
--}
