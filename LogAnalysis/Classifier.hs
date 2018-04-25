@@ -83,8 +83,8 @@ prettyPrintAnalysis as =
     in foldr (\(Knowledge{..}, txts) acc -> 
         "\n" <> LT.pack (show kErrorCode)
      <> "\n" <> kProblem
-     <> "\n" <> kSolution
-     <> "\n" <> LT.pack (show txts)
+     <> "\n **" <> kSolution
+     <> "** \n" <> LT.pack (show txts)
      <> "\n" <> acc 
      <> "\n\n"        
     ) LT.empty aList
