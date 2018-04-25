@@ -8,6 +8,7 @@ module LogAnalysis.Types
        , Knowledge (..)
        , setupAnalysis
        , toTag
+       , toComment
        ) where
 
 import           Data.Map.Strict (Map)
@@ -58,6 +59,10 @@ toTag ConnectionRefused = "connection-refused"
 toTag ResourceVanished  = "resource-vanished"
 toTag Unknown           = "unknown"
 toTag Error             = "error"
+
+toComment :: ErrorCode -> Text
+toComment SentLogCorrupted = "Log file is corrupted"
+toComment _                = "Error"
 
 -- | Map used to collect error lines
 type Analysis = Map Knowledge [LT.Text]

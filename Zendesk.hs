@@ -40,7 +40,7 @@ import           LogAnalysis.Classifier         (extractErrorCodes,
                                                  prettyPrintAnalysis)
 import           LogAnalysis.KnowledgeCSVParser (setupKnowledgebaseEnv)
 import           LogAnalysis.Types              (ErrorCode (..), Knowledge,
-                                                 setupAnalysis, toTag)
+                                                 setupAnalysis, toTag, toComment)
 import           Types                          (Attachment (..), Comment (..),
                                                  CommentOuter (..), Ticket (..),
                                                  TicketId (..), TicketList (..),
@@ -120,40 +120,41 @@ processTicketAndId cfg agentId ticketId = do
     attachments :: [ Attachment ]
     attachments = concatMap commentAttachments commentsWithAttachments
     justLogs = filter (\x -> "application/zip" == attachmentContentType x) attachments
-  mapM_ (inspectAttachment cfg agentId ticketId) justLogs
+  mapM_ (inspectAttachmentAndPostComment cfg agentId ticketId) justLogs
   pure ()
 
--- | Inspect the attachment i.e. archived zip file
-inspectAttachment :: Config -> Integer -> TicketId -> Attachment -> IO ()
-inspectAttachment cfg@Config{..} agentId ticketId att = do
+inspectAttachmentAndPostComment :: Config -> Integer -> TicketId -> Attachment -> IO ()
+inspectAttachmentAndPostComment cfg@Config{..} agentId ticketId att = do
   putStrLn $ "Analyzing ticket id: " <> show ticketId
+  (comment, tags, isPublicComment) <- inspectAttachment cfgNumOfLogsToAnalyze cfgKnowledgebase att
+  postTicketComment cfg agentId ticketId comment tags isPublicComment
+
+-- | Given number of file of inspect, knowledge and attachment,
+-- analyze the logs and return the results.
+--
+-- The results are following:
+--
+-- __(comment, tags, bool of wether is should be public comment)__
+inspectAttachment :: Int -> [Knowledge] -> Attachment -> IO (Text, [Text], Bool)
+inspectAttachment num ks att = do
   rawlog <- getAttachment att   -- Get attachment
-  let results = extractLogsFromZip cfgNumOfLogsToAnalyze rawlog
+  let results = extractLogsFromZip num rawlog
   case results of
     Left error -> do
       print "error parsing zip"
-      postTicketComment cfg agentId ticketId -- Post comment that log file is corrupted
-        (LT.toStrict "Log file is corruputed")
-        [toTag SentLogCorrupted]
-        False
+      return (toComment SentLogCorrupted , [toTag SentLogCorrupted], False)
     Right result -> do
-      let analysisEnv = setupAnalysis cfgKnowledgebase
+      let analysisEnv = setupAnalysis ks
           eitherAnalysisResult = extractIssuesFromLogs result analysisEnv
       case eitherAnalysisResult of
         Right analysisResult -> do -- do something!
           let errorCodes = extractErrorCodes analysisResult
           let commentRes = prettyPrintAnalysis analysisResult
-          mapM_ print errorCodes
-          postTicketComment cfg agentId ticketId -- Post any issue that debugger has found
-            (LT.toStrict commentRes)
-            errorCodes
-            False
+          mapM_ T.putStrLn errorCodes
+          return (LT.toStrict commentRes, errorCodes, False)
         Left result -> do
           putStrLn result
-          postTicketComment cfg agentId ticketId -- Post that debugger couldn't find any issues
-            (LT.toStrict (LT.pack result))
-            [tshow NoKnownIssue]
-            False
+          return (LT.toStrict (LT.pack result), [tshow NoKnownIssue], False)
 
 -- | Return list of ticketIds that has been requested by config user (don't need..?)
 listRequestedTicketIds :: Config -> Integer -> IO [TicketId]
@@ -229,12 +230,16 @@ apiCall parser req = do
 apiRequest :: Config -> Text -> Request
 apiRequest Config{..} u = setRequestPath (T.encodeUtf8 path) $
                           addRequestHeader "Content-Type" "application/json" $
-                          setRequestBasicAuth (T.encodeUtf8 cfgEmail <> "/token") (T.encodeUtf8 cfgToken) $
+                          setRequestBasicAuth
+                            (T.encodeUtf8 cfgEmail <> "/token")
+                            (T.encodeUtf8 cfgToken) $
                           parseRequest_ (T.unpack (cfgZendesk <> path))
   where
     path ="/api/v2/" <> u
 
 apiRequestAbsolute :: Config -> Text -> Request
 apiRequestAbsolute Config{..} u = addRequestHeader "Content-Type" "application/json" $
-                                  setRequestBasicAuth (T.encodeUtf8 cfgEmail <> "/token") (T.encodeUtf8 cfgToken) $
+                                  setRequestBasicAuth
+                                    (T.encodeUtf8 cfgEmail <> "/token")
+                                    (T.encodeUtf8 cfgToken) $
                                   parseRequest_ (T.unpack u)
