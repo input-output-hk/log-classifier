@@ -24,6 +24,7 @@ import qualified Data.Text.Lazy.Encoding  as LT
 import           GHC.Stack                (HasCallStack)
 
 import           LogAnalysis.Types        (Analysis, Knowledge (..), ErrorCode, toTag)
+import           Util                     (tshow)
 
 -- | Analyze each log file based on the knowlodgebases' data.
 extractIssuesFromLogs :: [LBS.ByteString] -> Analysis -> Either String Analysis
@@ -73,9 +74,6 @@ extractLogsFromZip numberOfFiles file = do
 
 extractErrorCodes :: Analysis -> [Text]
 extractErrorCodes as = map (\(Knowledge{..}, _) -> toTag kErrorCode) $ Map.toList as
-
-tshow :: Show a => a -> Text
-tshow = T.pack . show
 
 prettyPrintAnalysis :: Analysis -> LT.Text
 prettyPrintAnalysis as = 
