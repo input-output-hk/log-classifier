@@ -1,10 +1,13 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards  #-}
 
 module LogAnalysis.Classifier
        (
          extractIssuesFromLogs
        , extractLogsFromZip
+       , extractErrorCodes
+       , prettyPrintAnalysis
        ) where
 
 import qualified Codec.Archive.Zip        as Zip
@@ -12,12 +15,15 @@ import qualified Data.ByteString.Lazy     as LBS
 import           Data.List                (foldl')
 import           Data.Map.Strict          (Map)
 import qualified Data.Map.Strict          as Map
+import           Data.Semigroup           ((<>))
+import           Data.Text                (Text)
+import qualified Data.Text                as T
 import           Data.Text.Encoding.Error (ignore)
 import qualified Data.Text.Lazy           as LT
 import qualified Data.Text.Lazy.Encoding  as LT
 import           GHC.Stack                (HasCallStack)
 
-import           LogAnalysis.Types        (Analysis, Knowledge (..))
+import           LogAnalysis.Types        (Analysis, Knowledge (..), ErrorCode)
 
 -- | Analyze each log file based on the knowlodgebases' data.
 extractIssuesFromLogs :: [LBS.ByteString] -> Analysis -> Either String Analysis
@@ -46,7 +52,7 @@ filterAnalysis as = do
     let filteredAnalysis = Map.filter (/=[]) as
     if null filteredAnalysis
       then Left "No issue found"
-      else return filteredAnalysis
+      else return $ Map.map (take 3) filteredAnalysis
 
 readZip :: HasCallStack => LBS.ByteString -> Either String (Map FilePath LBS.ByteString)
 readZip rawzip = case Zip.toArchiveOrFail rawzip of
@@ -64,3 +70,21 @@ extractLogsFromZip numberOfFiles file = do
     zipMap <- readZip file                             -- Read File
     let extractedLogs = Map.elems $ Map.take numberOfFiles zipMap        -- Extract selected logs
     return extractedLogs
+
+extractErrorCodes :: Analysis -> [Text]
+extractErrorCodes as = map (\(Knowledge{..}, _) -> tshow kErrorCode) $ Map.toList as
+
+tshow :: Show a => a -> Text
+tshow = T.pack . show
+
+prettyPrintAnalysis :: Analysis -> LT.Text
+prettyPrintAnalysis as = 
+    let aList = Map.toList as
+    in foldr (\(Knowledge{..}, txts) acc -> 
+                LT.pack (show kErrorCode)
+     <> "\n" <> kProblem
+     <> "\n" <> kSolution
+     <> "\n" <> LT.pack (show txts)
+     <> "\n" <> acc 
+     <> "\n"        
+    ) LT.empty aList

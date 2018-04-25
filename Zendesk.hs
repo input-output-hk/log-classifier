@@ -35,18 +35,20 @@ import           Data.Aeson.Text                (encodeToLazyText)
 import           Data.Aeson.Types               (Parser, parseEither)
 import           Data.Map.Strict                (Map)
 
-import           LogAnalysis.Classifier         (extractIssuesFromLogs,
-                                                 extractLogsFromZip)
+import           LogAnalysis.Classifier         ( extractIssuesFromLogs
+                                                , extractLogsFromZip
+                                                , extractErrorCodes
+                                                , prettyPrintAnalysis)
 import           LogAnalysis.KnowledgeCSVParser (setupKnowledgebaseEnv)
 import           LogAnalysis.Types
 
 data Config = Config
-              { cfgZendesk       :: Text
-              , cfgToken         :: Text
-              , cfgEmail         :: Text
-              , cfgAssignTo      :: Integer
-              , cfgKnowledgebase :: [Knowledge]
-              , cfgNumberOfLog   :: Int
+              { cfgZendesk            :: Text
+              , cfgToken              :: Text
+              , cfgEmail              :: Text
+              , cfgAssignTo           :: Integer
+              , cfgKnowledgebase      :: [Knowledge]
+              , cfgNumOfLogsToAnalyze :: Int
               } deriving (Show, Eq)
 
 -- | This scirpt will look through tickets that are assigned by cfgEmail
@@ -63,7 +65,6 @@ data Comment = Comment
   , commentAttachments :: [Attachment]
   , commentPublic      :: Bool
   , commentAuthor      :: Integer
-  , commentTags        :: [Text]
   } deriving (Show, Eq)
 
 -- | Outer comment ??
@@ -82,6 +83,7 @@ data Attachment = Attachment
 data Ticket = Ticket {
     ticketComment  :: Comment
   , ticketAssignee :: Integer
+  , ticketTag      :: [Text]
   } deriving (Show, Eq)
 
 -- | List of zendesk ticket
@@ -111,7 +113,7 @@ main = do
   putStrLn $ "Command is: " <> head args
   case args of
     [ "processTicket", idNumber ] -> do
-      putStrLn $  "The script is going to process tickets id: " <> idNumber
+      putStrLn "Processing single ticket"
       processTicketAndId cfg agentId $ TicketId $ read idNumber
     [ "listAssigned" ] -> do
       T.putStrLn $  "The script is going to look through tickets assign to: " <> cfgEmail cfg
@@ -155,9 +157,9 @@ processTicketAndId cfg agentId ticketId = do
 -- | Inspect the attachment i.e. archived zip file
 inspectAttachment :: Config -> Integer -> TicketId -> Attachment -> IO ()
 inspectAttachment cfg@Config{..} agentId ticketId att = do
-  print ticketId
+  putStrLn $ "Analyzing ticket id: " <> show ticketId
   rawlog <- getAttachment att   -- Get attachment
-  let results = extractLogsFromZip cfgNumberOfLogs rawlog
+  let results = extractLogsFromZip cfgNumOfLogsToAnalyze rawlog
   case results of
     Left error -> do
       print "error parsing zip"
@@ -167,9 +169,9 @@ inspectAttachment cfg@Config{..} agentId ticketId att = do
           eitherAnalysisResult = extractIssuesFromLogs result analysisEnv
       case eitherAnalysisResult of
         Right analysisResult -> do -- do something!
-          print "hello"            -- 1 Take out error codes, add them as tags
-                                   -- Print analysis nicely..
-          postTicketComment cfg agentId ticketId (LT.toStrict "hello") ["Just","Analyzed"] False
+          let errorCodes = extractErrorCodes analysisResult
+          let commentRes = prettyPrintAnalysis analysisResult
+          postTicketComment cfg agentId ticketId (LT.toStrict commentRes) ("Analyzed" : errorCodes) False
         Left result -> print result
 
 -- | Given attachmentUrl, return attachment in bytestring
@@ -232,19 +234,18 @@ postTicketComment :: Config -> Integer -> TicketId -> Text -> [Text] -> Bool -> 
 postTicketComment cfg agentId (TicketId tid) body tags public = do
   let
     req1 = apiRequest cfg ("tickets/" <> tshow tid <> ".json")
-    req2 = addJsonBody (Ticket (Comment body [] False agentId tags) (cfgAssignTo cfg)) req1
+    req2 = addJsonBody (Ticket (Comment body [] False agentId) (cfgAssignTo cfg) tags) req1
   v <- apiCall (\x -> pure $ (encodeToLazyText x)) req2
-  LT.putStrLn v
   pure ()
 
 instance FromJSON Comment where
   parseJSON = withObject "comment" $ \o ->
-    Comment <$> o .: "body" <*> o .: "attachments" <*> o .: "public" <*> o .: "author_id" <*> o .: "tags"
+    Comment <$> o .: "body" <*> o .: "attachments" <*> o .: "public" <*> o .: "author_id"
 
 instance ToJSON Comment where -- Add tag and status
-  toJSON (Comment b as public author tags)
+  toJSON (Comment b as public author)
     = object [ "body" .= b, "attachments" .= as,
-      "public" .= public, "author_id" .= author, "tags" .= tags]
+      "public" .= public, "author_id" .= author]
 
 instance ToJSON CommentOuter where
   toJSON (CommentOuter c) = object [ "comment" .= c ]
@@ -254,7 +255,8 @@ instance FromJSON Attachment where
     Attachment <$> o .: "content_url" <*> o .: "content_type" <*> o .: "size"
 
 instance ToJSON Ticket where
-  toJSON (Ticket comment assignee) = object [ "ticket" .= object [ "comment" .= comment, "assignee_id" .= assignee ] ]
+  toJSON (Ticket comment assignee tags) = 
+    object [ "ticket" .= object [ "comment" .= comment, "assignee_id" .= assignee, "tags" .= tags] ]
 
 instance ToJSON Attachment where
   toJSON (Attachment url contenttype size) = object [ "content_url" .= url, "content_type" .= contenttype, "size" .= size]
