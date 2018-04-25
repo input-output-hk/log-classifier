@@ -4,6 +4,7 @@
 {-# LANGUAGE RankNTypes        #-}
 {-# LANGUAGE RecordWildCards   #-}
 
+-- Currenty not used..
 module Classify (classifyZip, ErrorCode(..), ErrorName, postProcessError, ConfirmedError(..)) where
 
 import qualified Codec.Archive.Zip    as Zip
