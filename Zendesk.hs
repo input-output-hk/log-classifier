@@ -13,6 +13,7 @@ import qualified Data.ByteString.Char8 as B8
 import qualified Data.ByteString.Lazy as BL
 import           Data.Text (Text)
 import qualified Data.Text as T
+import qualified Data.Text.IO as T
 import qualified Data.Text.Lazy as LT
 import qualified Data.Text.Lazy.IO as LT
 import qualified Data.Text.Encoding as T
@@ -32,31 +33,39 @@ data Config = Config
               , cfgAssignTo :: Integer
               } deriving (Show, Eq)
 
+-- | This scirpt will look through tickets that are assigned by cfgEmail
 defaultConfig :: Config
 defaultConfig = Config "https://iohk.zendesk.com" "" "daedalus-bug-reports@iohk.io" 0
 
+-- | Comments
 data Comment = Comment
   { commentBody :: Text
   , commentAttachments :: [Attachment]
   , commentPublic :: Bool
   , commentAuthor :: Integer
+  -- Add tags here
+  -- Add status here
   } deriving (Show, Eq)
 
+-- | Outer comment ??
 data CommentOuter = CommentOuter {
     coComment :: Comment
   } deriving (Show, Eq)
 
+-- | Attachment of the ticket
 data Attachment = Attachment
   { attachmentURL :: Text
   , attachmentContentType :: Text
   , attachmentSize :: Int
   } deriving (Show, Eq)
 
+-- | Zendexk ticket
 data Ticket = Ticket {
     ticketComment :: Comment
   , ticketAssignee :: Integer
   } deriving (Show, Eq)
 
+-- | List of zendesk ticket
 data TicketList = TicketList {
     ticketListTickets :: [ TicketId ]
   , next_page :: Maybe Text
@@ -69,8 +78,8 @@ instance Show TicketId where
 
 main :: IO ()
 main = do
-  token <- B8.readFile "token"
-  assignto <- B8.readFile "assign_to"
+  token <- B8.readFile "token"        -- Zendesk token
+  assignto <- B8.readFile "assign_to" -- Select assignee
   let cfg = defaultConfig { cfgToken = T.stripEnd $ T.decodeUtf8 token, cfgAssignTo = read $ T.unpack $ T.decodeUtf8 assignto }
   agentId <- getAgentId cfg
   --ticketIds <- listTicketIds cfg agentId
@@ -78,6 +87,7 @@ main = do
   --printTicketAndId cfg $ TicketId 9248
   args <- getArgs
   print args
+  T.putStrLn $  "The script is going to look through tickets assign to: " <> cfgEmail cfg
   case args of
     [ "processTicket", idNumber ] -> do
       processTicketAndId cfg agentId $ TicketId $ read idNumber
@@ -94,36 +104,47 @@ main = do
         req = apiRequest cfg (T.pack url)
       res <- apiCall (\x -> pure $ (encodeToLazyText x))  req
       LT.putStrLn res
+    _  -> do
+      let cmdItem = [ "processTicket <id> : Process single ticket of id"
+                    , "listAssigned       : Print list of ticket Ids that agent has been assigned"
+                    , "processTickets     : Process all the tickets i.e add comments, tags then assign to someone"
+                    , "raw_request <url>  : Request raw request to the given url"]
+      putStrLn "Invalid argument, please add following argument to run the command:"
+      mapM_ putStrLn cmdItem
 
+-- | Process specifig ticket id (can be used for testing) only inspects the one's with logs
 processTicketAndId :: Config -> Integer -> TicketId -> IO ()
 processTicketAndId cfg agentId ticketId = do
   comments <- getTicketComments cfg ticketId
   let
+    -- Could implement comment inspection function (although I don't see it useful)
     commentsWithAttachments :: [ Comment ]
     commentsWithAttachments = filter (\x -> length (commentAttachments x) > 0) comments
+    -- filter out ticket without logs
     attachments :: [ Attachment ]
     attachments = concat $ map commentAttachments commentsWithAttachments
     justLogs = filter (\x -> "application/zip" == attachmentContentType x) attachments
   mapM_ (inspectAttachment cfg agentId ticketId) justLogs
   pure ()
 
+-- | Inspect the attachment i.e. archived zip file
 inspectAttachment :: Config -> Integer -> TicketId -> Attachment -> IO ()
 inspectAttachment cfg agentId ticketId att = do
   print ticketId
-  rawlog <- getAttachment att
-  results <- classifyZip rawlog
+  rawlog <- getAttachment att   -- get attachment
+  results <- classifyZip rawlog -- replace here
   case results of
     Left error -> do
       print "error parsing zip"
       print error
-    Right result -> do
+    Right result ->
       case postProcessError result of
         Right (ConfirmedStaleLockFile msg) -> do
           print msg
           postTicketComment cfg agentId ticketId (LT.toStrict msg) False
-        Left result -> do
-          print result
+        Left result -> print result
 
+-- | Given attachmentUrl, return attachment in bytestring
 getAttachment :: Attachment -> IO BL.ByteString
 getAttachment Attachment{..} = getResponseBody <$> httpLBS req
   where req = parseRequest_ (T.unpack attachmentURL)
@@ -131,6 +152,7 @@ getAttachment Attachment{..} = getResponseBody <$> httpLBS req
 tshow :: Show a => a -> Text
 tshow = T.pack . show
 
+-- | Make an api call
 apiCall :: FromJSON a => (Value -> Parser a) -> Request -> IO a
 apiCall parser req = do
   v <- getResponseBody <$> httpJSON req
@@ -138,12 +160,14 @@ apiCall parser req = do
     Right o -> pure o
     Left e -> error $ "couldn't parse response " ++ e ++ "\n" ++ (T.unpack $ T.decodeUtf8 $ BL.toStrict $ encode v)
 
-listTicketIds :: Config -> Integer -> IO [TicketId]
-listTicketIds cfg agentId = do
+-- | Return list of ticketIds that has been requested by config user (don't need..?)
+listRequestedTicketIds :: Config -> Integer -> IO [TicketId]
+listRequestedTicketIds cfg agentId = do
   let req = apiRequest cfg ("/users/" <> tshow agentId <> "/tickets/requested.json")
   (TicketList page0 next_page) <- apiCall parseTickets req
   pure page0
 
+-- | Return list of ticketIds that has been assigned to config user
 listAssignedTickets :: Config -> Integer ->  IO [ TicketId ]
 listAssignedTickets cfg agentId = do
   let
@@ -161,6 +185,7 @@ listAssignedTickets cfg agentId = do
     Just url -> go page0 url
     Nothing -> pure page0
 
+-- | Parse tickets
 parseTickets :: Value -> Parser TicketList
 parseTickets = withObject "tickets" $ \o -> TicketList <$> o .: "tickets" <*> o .: "next_page"
 
@@ -170,9 +195,11 @@ instance FromJSON TicketId where
 instance FromJSON TicketList where
   parseJSON = withObject "ticketList" $ \o -> TicketList <$> o .: "tickets" <*> o .: "next_page"
 
+-- | Parse comments
 parseComments :: Value -> Parser [ Comment ]
 parseComments = withObject "comments" $ \o -> o .: "comments"
 
+-- | Send API request to post comment
 postTicketComment :: Config -> Integer -> TicketId -> Text -> Bool -> IO ()
 postTicketComment cfg agentId (TicketId tid) body public = do
   let
@@ -186,7 +213,7 @@ instance FromJSON Comment where
   parseJSON = withObject "comment" $ \o ->
     Comment <$> o .: "body" <*> o .: "attachments" <*> o .: "public" <*> o .: "author_id"
 
-instance ToJSON Comment where
+instance ToJSON Comment where -- add tag and status
   toJSON (Comment b as public author) = object [ "body" .= b, "attachments" .= as, "public" .= public, "author_id" .= author ]
 
 instance ToJSON CommentOuter where
@@ -202,14 +229,17 @@ instance ToJSON Ticket where
 instance ToJSON Attachment where
   toJSON (Attachment url contenttype size) = object [ "content_url" .= url, "content_type" .= contenttype, "size" .= size]
 
+-- | Get ticket's comments
 getTicketComments :: Config -> TicketId -> IO [ Comment ]
 getTicketComments cfg (TicketId tid) = do
   let req = apiRequest cfg ("tickets/" <> tshow tid <> "/comments.json")
   apiCall parseComments req
 
+-- | Request PUT
 addJsonBody :: ToJSON a => a -> Request -> Request
 addJsonBody body req = setRequestBodyJSON body $ setRequestMethod "PUT" req
 
+-- | General apiRequest function
 apiRequest :: Config -> Text -> Request
 apiRequest Config{..} u = setRequestPath (T.encodeUtf8 path) $
                           addRequestHeader "Content-Type" "application/json" $
@@ -223,9 +253,11 @@ apiRequestAbsolute Config{..} u = addRequestHeader "Content-Type" "application/j
                                   setRequestBasicAuth (T.encodeUtf8 cfgEmail <> "/token") (T.encodeUtf8 cfgToken) $
                                   parseRequest_ (T.unpack u)
 
+-- | Parse the apiRequest of getAgentId
 parseAgentId :: Value -> Parser Integer
 parseAgentId = withObject "user" $ \o -> (o .: "user") >>= (.: "id")
 
+-- | Get agent id that has been set on Config
 getAgentId :: Config -> IO Integer
 getAgentId cfg = do
   let req = apiRequest cfg "users/me.json"
