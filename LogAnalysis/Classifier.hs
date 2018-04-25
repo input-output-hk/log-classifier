@@ -23,7 +23,7 @@ import qualified Data.Text.Lazy           as LT
 import qualified Data.Text.Lazy.Encoding  as LT
 import           GHC.Stack                (HasCallStack)
 
-import           LogAnalysis.Types        (Analysis, Knowledge (..), ErrorCode)
+import           LogAnalysis.Types        (Analysis, Knowledge (..), ErrorCode, toTag)
 
 -- | Analyze each log file based on the knowlodgebases' data.
 extractIssuesFromLogs :: [LBS.ByteString] -> Analysis -> Either String Analysis
@@ -51,7 +51,7 @@ filterAnalysis :: Analysis -> Either String Analysis
 filterAnalysis as = do
     let filteredAnalysis = Map.filter (/=[]) as
     if null filteredAnalysis
-      then Left "No issue found"
+      then Left "Cannot find any known issues"
       else return $ Map.map (take 3) filteredAnalysis
 
 readZip :: HasCallStack => LBS.ByteString -> Either String (Map FilePath LBS.ByteString)
@@ -72,7 +72,7 @@ extractLogsFromZip numberOfFiles file = do
     return extractedLogs
 
 extractErrorCodes :: Analysis -> [Text]
-extractErrorCodes as = map (\(Knowledge{..}, _) -> tshow kErrorCode) $ Map.toList as
+extractErrorCodes as = map (\(Knowledge{..}, _) -> toTag kErrorCode) $ Map.toList as
 
 tshow :: Show a => a -> Text
 tshow = T.pack . show
@@ -81,10 +81,10 @@ prettyPrintAnalysis :: Analysis -> LT.Text
 prettyPrintAnalysis as = 
     let aList = Map.toList as
     in foldr (\(Knowledge{..}, txts) acc -> 
-                LT.pack (show kErrorCode)
+        "\n" <> LT.pack (show kErrorCode)
      <> "\n" <> kProblem
      <> "\n" <> kSolution
      <> "\n" <> LT.pack (show txts)
      <> "\n" <> acc 
-     <> "\n"        
+     <> "\n\n"        
     ) LT.empty aList

@@ -110,7 +110,6 @@ main = do
                           }
   agentId <- getAgentId cfg
   args <- getArgs
-  putStrLn $ "Command is: " <> head args
   case args of
     [ "processTicket", idNumber ] -> do
       putStrLn "Processing single ticket"
@@ -138,6 +137,7 @@ main = do
                     , "raw_request <url>  : Request raw request to the given url"]
       putStrLn "Invalid argument, please add following argument to run the command:"
       mapM_ putStrLn cmdItem
+  putStrLn "Process finished!"
 
 -- | Process specifig ticket id (can be used for testing) only inspects the one's with logs
 processTicketAndId :: Config -> Integer -> TicketId -> IO ()
@@ -171,8 +171,14 @@ inspectAttachment cfg@Config{..} agentId ticketId att = do
         Right analysisResult -> do -- do something!
           let errorCodes = extractErrorCodes analysisResult
           let commentRes = prettyPrintAnalysis analysisResult
-          postTicketComment cfg agentId ticketId (LT.toStrict commentRes) ("Analyzed" : errorCodes) False
-        Left result -> print result
+          mapM_ print errorCodes
+          postTicketComment cfg agentId ticketId (LT.toStrict commentRes) ("analyzed-by-script" : errorCodes) False
+        Left result -> do
+          putStrLn result
+          postTicketComment cfg agentId ticketId 
+            (LT.toStrict (LT.pack result)) 
+            ["analyzed-by-script", "no-known-issue"]
+            False
 
 -- | Given attachmentUrl, return attachment in bytestring
 getAttachment :: Attachment -> IO BL.ByteString

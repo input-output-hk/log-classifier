@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleInstances #-}
 
 module LogAnalysis.Types
@@ -6,11 +7,13 @@ module LogAnalysis.Types
        , ErrorCode (..)
        , Knowledge (..)
        , setupAnalysis
+       , toTag
        ) where
 
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Text.Lazy  as LT
+import           Data.Text (Text)
 
 -- | Identifier for each error
 data ErrorCode
@@ -37,6 +40,22 @@ data Knowledge = Knowledge
   ,  kProblem   :: !LT.Text   -- ^ Text describing what is the problem
   ,  kSolution  :: !LT.Text   -- ^ Text describing how to solve the issue
   } deriving (Show)
+
+toTag :: ErrorCode -> Text
+toTag ShortStorage      = "short-storage"
+toTag UserNameError     = "user-name-error"
+toTag TimeSync          = "time-out-of-sync"
+toTag FileNotFound      = "directory-not-found"
+toTag StaleLockFile     = "stale-lock-file"
+toTag DBError           = "DB-corrupted"
+toTag DBPath            = "DB-path-error"
+toTag CannotGetDBSize   = "cannot-get-db-size"
+toTag BalanceError      = "incorrect-balance"
+toTag NetworkError      = "network-error"
+toTag ConnectionRefused = "connection-refused"
+toTag ResourceVanished  = "resource-vanished"
+toTag Unknown           = "unknown"
+toTag Error             = "error"
 
 -- | Map used to collect error lines
 type Analysis = Map Knowledge [LT.Text]
