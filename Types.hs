@@ -35,14 +35,19 @@ data Ticket = Ticket {
 
 -- | List of zendesk ticket
 data TicketList = TicketList {
-    ticketListTickets :: [ TicketId ]
+    ticketListTickets :: [ TicketInfo ]
   , nextPage          :: Maybe Text
   } deriving (Show, Eq)
 
-newtype TicketId = TicketId Int deriving (Eq)
+type TicketId = Int
 
-instance Show TicketId where
-  show (TicketId tid) = show tid
+data TicketInfo = TicketInfo
+  { ticketId   :: Int
+  , ticketTags :: [Text]
+  } deriving (Eq)
+
+instance Show TicketInfo where
+  show (TicketInfo tid _) = show tid
 
 -- | Ticket status
 data TicketStatus =
@@ -80,8 +85,8 @@ instance ToJSON Attachment where
   toJSON (Attachment url contenttype size) =
     object [ "content_url" .= url, "content_type" .= contenttype, "size" .= size]
 
-instance FromJSON TicketId where
-  parseJSON = withObject "ticket" $ \o -> TicketId <$> (o .: "id")
+instance FromJSON TicketInfo where
+  parseJSON = withObject "ticket" $ \o -> TicketInfo <$> (o .: "id") <*> (o .: "tags")
 
 instance FromJSON TicketList where
   parseJSON = withObject "ticketList" $ \o -> TicketList <$> o .: "tickets" <*> o .: "next_page"

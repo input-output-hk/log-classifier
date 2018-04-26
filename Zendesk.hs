@@ -43,8 +43,8 @@ import           LogAnalysis.KnowledgeCSVParser (parseKnowLedgeBase)
 import           LogAnalysis.Types              (ErrorCode (..), Knowledge,
                                                  setupAnalysis, toTag, toComment)
 import           Types                          (Attachment (..), Comment (..),
-                                                 CommentOuter (..), Ticket (..),
-                                                 TicketId (..), TicketList (..),
+                                                 CommentOuter (..), Ticket (..), TicketInfo(..),
+                                                 TicketId, TicketList (..),
                                                  TicketStatus (..),
                                                  parseAgentId, parseComments,
                                                  parseTickets)
@@ -73,13 +73,16 @@ tokenPath = "token"
 assignToPath :: FilePath
 assignToPath = "assign_to"
 
+analyzedIndicatorTag :: Text
+analyzedIndicatorTag = tshow AnalyzedByScript
+
 main :: IO ()
 main = do
+  putStrLn "Welcome to Zendesk classifier!"
+  putStrLn "Setting config variables"
   token <- B8.readFile tokenPath        -- Zendesk token
   assignto <- B8.readFile assignToPath  -- Select assignee
-  putStrLn "Reading knowledge base"
   knowledges <- setupKnowledgebaseEnv knowledgebasePath
-  putStrLn "Knowledgebase setup complete"
   let cfg = defaultConfig { cfgToken = T.stripEnd $ T.decodeUtf8 token
                           , cfgAssignTo = read $ T.unpack $ T.decodeUtf8 assignto
                           , cfgKnowledgebase = knowledges
@@ -87,20 +90,29 @@ main = do
   agentId <- getAgentId cfg
   args <- getArgs
   case args of
+    -- Process given ticket
     [ "processTicket", idNumber ] -> do
       putStrLn "Processing single ticket"
-      processTicketAndId cfg agentId $ TicketId $ read idNumber
-    [ "listAssigned" ] -> do
-      T.putStrLn $  "The script is going to look through tickets assign to: " <> cfgEmail cfg
+      processTicketAndId cfg agentId $ read idNumber
+      putStrLn "Process finished, please see the following url"
+      putStrLn $ "https://iohk.zendesk.com/agent/tickets/" <> idNumber
+    -- Count assigned tickets
+    [ "countAssigned" ] -> do
+      T.putStrLn $  "Classifier is going to count tickets assign to: " <> cfgEmail cfg
+      printWarning
       tickets <- listAssignedTickets cfg agentId
-      T.putStrLn $ "Done: there are currently" <> tshow (length tickets)
-                   <> " tickets in the system assigned to " <> cfgEmail cfg
+      printTicketCountMessage tickets (cfgEmail cfg)
+    -- Process all the tickets (WARNING: This is really long process)
     [ "processTickets" ] -> do
-      T.putStrLn $  "The script is going to process tickets assign to: " <> cfgEmail cfg
-      ticketIds <- listAssignedTickets cfg agentId
-      print $ "found: " <> show (length ticketIds) <> " tickets"
-      print ticketIds
-      mapM_ (processTicketAndId cfg agentId) ticketIds
+      T.putStrLn $  "Classifier is going to process tickets assign to: " <> cfgEmail cfg
+      printWarning
+      tickets <- listAssignedTickets cfg agentId
+      printTicketCountMessage tickets (cfgEmail cfg)
+      let filteredTicketIds = filterAnalyzedTickets tickets
+      putStrLn "Processing tickets, this may take hours to finish."
+      mapM_ (processTicketAndId cfg agentId) filteredTicketIds
+      putStrLn "All the tickets has been processed."
+    -- Return raw request
     [ "raw_request", url ] -> do
       let
         req = apiRequest cfg (T.pack url)
@@ -109,11 +121,27 @@ main = do
     _  -> do
       let cmdItem = [ "processTicket <id> : Process single ticket of id"
                     , "listAssigned       : Print list of ticket Ids that agent has been assigned"
-                    , "processTickets     : Process all the tickets i.e add comments, tags then assign to someone"
+                    , "processTickets     : Process all the tickets i.e add comments, tags. WARNING:" <>
+                      "This is really long process, please use with care"
                     , "raw_request <url>  : Request raw request to the given url"]
       putStrLn "Invalid argument, please add following argument to run the command:"
       mapM_ putStrLn cmdItem
-  putStrLn "Process finished!"
+
+-- | Warning
+printWarning :: IO ()
+printWarning = putStrLn "Note that this process may take a while. Please do not kill the process"
+
+-- | Print how many tickets are assinged, analyzed, and unanalyzed
+printTicketCountMessage :: [TicketInfo] -> Text -> IO ()
+printTicketCountMessage tickets email = do
+  let ticketCount = length tickets
+  putStrLn "Done!"
+  T.putStrLn $ "There are currently " <> tshow ticketCount
+               <> " tickets in the system assigned to " <> email
+  putStrLn "Filtering analyzed tickets.."
+  let filteredTicketCount = length $ filterAnalyzedTickets tickets
+  putStrLn $ show (ticketCount - filteredTicketCount) <> " tickets has been analyzed."
+  putStrLn $ show filteredTicketCount <> " tickets are not analyzed yet."
 
 -- | Read CSV file and setup knowledge base
 setupKnowledgebaseEnv :: FilePath -> IO [Knowledge]
@@ -172,19 +200,27 @@ inspectAttachment num ks att = do
           putStrLn result
           return (LT.toStrict (LT.pack result), [tshow NoKnownIssue], False)
 
+-- | Filter analyzed tickets
+filterAnalyzedTickets :: [TicketInfo] -> [TicketId]
+filterAnalyzedTickets = foldr (\TicketInfo{..} acc ->
+                                if analyzedIndicatorTag `elem` ticketTags
+                                  then acc
+                                  else ticketId : acc
+                              ) []
+
 -- | Return list of ticketIds that has been requested by config user (don't need..?)
-listRequestedTicketIds :: Config -> Integer -> IO [TicketId]
+listRequestedTicketIds :: Config -> Integer -> IO [TicketInfo]
 listRequestedTicketIds cfg agentId = do
   let req = apiRequest cfg ("/users/" <> tshow agentId <> "/tickets/requested.json")
   (TicketList page0 nextPage) <- apiCall parseTickets req
   pure page0
 
 -- | Return list of ticketIds that has been assigned to config user
-listAssignedTickets :: Config -> Integer ->  IO [ TicketId ]
+listAssignedTickets :: Config -> Integer ->  IO [ TicketInfo ]
 listAssignedTickets cfg agentId = do
   let
     req = apiRequest cfg ("/users/" <> tshow agentId <> "/tickets/assigned.json")
-    go :: [ TicketId ] -> Text -> IO [ TicketId ]
+    go :: [ TicketInfo ] -> Text -> IO [ TicketInfo ]
     go list nextPage' = do
       let req' = apiRequestAbsolute cfg nextPage'
       (TicketList pagen nextPagen) <- apiCall parseTickets req'
@@ -199,7 +235,7 @@ listAssignedTickets cfg agentId = do
 
 -- | Send API request to post comment
 postTicketComment :: Config -> Integer -> TicketId -> Text -> [Text] -> Bool -> IO ()
-postTicketComment cfg agentId (TicketId tid) body tags public = do
+postTicketComment cfg agentId tid body tags public = do
   let
     req1 = apiRequest cfg ("tickets/" <> tshow tid <> ".json")
     req2 = addJsonBody
@@ -225,7 +261,7 @@ getAttachment Attachment{..} = getResponseBody <$> httpLBS req
 
 -- | Get ticket's comments
 getTicketComments :: Config -> TicketId -> IO [ Comment ]
-getTicketComments cfg (TicketId tid) = do
+getTicketComments cfg tid = do
   let req = apiRequest cfg ("tickets/" <> tshow tid <> "/comments.json")
   apiCall parseComments req
 
