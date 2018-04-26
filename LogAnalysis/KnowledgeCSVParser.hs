@@ -62,5 +62,5 @@ parseKnowledge = do
     return $ Knowledge e c p s
 
 -- |Parse CSV file and create knowledgebase
-parseKnowLedgeBase :: Parser [Knowledge]
+parseKnowLedgeBase :: Parser [ Knowledge ]
 parseKnowLedgeBase = many $ parseKnowledge <* endOfLine

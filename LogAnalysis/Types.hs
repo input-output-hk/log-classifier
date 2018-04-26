@@ -64,10 +64,10 @@ toComment SentLogCorrupted = "Log file is corrupted"
 toComment _                = "Error"
 
 -- | Map used to collect error lines
-type Analysis = Map Knowledge [LT.Text]
+type Analysis = Map Knowledge [ LT.Text ]
 
 -- | Create initial analysis environment
-setupAnalysis :: [Knowledge] -> Analysis
+setupAnalysis :: [ Knowledge ] -> Analysis
 setupAnalysis kbase = Map.fromList $ map (\kn -> (kn, [])) kbase
 
 instance Eq Knowledge where

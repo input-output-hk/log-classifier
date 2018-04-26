@@ -20,10 +20,10 @@ import           Data.Text        (Text)
 
 -- | Comments
 data Comment = Comment
-    { commentBody        :: Text
-    , commentAttachments :: [Attachment]
-    , commentPublic      :: Bool
-    , commentAuthor      :: Integer
+    { commentBody        :: Text         -- ^ Body of comment
+    , commentAttachments :: [Attachment] -- ^ Attachment
+    , commentPublic      :: Bool         -- ^ Flag of whether comment should be public
+    , commentAuthor      :: Integer      -- ^ Auther of comment
     } deriving (Show, Eq)
 
 -- | Outer comment ??
@@ -33,29 +33,29 @@ newtype CommentOuter = CommentOuter {
 
 -- | Attachment of the ticket
 data Attachment = Attachment
-    { attachmentURL         :: Text
-    , attachmentContentType :: Text
-    , attachmentSize        :: Int
+    { attachmentURL         :: Text -- ^ URL of the attachment
+    , attachmentContentType :: Text -- ^ ContentType of the attachment
+    , attachmentSize        :: Int  -- ^ Attachment size
     } deriving (Show, Eq)
 
 -- | Zendexk ticket
 data Ticket = Ticket
-    { ticketComment  :: Comment
-    , ticketAssignee :: Integer
-    , ticketTag      :: [Text]
+    { ticketComment  :: Comment   -- ^ Ticket comment
+    , ticketAssignee :: Integer   -- ^ Assignee of the ticket
+    , ticketTag      :: [ Text ]  -- ^ Tags attached to ticket
     } deriving (Show, Eq)
 
 -- | List of zendesk ticket
 data TicketList = TicketList
-    { ticketListTickets :: [ TicketInfo ]
-    , nextPage          :: Maybe Text
+    { ticketListTickets :: [ TicketInfo ] -- ^ Information of tickets
+    , nextPage          :: Maybe Text     -- ^ Next page
     } deriving (Show, Eq)
 
 type TicketId = Int
 
 data TicketInfo = TicketInfo
-    { ticketId   :: Int
-    , ticketTags :: [Text]
+    { ticketId   :: Int    -- ^ Id of an ticket
+    , ticketTags :: [Text] -- ^ Tags associated with ticket
     } deriving (Eq)
 
 instance Show TicketInfo where
@@ -63,14 +63,15 @@ instance Show TicketInfo where
 
 -- | Ticket status
 data TicketStatus =
-      AnalyzedByScript
-    | NoKnownIssue
+      AnalyzedByScript -- ^ Ticket has been analyzed
+    | NoKnownIssue     -- ^ Ticket had no known issue
 
+-- | Defining it's own show instance to use it as tags
 instance Show TicketStatus where
   show AnalyzedByScript = "analyzed-by-script"
   show NoKnownIssue     = "no-known-issues"
 
-
+-- | JSON Parsing
 instance FromJSON Comment where
   parseJSON = withObject "comment" $ \o ->
     Comment <$> o .: "body" <*> o .: "attachments" <*> o .: "public" <*> o .: "author_id"

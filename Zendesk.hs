@@ -80,7 +80,6 @@ analyzedIndicatorTag = tshow AnalyzedByScript
 main :: IO ()
 main = do
   putStrLn "Welcome to Zendesk classifier!"
-  putStrLn "Setting config variables"
   token <- B8.readFile tokenPath        -- Zendesk token
   assignto <- B8.readFile assignToPath  -- Select assignee
   knowledges <- setupKnowledgebaseEnv knowledgebasePath
@@ -133,7 +132,7 @@ printWarning :: IO ()
 printWarning = putStrLn "Note that this process may take a while. Please do not kill the process"
 
 -- | Print how many tickets are assinged, analyzed, and unanalyzed
-printTicketCountMessage :: [TicketInfo] -> Text -> IO ()
+printTicketCountMessage :: [ TicketInfo ] -> Text -> IO ()
 printTicketCountMessage tickets email = do
   let ticketCount = length tickets
   putStrLn "Done!"
@@ -145,7 +144,7 @@ printTicketCountMessage tickets email = do
   putStrLn $ show filteredTicketCount <> " tickets are not analyzed yet."
 
 -- | Read CSV file and setup knowledge base
-setupKnowledgebaseEnv :: FilePath -> IO [Knowledge]
+setupKnowledgebaseEnv :: FilePath -> IO [ Knowledge ]
 setupKnowledgebaseEnv path = do
     kfile <- LT.readFile path
     let kb = parse parseKnowLedgeBase kfile
@@ -169,6 +168,7 @@ processTicketAndId cfg agentId ticketId = do
   mapM_ (inspectAttachmentAndPostComment cfg agentId ticketId) justLogs
   pure ()
 
+-- | Inspect attachment then post comment to the ticket
 inspectAttachmentAndPostComment :: Config -> Integer -> TicketId -> Attachment -> IO ()
 inspectAttachmentAndPostComment cfg@Config{..} agentId ticketId att = do
   putStrLn $ "Analyzing ticket id: " <> show ticketId
@@ -181,13 +181,13 @@ inspectAttachmentAndPostComment cfg@Config{..} agentId ticketId att = do
 -- The results are following:
 --
 -- __(comment, tags, bool of whether is should be public comment)__
-inspectAttachment :: Int -> [Knowledge] -> Attachment -> IO (Text, [Text], Bool)
+inspectAttachment :: Int -> [ Knowledge ] -> Attachment -> IO (Text, [ Text ], Bool)
 inspectAttachment num ks att = do
   rawlog <- getAttachment att   -- Get attachment
   let results = extractLogsFromZip num rawlog
   case results of
     Left error -> do
-      print "error parsing zip"
+      putStrLn "Error parsing zip"
       return (toComment SentLogCorrupted , [toTag SentLogCorrupted], False)
     Right result -> do
       let analysisEnv = setupAnalysis ks
@@ -203,7 +203,7 @@ inspectAttachment num ks att = do
           return (LT.toStrict (LT.pack result), [tshow NoKnownIssue], False)
 
 -- | Filter analyzed tickets
-filterAnalyzedTickets :: [TicketInfo] -> [TicketId]
+filterAnalyzedTickets :: [ TicketInfo ] -> [ TicketId ]
 filterAnalyzedTickets = foldr (\TicketInfo{..} acc ->
                                 if analyzedIndicatorTag `elem` ticketTags
                                 then acc
@@ -211,7 +211,7 @@ filterAnalyzedTickets = foldr (\TicketInfo{..} acc ->
                               ) []
 
 -- | Return list of ticketIds that has been requested by config user (not used)
-listRequestedTicketIds :: Config -> Integer -> IO [TicketInfo]
+listRequestedTicketIds :: Config -> Integer -> IO [ TicketInfo ]
 listRequestedTicketIds cfg agentId = do
   let req = apiRequest cfg ("/users/" <> tshow agentId <> "/tickets/requested.json")
   (TicketList page0 nextPage) <- apiCall parseTickets req
@@ -236,7 +236,7 @@ listAssignedTickets cfg agentId = do
     Nothing  -> pure page0
 
 -- | Send API request to post comment
-postTicketComment :: Config -> Integer -> TicketId -> Text -> [Text] -> Bool -> IO ()
+postTicketComment :: Config -> Integer -> TicketId -> Text -> [ Text ] -> Bool -> IO ()
 postTicketComment cfg agentId tid body tags public = do
   let
     req1 = apiRequest cfg ("tickets/" <> tshow tid <> ".json")

@@ -20,7 +20,6 @@ import qualified Data.Text                as T
 import           Data.Text.Encoding.Error (ignore)
 import qualified Data.Text.Lazy           as LT
 import qualified Data.Text.Lazy.Encoding  as LT
-import           GHC.Stack                (HasCallStack)
 
 import           LogAnalysis.Types        (Analysis, ErrorCode, Knowledge (..),
                                            toTag)
@@ -45,7 +44,7 @@ analyzeLine :: Analysis -> LT.Text -> Analysis
 analyzeLine analysis str = Map.mapWithKey (compareWithKnowledge str) analysis
 
 -- | Compare the line with knowledge lists
-compareWithKnowledge :: LT.Text -> Knowledge -> [LT.Text] -> [LT.Text]
+compareWithKnowledge :: LT.Text -> Knowledge -> [ LT.Text ] -> [ LT.Text ]
 compareWithKnowledge str Knowledge{..} xs =
     if kErrorText `LT.isInfixOf` str
     then str : xs
@@ -59,7 +58,7 @@ filterAnalysis as = do
       then Left "Cannot find any known issues"
       else return $ Map.map (take numberOfErrorText) filteredAnalysis
 
-readZip :: HasCallStack => LBS.ByteString -> Either String (Map FilePath LBS.ByteString)
+readZip :: LBS.ByteString -> Either String (Map FilePath LBS.ByteString)
 readZip rawzip = case Zip.toArchiveOrFail rawzip of
     Left err      -> Left err
     Right archive -> Right $ finishProcessing archive
@@ -76,7 +75,7 @@ extractLogsFromZip numberOfFiles file = do
     let extractedLogs = Map.elems $ Map.take numberOfFiles zipMap        -- Extract selected logs
     return extractedLogs
 
-extractErrorCodes :: Analysis -> [Text]
+extractErrorCodes :: Analysis -> [ Text ]
 extractErrorCodes as = map (\(Knowledge{..}, _) -> toTag kErrorCode) $ Map.toList as
 
 prettyFormatAnalysis :: Analysis -> LT.Text
