@@ -26,6 +26,10 @@ import           GHC.Stack                (HasCallStack)
 import           LogAnalysis.Types        (Analysis, Knowledge (..), ErrorCode, toTag)
 import           Util                     (tshow)
 
+-- | Number of error texts it should show
+numberOfErrorText :: Int
+numberOfErrorText = 3
+
 -- | Analyze each log file based on the knowlodgebases' data.
 extractIssuesFromLogs :: [LBS.ByteString] -> Analysis -> Either String Analysis
 extractIssuesFromLogs files analysis = filterAnalysis $ foldl' runClassifiers analysis files
@@ -53,7 +57,7 @@ filterAnalysis as = do
     let filteredAnalysis = Map.filter (/=[]) as
     if null filteredAnalysis
       then Left "Cannot find any known issues"
-      else return $ Map.map (take 3) filteredAnalysis
+      else return $ Map.map (take numberOfErrorText) filteredAnalysis
 
 readZip :: HasCallStack => LBS.ByteString -> Either String (Map FilePath LBS.ByteString)
 readZip rawzip = case Zip.toArchiveOrFail rawzip of
