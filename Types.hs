@@ -1,6 +1,18 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Types where
+module Types
+    ( Comment(..)
+    , CommentOuter(..)
+    , Attachment(..)
+    , Ticket(..)
+    , TicketList(..)
+    , TicketId
+    , TicketInfo(..)
+    , TicketStatus(..)
+    , parseAgentId
+    , parseComments
+    , parseTickets
+    ) where
 
 import           Data.Aeson
 import           Data.Aeson.Types (Parser)
@@ -8,51 +20,51 @@ import           Data.Text        (Text)
 
 -- | Comments
 data Comment = Comment
-  { commentBody        :: Text
-  , commentAttachments :: [Attachment]
-  , commentPublic      :: Bool
-  , commentAuthor      :: Integer
-  } deriving (Show, Eq)
+    { commentBody        :: Text
+    , commentAttachments :: [Attachment]
+    , commentPublic      :: Bool
+    , commentAuthor      :: Integer
+    } deriving (Show, Eq)
 
 -- | Outer comment ??
 newtype CommentOuter = CommentOuter {
-    coComment :: Comment
-  } deriving (Show, Eq)
+      coComment :: Comment
+    } deriving (Show, Eq)
 
 -- | Attachment of the ticket
 data Attachment = Attachment
-  { attachmentURL         :: Text
-  , attachmentContentType :: Text
-  , attachmentSize        :: Int
-  } deriving (Show, Eq)
+    { attachmentURL         :: Text
+    , attachmentContentType :: Text
+    , attachmentSize        :: Int
+    } deriving (Show, Eq)
 
 -- | Zendexk ticket
-data Ticket = Ticket {
-    ticketComment  :: Comment
-  , ticketAssignee :: Integer
-  , ticketTag      :: [Text]
-  } deriving (Show, Eq)
+data Ticket = Ticket
+    { ticketComment  :: Comment
+    , ticketAssignee :: Integer
+    , ticketTag      :: [Text]
+    } deriving (Show, Eq)
 
 -- | List of zendesk ticket
-data TicketList = TicketList {
-    ticketListTickets :: [ TicketInfo ]
-  , nextPage          :: Maybe Text
-  } deriving (Show, Eq)
+data TicketList = TicketList
+    { ticketListTickets :: [ TicketInfo ]
+    , nextPage          :: Maybe Text
+    } deriving (Show, Eq)
 
 type TicketId = Int
 
 data TicketInfo = TicketInfo
-  { ticketId   :: Int
-  , ticketTags :: [Text]
-  } deriving (Eq)
+    { ticketId   :: Int
+    , ticketTags :: [Text]
+    } deriving (Eq)
 
 instance Show TicketInfo where
   show (TicketInfo tid _) = show tid
 
 -- | Ticket status
 data TicketStatus =
-    AnalyzedByScript
-  | NoKnownIssue
+      AnalyzedByScript
+    | NoKnownIssue
 
 instance Show TicketStatus where
   show AnalyzedByScript = "analyzed-by-script"
@@ -77,8 +89,8 @@ instance FromJSON Attachment where
 
 instance ToJSON Ticket where
   toJSON (Ticket comment assignee tags) =
-    object [ "ticket" .= object 
-             [ "comment" .= comment, "assignee_id" .= assignee, "tags" .= tags] 
+    object [ "ticket" .= object
+             [ "comment" .= comment, "assignee_id" .= assignee, "tags" .= tags]
            ]
 
 instance ToJSON Attachment where

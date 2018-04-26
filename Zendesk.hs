@@ -2,16 +2,22 @@
 {-# LANGUAGE RecordWildCards   #-}
 
 module Main
-  ( Config
-  , defaultConfig
-  , Attachment(..)
-  , TicketId(..)
-  , main
-  ) where
+    ( Config
+    , defaultConfig
+    , Attachment(..)
+    , TicketId(..)
+    , main
+    ) where
 
-import           Data.Attoparsec.Text.Lazy      (parse, eitherResult)
+import           Data.Aeson                     (FromJSON, ToJSON, Value,
+                                                 encode, object, parseJSON,
+                                                 toJSON, withObject, (.:), (.=))
+import           Data.Aeson.Text                (encodeToLazyText)
+import           Data.Aeson.Types               (Parser, parseEither)
+import           Data.Attoparsec.Text.Lazy      (eitherResult, parse)
 import qualified Data.ByteString.Char8          as B8
 import qualified Data.ByteString.Lazy           as BL
+import           Data.Map.Strict                (Map)
 import           Data.Monoid                    ((<>))
 import           Data.Text                      (Text)
 import qualified Data.Text                      as T
@@ -28,36 +34,31 @@ import           Network.HTTP.Simple            (Request, addRequestHeader,
                                                  setRequestPath)
 import           System.Environment             (getArgs)
 
-import           Data.Aeson                     (FromJSON, ToJSON, Value,
-                                                 encode, object, parseJSON,
-                                                 toJSON, withObject, (.:), (.=))
-import           Data.Aeson.Text                (encodeToLazyText)
-import           Data.Aeson.Types               (Parser, parseEither)
-import           Data.Map.Strict                (Map)
-
 import           LogAnalysis.Classifier         (extractErrorCodes,
                                                  extractIssuesFromLogs,
                                                  extractLogsFromZip,
                                                  prettyFormatAnalysis)
 import           LogAnalysis.KnowledgeCSVParser (parseKnowLedgeBase)
 import           LogAnalysis.Types              (ErrorCode (..), Knowledge,
-                                                 setupAnalysis, toTag, toComment)
+                                                 setupAnalysis, toComment,
+                                                 toTag)
 import           Types                          (Attachment (..), Comment (..),
-                                                 CommentOuter (..), Ticket (..), TicketInfo(..),
-                                                 TicketId, TicketList (..),
+                                                 CommentOuter (..), Ticket (..),
+                                                 TicketId, TicketInfo (..),
+                                                 TicketList (..),
                                                  TicketStatus (..),
                                                  parseAgentId, parseComments,
                                                  parseTickets)
 import           Util                           (tshow)
 
 data Config = Config
-              { cfgZendesk            :: Text
-              , cfgToken              :: Text
-              , cfgEmail              :: Text
-              , cfgAssignTo           :: Integer
-              , cfgKnowledgebase      :: [Knowledge]
-              , cfgNumOfLogsToAnalyze :: Int
-              } deriving (Show, Eq)
+    { cfgZendesk            :: Text
+    , cfgToken              :: Text
+    , cfgEmail              :: Text
+    , cfgAssignTo           :: Integer
+    , cfgKnowledgebase      :: [Knowledge]
+    , cfgNumOfLogsToAnalyze :: Int
+    } deriving (Show, Eq)
 
 -- | This scirpt will look through tickets that are assigned by cfgEmail
 defaultConfig :: Config
@@ -157,7 +158,8 @@ processTicketAndId :: Config -> Integer -> TicketId -> IO ()
 processTicketAndId cfg agentId ticketId = do
   comments <- getTicketComments cfg ticketId
   let
-    -- Could implement comment inspection function (although I don't see it useful)
+    -- Filter tickets without logs
+    -- Could analyze the comments but I don't see it useful..
     commentsWithAttachments :: [ Comment ]
     commentsWithAttachments = filter (\x -> length (commentAttachments x) > 0) comments
     -- Filter out ticket without logs
@@ -204,11 +206,11 @@ inspectAttachment num ks att = do
 filterAnalyzedTickets :: [TicketInfo] -> [TicketId]
 filterAnalyzedTickets = foldr (\TicketInfo{..} acc ->
                                 if analyzedIndicatorTag `elem` ticketTags
-                                  then acc
-                                  else ticketId : acc
+                                then acc
+                                else ticketId : acc
                               ) []
 
--- | Return list of ticketIds that has been requested by config user (don't need..?)
+-- | Return list of ticketIds that has been requested by config user (not used)
 listRequestedTicketIds :: Config -> Integer -> IO [TicketInfo]
 listRequestedTicketIds cfg agentId = do
   let req = apiRequest cfg ("/users/" <> tshow agentId <> "/tickets/requested.json")
@@ -278,7 +280,7 @@ apiCall parser req = do
     Left e -> error $ "couldn't parse response "
       <> e <> "\n" <> (T.unpack $ T.decodeUtf8 $ BL.toStrict $ encode v)
 
--- | General apiRequest function
+-- | General api request function
 apiRequest :: Config -> Text -> Request
 apiRequest Config{..} u = setRequestPath (T.encodeUtf8 path) $
                           addRequestHeader "Content-Type" "application/json" $
@@ -289,6 +291,7 @@ apiRequest Config{..} u = setRequestPath (T.encodeUtf8 path) $
   where
     path ="/api/v2/" <> u
 
+-- | Api request but use absolute path
 apiRequestAbsolute :: Config -> Text -> Request
 apiRequestAbsolute Config{..} u = addRequestHeader "Content-Type" "application/json" $
                                   setRequestBasicAuth

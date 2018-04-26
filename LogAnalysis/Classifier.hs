@@ -1,10 +1,9 @@
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards  #-}
+{-# LANGUAGE RecordWildCards   #-}
 
 module LogAnalysis.Classifier
-       (
-         extractIssuesFromLogs
+       ( extractIssuesFromLogs
        , extractLogsFromZip
        , extractErrorCodes
        , prettyFormatAnalysis
@@ -23,7 +22,8 @@ import qualified Data.Text.Lazy           as LT
 import qualified Data.Text.Lazy.Encoding  as LT
 import           GHC.Stack                (HasCallStack)
 
-import           LogAnalysis.Types        (Analysis, Knowledge (..), ErrorCode, toTag)
+import           LogAnalysis.Types        (Analysis, ErrorCode, Knowledge (..),
+                                           toTag)
 import           Util                     (tshow)
 
 -- | Number of error texts it should show
@@ -80,13 +80,14 @@ extractErrorCodes :: Analysis -> [Text]
 extractErrorCodes as = map (\(Knowledge{..}, _) -> toTag kErrorCode) $ Map.toList as
 
 prettyFormatAnalysis :: Analysis -> LT.Text
-prettyFormatAnalysis as = 
+prettyFormatAnalysis as =
     let aList = Map.toList as
-    in foldr (\(Knowledge{..}, txts) acc -> 
+    in foldr (\(Knowledge{..}, txts) acc ->
          "\n" <> LT.pack (show kErrorCode)
       <> "\n" <> kProblem
       <> "\n **" <> kSolution
-      <> "** \n" <> foldr (\txt ts -> "\n" <> txt <> "\n" <> ts) LT.empty txts -- List errors
-      <> "\n" <> acc 
-      <> "\n\n"        
+      <> "** \n"
+      <> foldr (\txt ts -> "\n" <> txt <> "\n" <> ts) LT.empty txts -- List errors
+      <> "\n" <> acc
+      <> "\n\n"
       ) LT.empty aList

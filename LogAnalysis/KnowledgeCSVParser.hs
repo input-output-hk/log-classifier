@@ -1,8 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module LogAnalysis.KnowledgeCSVParser
-       (
-         parseKnowLedgeBase
+       ( parseKnowLedgeBase
        ) where
 
 import           Control.Applicative

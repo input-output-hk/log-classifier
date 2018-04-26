@@ -2,14 +2,13 @@
 {-# LANGUAGE FlexibleInstances #-}
 
 module LogAnalysis.Types
-       (
-         Analysis
-       , ErrorCode (..)
-       , Knowledge (..)
-       , setupAnalysis
-       , toTag
-       , toComment
-       ) where
+    ( Analysis
+    , ErrorCode (..)
+    , Knowledge (..)
+    , setupAnalysis
+    , toTag
+    , toComment
+    ) where
 
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map

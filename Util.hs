@@ -1,4 +1,6 @@
-module Util where
+module Util
+    ( tshow
+    ) where
 
 import           Data.Text                      (Text)
 import qualified Data.Text                      as T
