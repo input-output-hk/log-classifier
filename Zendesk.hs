@@ -67,10 +67,16 @@ defaultConfig = Config "https://iohk.zendesk.com" "" "daedalus-bug-reports@iohk.
 knowledgebasePath :: FilePath
 knowledgebasePath = "./knowledgebase/knowledge.csv"
 
+tokenPath :: FilePath
+tokenPath = "token"
+
+assignToPath :: FilePath
+assignToPath = "assign_to"
+
 main :: IO ()
 main = do
-  token <- B8.readFile "token"        -- Zendesk token
-  assignto <- B8.readFile "assign_to" -- Select assignee
+  token <- B8.readFile tokenPath        -- Zendesk token
+  assignto <- B8.readFile assignToPath  -- Select assignee
   putStrLn "Reading knowledge base"
   knowledges <- setupKnowledgebaseEnv knowledgebasePath
   putStrLn "Knowledgebase setup complete"
@@ -139,12 +145,12 @@ inspectAttachmentAndPostComment cfg@Config{..} agentId ticketId att = do
   (comment, tags, isPublicComment) <- inspectAttachment cfgNumOfLogsToAnalyze cfgKnowledgebase att
   postTicketComment cfg agentId ticketId comment tags isPublicComment
 
--- | Given number of file of inspect, knowledge and attachment,
+-- | Given number of file of inspect, knowledgebase and attachment,
 -- analyze the logs and return the results.
 --
 -- The results are following:
 --
--- __(comment, tags, bool of wether is should be public comment)__
+-- __(comment, tags, bool of whether is should be public comment)__
 inspectAttachment :: Int -> [Knowledge] -> Attachment -> IO (Text, [Text], Bool)
 inspectAttachment num ks att = do
   rawlog <- getAttachment att   -- Get attachment
