@@ -140,7 +140,7 @@ printTicketCountMessage tickets email = do
   T.putStrLn $ "There are currently " <> tshow ticketCount
                <> " tickets in the system assigned to " <> email
   let filteredTicketCount = length $ filterAnalyzedTickets tickets
-  putStrLn $ show (ticketCount - filteredTicketCount) <> " tickets has been analyzed."
+  putStrLn $ show (ticketCount - filteredTicketCount) <> " tickets has been analyzed by the classifier."
   putStrLn $ show filteredTicketCount <> " tickets are not analyzed."
   putStrLn "Below are statistics:"
   let tagGroups = sortTickets tickets
@@ -150,7 +150,8 @@ printTicketCountMessage tickets email = do
 sortTickets :: [ TicketInfo ] -> [ (Text, Int) ]
 sortTickets ts =
     let extractedTags = foldr (\TicketInfo{..} acc -> ticketTags <> acc) [] ts   -- Extract tags from tickets
-        filteredTags  = filter (`notElem` ["s3", "s2", "cannot-sync", "closed-by-merge"]) extractedTags -- Filter tags
+        filteredTags  = filter (`notElem` ["s3", "s2", "cannot-sync", "closed-by-merge", 
+                                           "web_widget", "analyzed-by-script"]) extractedTags -- Filter tags
         groupByTags :: [ Text ] -> [(Text, Int)]
         groupByTags ts = map (\l@(x:xs) -> (x, length l)) (group $ sort ts)          -- Group them
     in  groupByTags filteredTags
@@ -254,7 +255,7 @@ postTicketComment cfg agentId tid body tags public = do
     req1 = apiRequest cfg ("tickets/" <> tshow tid <> ".json")
     req2 = addJsonBody
              (Ticket
-              (Comment body [] False agentId)
+              (Comment ("**Log classifier**\n\n" <> body) [] False agentId)
               (cfgAssignTo cfg)
               (tshow AnalyzedByScript:tags)
              )
