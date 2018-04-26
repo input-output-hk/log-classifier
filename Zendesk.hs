@@ -19,6 +19,7 @@ import qualified Data.ByteString.Char8          as B8
 import qualified Data.ByteString.Lazy           as BL
 import           Data.Map.Strict                (Map)
 import           Data.Monoid                    ((<>))
+import           Data.List                      (group, sort)
 import           Data.Text                      (Text)
 import qualified Data.Text                      as T
 import qualified Data.Text.Encoding             as T
@@ -97,8 +98,8 @@ main = do
       putStrLn "Process finished, please see the following url"
       putStrLn $ "https://iohk.zendesk.com/agent/tickets/" <> idNumber
     -- Count assigned tickets
-    [ "countAssigned" ] -> do
-      T.putStrLn $  "Classifier is going to count tickets assign to: " <> cfgEmail cfg
+    [ "showStats" ] -> do
+      T.putStrLn $  "Classifier is going to gather ticket information assigned to: " <> cfgEmail cfg
       printWarning
       tickets <- listAssignedTickets cfg agentId
       printTicketCountMessage tickets (cfgEmail cfg)
@@ -107,8 +108,8 @@ main = do
       T.putStrLn $  "Classifier is going to process tickets assign to: " <> cfgEmail cfg
       printWarning
       tickets <- listAssignedTickets cfg agentId
-      printTicketCountMessage tickets (cfgEmail cfg)
       let filteredTicketIds = filterAnalyzedTickets tickets
+      putStrLn $ "There are " <> show (length filteredTicketIds) <> " unanalyzed tickets."
       putStrLn "Processing tickets, this may take hours to finish."
       mapM_ (processTicketAndId cfg agentId) filteredTicketIds
       putStrLn "All the tickets has been processed."
@@ -120,7 +121,7 @@ main = do
       LT.putStrLn res
     _  -> do
       let cmdItem = [ "processTicket <id> : Process single ticket of id"
-                    , "listAssigned       : Print list of ticket Ids that agent has been assigned"
+                    , "showStats          : Print list of ticket Ids that agent has been assigned"
                     , "processTickets     : Process all the tickets i.e add comments, tags. WARNING:" <>
                       "This is really long process, please use with care"
                     , "raw_request <url>  : Request raw request to the given url"]
@@ -138,10 +139,21 @@ printTicketCountMessage tickets email = do
   putStrLn "Done!"
   T.putStrLn $ "There are currently " <> tshow ticketCount
                <> " tickets in the system assigned to " <> email
-  putStrLn "Filtering analyzed tickets.."
   let filteredTicketCount = length $ filterAnalyzedTickets tickets
   putStrLn $ show (ticketCount - filteredTicketCount) <> " tickets has been analyzed."
-  putStrLn $ show filteredTicketCount <> " tickets are not analyzed yet."
+  putStrLn $ show filteredTicketCount <> " tickets are not analyzed."
+  putStrLn "Below are statistics:"
+  let tagGroups = sortTickets tickets
+  mapM_ (\(tag, count) -> T.putStrLn $ tag <> ": " <> tshow count) tagGroups
+
+-- | Sort the ticket so we can see the statistics
+sortTickets :: [ TicketInfo ] -> [ (Text, Int) ]
+sortTickets ts =
+    let extractedTags = foldr (\TicketInfo{..} acc -> ticketTags <> acc) [] ts   -- Extract tags from tickets
+        filteredTags  = filter (`notElem` ["s3", "s2", "cannot-sync", "closed-by-merge"]) extractedTags -- Filter tags
+        groupByTags :: [ Text ] -> [(Text, Int)]
+        groupByTags ts = map (\l@(x:xs) -> (x, length l)) (group $ sort ts)          -- Group them
+    in  groupByTags filteredTags
 
 -- | Read CSV file and setup knowledge base
 setupKnowledgebaseEnv :: FilePath -> IO [ Knowledge ]
