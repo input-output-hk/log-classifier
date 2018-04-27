@@ -18,8 +18,10 @@ tshow = T.pack . show
 extractLogsFromZip :: Int -> LBS.ByteString -> Either String [LBS.ByteString]
 extractLogsFromZip numberOfFiles file = do
     zipMap <- readZip file                             -- Read File
-    let extractedLogs = Map.elems $ Map.take numberOfFiles zipMap        -- Extract selected logs
+    let extractedLogs = Map.elems $ mTake numberOfFiles zipMap        -- Extract selected logs
     return extractedLogs
+  where
+    mTake n = Map.fromDistinctAscList . take n . Map.toAscList
 
 readZip :: LBS.ByteString -> Either String (Map FilePath LBS.ByteString)
 readZip rawzip = case Zip.toArchiveOrFail rawzip of

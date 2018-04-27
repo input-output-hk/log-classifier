@@ -2,9 +2,10 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RecordWildCards   #-}
 
-module Main
-    ( main
-    ) where
+module Zendesk where
+    -- module Main
+    --     ( main
+    --     ) where
 
 import           Control.Monad                  (guard)
 import           Control.Monad.Reader           (ReaderT, ask, runReaderT, MonadReader)
@@ -70,7 +71,8 @@ newtype App a = App (ReaderT Config IO a)
              , Functor
              , Monad
              , MonadReader Config
-             , MonadIO)
+             , MonadIO
+             )
 
 runApp :: App a -> Config -> IO a
 runApp (App a) = runReaderT a
@@ -89,8 +91,8 @@ tokenPath = "token"
 assignToPath :: FilePath
 assignToPath = "assign_to"
 
-main :: IO ()
-main = do
+runZendeskMain :: IO ()
+runZendeskMain = do
     putStrLn "Welcome to Zendesk classifier!"
     token <- B8.readFile tokenPath        -- Zendesk token
     assignto <- B8.readFile assignToPath  -- Select assignee
@@ -170,7 +172,7 @@ printTicketCountMessage tickets email = do
 sortTickets :: [TicketInfo] -> [(Text, Int)]
 sortTickets ts =
     let extractedTags = foldr (\TicketInfo{..} acc -> ticketTags <> acc) [] ts   -- Extract tags from tickets
-        filteredTags  = filter (`notElem` ["s3", "s2", "cannot-sync", "closed-by-merge", 
+        filteredTags  = filter (`notElem` ["s3", "s2", "cannot-sync", "closed-by-merge",
                                            "web_widget", "analyzed-by-script"]) extractedTags -- Filter tags
         groupByTags :: [ Text ] -> [(Text, Int)]
         groupByTags ts = map (\l@(x:xs) -> (x, length l)) (group $ sort ts)          -- Group them
