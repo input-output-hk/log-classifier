@@ -20,10 +20,10 @@ import           Data.Text        (Text)
 
 -- | Comments
 data Comment = Comment
-    { commentBody        :: Text         -- ^ Body of comment
-    , commentAttachments :: [Attachment] -- ^ Attachment
-    , commentPublic      :: Bool         -- ^ Flag of whether comment should be public
-    , commentAuthor      :: Integer      -- ^ Auther of comment
+    { commentBody        :: !Text         -- ^ Body of comment
+    , commentAttachments :: ![Attachment] -- ^ Attachment
+    , commentPublic      :: !Bool         -- ^ Flag of whether comment should be public
+    , commentAuthor      :: !Integer      -- ^ Auther of comment
     } deriving (Show, Eq)
 
 -- | Outer comment ??
@@ -33,29 +33,29 @@ newtype CommentOuter = CommentOuter {
 
 -- | Attachment of the ticket
 data Attachment = Attachment
-    { attachmentURL         :: Text -- ^ URL of the attachment
-    , attachmentContentType :: Text -- ^ ContentType of the attachment
-    , attachmentSize        :: Int  -- ^ Attachment size
+    { attachmentURL         :: !Text -- ^ URL of the attachment
+    , attachmentContentType :: !Text -- ^ ContentType of the attachment
+    , attachmentSize        :: !Int  -- ^ Attachment size
     } deriving (Show, Eq)
 
 -- | Zendexk ticket
 data Ticket = Ticket
-    { ticketComment  :: Comment   -- ^ Ticket comment
-    , ticketAssignee :: Integer   -- ^ Assignee of the ticket
-    , ticketTag      :: [ Text ]  -- ^ Tags attached to ticket
+    { ticketComment  :: !Comment   -- ^ Ticket comment
+    , ticketAssignee :: !Integer   -- ^ Assignee of the ticket
+    , ticketTag      :: ![Text]  -- ^ Tags attached to ticket
     } deriving (Show, Eq)
 
 -- | List of zendesk ticket
 data TicketList = TicketList
-    { ticketListTickets :: [ TicketInfo ] -- ^ Information of tickets
+    { ticketListTickets :: ![TicketInfo] -- ^ Information of tickets
     , nextPage          :: Maybe Text     -- ^ Next page
     } deriving (Show, Eq)
 
 type TicketId = Int
 
 data TicketInfo = TicketInfo
-    { ticketId   :: Int    -- ^ Id of an ticket
-    , ticketTags :: [Text] -- ^ Tags associated with ticket
+    { ticketId   :: !Int    -- ^ Id of an ticket
+    , ticketTags :: ![Text] -- ^ Tags associated with ticket
     } deriving (Eq)
 
 instance Show TicketInfo where
