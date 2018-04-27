@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RecordWildCards   #-}
 
 module Main
@@ -10,6 +11,8 @@ module Main
     ) where
 
 import           Control.Monad                  (guard)
+import           Control.Monad.Reader           (ReaderT, ask, runReaderT, MonadReader)
+import           Control.Monad.IO.Class         (MonadIO, liftIO)
 import           Data.Aeson                     (FromJSON, ToJSON, Value,
                                                  encode, object, parseJSON,
                                                  toJSON, withObject, (.:), (.=))
@@ -66,6 +69,16 @@ data RequestType =
       Requested
     | Assigned
 
+newtype App a = App (ReaderT Config IO a)
+    deriving ( Applicative
+             , Functor
+             , Monad
+             , MonadReader Config
+             , MonadIO)
+
+runApp :: App a -> Config -> IO a
+runApp (App a) = runReaderT a
+
 -- | This scirpt will look through tickets that are assigned by cfgEmail
 defaultConfig :: Config
 defaultConfig = Config "https://iohk.zendesk.com" "" "daedalus-bug-reports@iohk.io" 0 [] 5
@@ -99,25 +112,25 @@ main = do
     -- Process all the tikects that are requested by agent
     [ "extractEmailAddress" ] -> do
       T.putStrLn $  "Classifier is going to extract emails requested by: " <> cfgEmail cfg
-      tickets <- listTickets cfg agentId Requested
+      tickets <- runApp (listTickets agentId Requested) cfg
       putStrLn $ "There are " <> show (length tickets) <> " tickets requested by this user."
       let ticketIds = foldr (\TicketInfo{..} acc -> ticketId : acc) [] tickets
-      mapM_ (extractEmailAddress cfg agentId) ticketIds
+      mapM_ (\tid -> runApp (extractEmailAddress agentId tid) cfg) ticketIds
     -- Process given ticket
     [ "processTicket", idNumber ] -> do
       putStrLn "Processing single ticket"
-      processTicketAndId cfg agentId $ read idNumber
+      runApp (processTicketAndId agentId $ read idNumber) cfg
       putStrLn "Process finished, please see the following url"
       putStrLn $ "https://iohk.zendesk.com/agent/tickets/" <> idNumber
     -- Process all the tickets (WARNING: This is really long process)
     [ "processTickets" ] -> do
       T.putStrLn $  "Classifier is going to process tickets assign to: " <> cfgEmail cfg
       printWarning
-      tickets <- listTickets cfg agentId Assigned
+      tickets <- runApp (listTickets agentId Assigned) cfg
       let filteredTicketIds = filterAnalyzedTickets tickets
       putStrLn $ "There are " <> show (length filteredTicketIds) <> " unanalyzed tickets."
       putStrLn "Processing tickets, this may take hours to finish."
-      mapM_ (processTicketAndId cfg agentId) filteredTicketIds
+      mapM_ (\tid -> runApp (processTicketAndId agentId tid) cfg) filteredTicketIds
       putStrLn "All the tickets has been processed."
     -- Return raw request
     [ "raw_request", url ] -> do
@@ -129,7 +142,7 @@ main = do
     [ "showStats" ] -> do
       T.putStrLn $  "Classifier is going to gather ticket information assigned to: " <> cfgEmail cfg
       printWarning
-      tickets <- listTickets cfg agentId Assigned
+      tickets <- runApp (listTickets agentId Assigned) cfg
       printTicketCountMessage tickets (cfgEmail cfg)
     _  -> do
       let cmdItem = [ "extractEmailAddress : Collect emails requested by single user"
@@ -179,19 +192,19 @@ setupKnowledgebaseEnv path = do
         Right ks -> return ks
 
 -- | Collect email
-extractEmailAddress :: Config -> Integer -> TicketId -> IO ()
-extractEmailAddress cfg agentId ticketId = do
-  comments <- getTicketComments cfg ticketId
+extractEmailAddress :: Integer -> TicketId -> App ()
+extractEmailAddress agentId ticketId = do
+  comments <- getTicketComments ticketId
   let commentWithEmail = commentBody $ head comments
       emailAddress = head $ T.lines commentWithEmail
-  guard ("@" `T.isInfixOf` emailAddress)
-  T.appendFile "emailAddress.txt" (emailAddress <> "\n")
-  T.putStrLn emailAddress
+  liftIO $ guard ("@" `T.isInfixOf` emailAddress)
+  liftIO $ T.appendFile "emailAddress.txt" (emailAddress <> "\n")
+  liftIO $ T.putStrLn emailAddress
 
 -- | Process specifig ticket id (can be used for testing) only inspects the one's with logs
-processTicketAndId :: Config -> Integer -> TicketId -> IO ()
-processTicketAndId cfg agentId ticketId = do
-  comments <- getTicketComments cfg ticketId
+processTicketAndId :: Integer -> TicketId -> App ()
+processTicketAndId agentId ticketId = do
+  comments <- getTicketComments ticketId
   let
     -- Filter tickets without logs
     -- Could analyze the comments but I don't see it useful..
@@ -201,15 +214,16 @@ processTicketAndId cfg agentId ticketId = do
     attachments :: [ Attachment ]
     attachments = concatMap commentAttachments commentsWithAttachments
     justLogs = filter (\x -> "application/zip" == attachmentContentType x) attachments
-  mapM_ (inspectAttachmentAndPostComment cfg agentId ticketId) justLogs
+  mapM_ (inspectAttachmentAndPostComment agentId ticketId) justLogs
   pure ()
 
 -- | Inspect attachment then post comment to the ticket
-inspectAttachmentAndPostComment :: Config -> Integer -> TicketId -> Attachment -> IO ()
-inspectAttachmentAndPostComment cfg@Config{..} agentId ticketId att = do
-  putStrLn $ "Analyzing ticket id: " <> show ticketId
-  (comment, tags, isPublicComment) <- inspectAttachment cfgNumOfLogsToAnalyze cfgKnowledgebase att
-  postTicketComment cfg agentId ticketId comment tags isPublicComment
+inspectAttachmentAndPostComment :: Integer -> TicketId -> Attachment -> App ()
+inspectAttachmentAndPostComment agentId ticketId att = do
+  Config{..} <- ask
+  liftIO $ putStrLn $ "Analyzing ticket id: " <> show ticketId
+  (comment, tags, isPublicComment) <- liftIO $ inspectAttachment cfgNumOfLogsToAnalyze cfgKnowledgebase att
+  postTicketComment agentId ticketId comment tags isPublicComment
 
 -- | Given number of file of inspect, knowledgebase and attachment,
 -- analyze the logs and return the results.
@@ -247,8 +261,9 @@ filterAnalyzedTickets = foldr (\TicketInfo{..} acc ->
                               ) []
 
 -- | Return list of ticketIds that has been requested by config user (not used)
-listTickets :: Config -> Integer -> RequestType ->  IO [ TicketInfo ]
-listTickets cfg agentId request = do
+listTickets :: Integer -> RequestType ->  App [ TicketInfo ]
+listTickets agentId request = do
+  cfg <- ask
   let url = case request of
                 Requested -> "/users/" <> tshow agentId <> "/tickets/requested.json"
                 Assigned  -> "/users/" <> tshow agentId <> "/tickets/assigned.json"
@@ -261,14 +276,15 @@ listTickets cfg agentId request = do
           Just url -> go (list <> pagen) url
           Nothing  -> pure (list <> pagen)
 
-  (TicketList page0 nextPage) <- apiCall parseTickets req
+  (TicketList page0 nextPage) <- liftIO $ apiCall parseTickets req
   case nextPage of
-    Just url -> go page0 url
+    Just url -> liftIO $ go page0 url
     Nothing  -> pure page0
 
 -- | Send API request to post comment
-postTicketComment :: Config -> Integer -> TicketId -> Text -> [ Text ] -> Bool -> IO ()
-postTicketComment cfg agentId tid body tags public = do
+postTicketComment :: Integer -> TicketId -> Text -> [ Text ] -> Bool -> App ()
+postTicketComment agentId tid body tags public = do
+  cfg <- ask
   let
     req1 = apiRequest cfg ("tickets/" <> tshow tid <> ".json")
     req2 = addJsonBody
@@ -278,7 +294,7 @@ postTicketComment cfg agentId tid body tags public = do
               (tshow AnalyzedByScript:tags)
              )
              req1
-  v <- apiCall (pure . encodeToLazyText) req2
+  v <- liftIO $ apiCall (pure . encodeToLazyText) req2
   pure ()
 
 -- | Get agent id that has been set on Config
@@ -293,10 +309,11 @@ getAttachment Attachment{..} = getResponseBody <$> httpLBS req
   where req = parseRequest_ (T.unpack attachmentURL)
 
 -- | Get ticket's comments
-getTicketComments :: Config -> TicketId -> IO [ Comment ]
-getTicketComments cfg tid = do
+getTicketComments :: TicketId -> App [ Comment ]
+getTicketComments tid = do
+  cfg <- ask
   let req = apiRequest cfg ("tickets/" <> tshow tid <> "/comments.json")
-  apiCall parseComments req
+  liftIO $ apiCall parseComments req
 
 -- | Request PUT
 addJsonBody :: ToJSON a => a -> Request -> Request
