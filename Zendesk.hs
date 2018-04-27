@@ -57,7 +57,8 @@ import           Types                          (Attachment (..), Comment (..),
 import           Util                           (tshow)
 
 data Config = Config
-    { cfgZendesk            :: Text
+    { cfgAgentId            :: Integer
+    , cfgZendesk            :: Text
     , cfgToken              :: Text
     , cfgEmail              :: Text
     , cfgAssignTo           :: Integer
@@ -81,7 +82,7 @@ runApp (App a) = runReaderT a
 
 -- | This scirpt will look through tickets that are assigned by cfgEmail
 defaultConfig :: Config
-defaultConfig = Config "https://iohk.zendesk.com" "" "daedalus-bug-reports@iohk.io" 0 [] 5
+defaultConfig = Config 0 "https://iohk.zendesk.com" "" "daedalus-bug-reports@iohk.io" 0 [] 5
 
 -- | Path to knowledgebase
 knowledgebasePath :: FilePath
@@ -93,44 +94,42 @@ tokenPath = "token"
 assignToPath :: FilePath
 assignToPath = "assign_to"
 
-analyzedIndicatorTag :: Text
-analyzedIndicatorTag = tshow AnalyzedByScript
-
 main :: IO ()
 main = do
   putStrLn "Welcome to Zendesk classifier!"
   token <- B8.readFile tokenPath        -- Zendesk token
   assignto <- B8.readFile assignToPath  -- Select assignee
   knowledges <- setupKnowledgebaseEnv knowledgebasePath
-  let cfg = defaultConfig { cfgToken = T.stripEnd $ T.decodeUtf8 token
+  let cfg' = defaultConfig { cfgToken = T.stripEnd $ T.decodeUtf8 token
                           , cfgAssignTo = read $ T.unpack $ T.decodeUtf8 assignto
                           , cfgKnowledgebase = knowledges
                           }
-  agentId <- getAgentId cfg
+  agentId <- runApp getAgentId cfg'
+  let cfg = cfg' { cfgAgentId = agentId }
   args <- getArgs
   case args of
     -- Process all the tikects that are requested by agent
     [ "extractEmailAddress" ] -> do
       T.putStrLn $  "Classifier is going to extract emails requested by: " <> cfgEmail cfg
-      tickets <- runApp (listTickets agentId Requested) cfg
+      tickets <- runApp (listTickets Requested) cfg
       putStrLn $ "There are " <> show (length tickets) <> " tickets requested by this user."
       let ticketIds = foldr (\TicketInfo{..} acc -> ticketId : acc) [] tickets
-      mapM_ (\tid -> runApp (extractEmailAddress agentId tid) cfg) ticketIds
+      mapM_ (\tid -> runApp (extractEmailAddress tid) cfg) ticketIds
     -- Process given ticket
-    [ "processTicket", idNumber ] -> do
+    [ "processTicket", ticketId ] -> do
       putStrLn "Processing single ticket"
-      runApp (processTicketAndId agentId $ read idNumber) cfg
+      runApp (processTicketAndId $ read ticketId) cfg
       putStrLn "Process finished, please see the following url"
-      putStrLn $ "https://iohk.zendesk.com/agent/tickets/" <> idNumber
+      putStrLn $ "https://iohk.zendesk.com/agent/tickets/" <> ticketId
     -- Process all the tickets (WARNING: This is really long process)
     [ "processTickets" ] -> do
       T.putStrLn $  "Classifier is going to process tickets assign to: " <> cfgEmail cfg
       printWarning
-      tickets <- runApp (listTickets agentId Assigned) cfg
+      tickets <- runApp (listTickets Assigned) cfg
       let filteredTicketIds = filterAnalyzedTickets tickets
       putStrLn $ "There are " <> show (length filteredTicketIds) <> " unanalyzed tickets."
       putStrLn "Processing tickets, this may take hours to finish."
-      mapM_ (\tid -> runApp (processTicketAndId agentId tid) cfg) filteredTicketIds
+      mapM_ (\tid -> runApp (processTicketAndId tid) cfg) filteredTicketIds
       putStrLn "All the tickets has been processed."
     -- Return raw request
     [ "raw_request", url ] -> do
@@ -142,7 +141,7 @@ main = do
     [ "showStats" ] -> do
       T.putStrLn $  "Classifier is going to gather ticket information assigned to: " <> cfgEmail cfg
       printWarning
-      tickets <- runApp (listTickets agentId Assigned) cfg
+      tickets <- runApp (listTickets Assigned) cfg
       printTicketCountMessage tickets (cfgEmail cfg)
     _  -> do
       let cmdItem = [ "extractEmailAddress : Collect emails requested by single user"
@@ -192,8 +191,8 @@ setupKnowledgebaseEnv path = do
         Right ks -> return ks
 
 -- | Collect email
-extractEmailAddress :: Integer -> TicketId -> App ()
-extractEmailAddress agentId ticketId = do
+extractEmailAddress :: TicketId -> App ()
+extractEmailAddress ticketId = do
   comments <- getTicketComments ticketId
   let commentWithEmail = commentBody $ head comments
       emailAddress = head $ T.lines commentWithEmail
@@ -202,8 +201,8 @@ extractEmailAddress agentId ticketId = do
   liftIO $ T.putStrLn emailAddress
 
 -- | Process specifig ticket id (can be used for testing) only inspects the one's with logs
-processTicketAndId :: Integer -> TicketId -> App ()
-processTicketAndId agentId ticketId = do
+processTicketAndId :: TicketId -> App ()
+processTicketAndId ticketId = do
   comments <- getTicketComments ticketId
   let
     -- Filter tickets without logs
@@ -214,16 +213,19 @@ processTicketAndId agentId ticketId = do
     attachments :: [ Attachment ]
     attachments = concatMap commentAttachments commentsWithAttachments
     justLogs = filter (\x -> "application/zip" == attachmentContentType x) attachments
-  mapM_ (inspectAttachmentAndPostComment agentId ticketId) justLogs
+  mapM_ (inspectAttachmentAndPostComment ticketId) justLogs
   pure ()
 
 -- | Inspect attachment then post comment to the ticket
-inspectAttachmentAndPostComment :: Integer -> TicketId -> Attachment -> App ()
-inspectAttachmentAndPostComment agentId ticketId att = do
+inspectAttachmentAndPostComment :: TicketId -> Attachment -> App ()
+inspectAttachmentAndPostComment ticketId att = do
   Config{..} <- ask
   liftIO $ putStrLn $ "Analyzing ticket id: " <> show ticketId
-  (comment, tags, isPublicComment) <- liftIO $ inspectAttachment cfgNumOfLogsToAnalyze cfgKnowledgebase att
-  postTicketComment agentId ticketId comment tags isPublicComment
+  (comment, tags, isPublicComment) <- liftIO $ inspectAttachment
+                                                 cfgNumOfLogsToAnalyze
+                                                 cfgKnowledgebase
+                                                 att
+  postTicketComment ticketId comment tags isPublicComment
 
 -- | Given number of file of inspect, knowledgebase and attachment,
 -- analyze the logs and return the results.
@@ -259,12 +261,15 @@ filterAnalyzedTickets = foldr (\TicketInfo{..} acc ->
                                 then acc
                                 else ticketId : acc
                               ) []
+  where analyzedIndicatorTag :: Text
+        analyzedIndicatorTag = tshow AnalyzedByScript
 
 -- | Return list of ticketIds that has been requested by config user (not used)
-listTickets :: Integer -> RequestType ->  App [ TicketInfo ]
-listTickets agentId request = do
+listTickets :: RequestType ->  App [ TicketInfo ]
+listTickets request = do
   cfg <- ask
-  let url = case request of
+  let agentId = cfgAgentId cfg
+      url = case request of
                 Requested -> "/users/" <> tshow agentId <> "/tickets/requested.json"
                 Assigned  -> "/users/" <> tshow agentId <> "/tickets/assigned.json"
       req = apiRequest cfg url
@@ -282,14 +287,14 @@ listTickets agentId request = do
     Nothing  -> pure page0
 
 -- | Send API request to post comment
-postTicketComment :: Integer -> TicketId -> Text -> [ Text ] -> Bool -> App ()
-postTicketComment agentId tid body tags public = do
+postTicketComment :: TicketId -> Text -> [ Text ] -> Bool -> App ()
+postTicketComment tid body tags public = do
   cfg <- ask
   let
     req1 = apiRequest cfg ("tickets/" <> tshow tid <> ".json")
     req2 = addJsonBody
              (Ticket
-              (Comment ("**Log classifier**\n\n" <> body) [] False agentId)
+              (Comment ("**Log classifier**\n\n" <> body) [] False (cfgAgentId cfg))
               (cfgAssignTo cfg)
               (tshow AnalyzedByScript:tags)
              )
@@ -298,10 +303,11 @@ postTicketComment agentId tid body tags public = do
   pure ()
 
 -- | Get agent id that has been set on Config
-getAgentId :: Config -> IO Integer
-getAgentId cfg = do
+getAgentId :: App Integer
+getAgentId = do
+  cfg <- ask
   let req = apiRequest cfg "users/me.json"
-  apiCall parseAgentId req
+  liftIO $ apiCall parseAgentId req
 
 -- | Given attachmentUrl, return attachment in bytestring
 getAttachment :: Attachment -> IO BL.ByteString
