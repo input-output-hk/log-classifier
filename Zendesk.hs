@@ -9,6 +9,7 @@ module Main
     , main
     ) where
 
+import           Control.Monad                  (guard)
 import           Data.Aeson                     (FromJSON, ToJSON, Value,
                                                  encode, object, parseJSON,
                                                  toJSON, withObject, (.:), (.=))
@@ -61,6 +62,10 @@ data Config = Config
     , cfgNumOfLogsToAnalyze :: Int
     } deriving (Show, Eq)
 
+data RequestType =
+      Requested
+    | Assigned
+
 -- | This scirpt will look through tickets that are assigned by cfgEmail
 defaultConfig :: Config
 defaultConfig = Config "https://iohk.zendesk.com" "" "daedalus-bug-reports@iohk.io" 0 [] 5
@@ -91,23 +96,24 @@ main = do
   agentId <- getAgentId cfg
   args <- getArgs
   case args of
+    -- Process all the tikects that are requested by agent
+    [ "extractEmailAddress" ] -> do
+      T.putStrLn $  "Classifier is going to extract emails requested by: " <> cfgEmail cfg
+      tickets <- listTickets cfg agentId Requested
+      putStrLn $ "There are " <> show (length tickets) <> " tickets requested by this user."
+      let ticketIds = foldr (\TicketInfo{..} acc -> ticketId : acc) [] tickets
+      mapM_ (extractEmailAddress cfg agentId) ticketIds
     -- Process given ticket
     [ "processTicket", idNumber ] -> do
       putStrLn "Processing single ticket"
       processTicketAndId cfg agentId $ read idNumber
       putStrLn "Process finished, please see the following url"
       putStrLn $ "https://iohk.zendesk.com/agent/tickets/" <> idNumber
-    -- Count assigned tickets
-    [ "showStats" ] -> do
-      T.putStrLn $  "Classifier is going to gather ticket information assigned to: " <> cfgEmail cfg
-      printWarning
-      tickets <- listAssignedTickets cfg agentId
-      printTicketCountMessage tickets (cfgEmail cfg)
     -- Process all the tickets (WARNING: This is really long process)
     [ "processTickets" ] -> do
       T.putStrLn $  "Classifier is going to process tickets assign to: " <> cfgEmail cfg
       printWarning
-      tickets <- listAssignedTickets cfg agentId
+      tickets <- listTickets cfg agentId Assigned
       let filteredTicketIds = filterAnalyzedTickets tickets
       putStrLn $ "There are " <> show (length filteredTicketIds) <> " unanalyzed tickets."
       putStrLn "Processing tickets, this may take hours to finish."
@@ -119,12 +125,19 @@ main = do
         req = apiRequest cfg (T.pack url)
       res <- apiCall (pure . encodeToLazyText)  req
       LT.putStrLn res
+    -- Count assigned tickets
+    [ "showStats" ] -> do
+      T.putStrLn $  "Classifier is going to gather ticket information assigned to: " <> cfgEmail cfg
+      printWarning
+      tickets <- listTickets cfg agentId Assigned
+      printTicketCountMessage tickets (cfgEmail cfg)
     _  -> do
-      let cmdItem = [ "processTicket <id> : Process single ticket of id"
-                    , "showStats          : Print list of ticket Ids that agent has been assigned"
-                    , "processTickets     : Process all the tickets i.e add comments, tags. WARNING:" <>
+      let cmdItem = [ "extractEmailAddress : Collect emails requested by single user"
+                    , "processTicket <id>  : Process single ticket of id"
+                    , "processTickets      : Process all the tickets i.e add comments, tags. WARNING:" <>
                       "This is really long process, please use with care"
-                    , "raw_request <url>  : Request raw request to the given url"]
+                    , "raw_request <url>   : Request raw request to the given url"
+                    , "showStats           : Print list of ticket Ids that agent has been assigned"]
       putStrLn "Invalid argument, please add following argument to run the command:"
       mapM_ putStrLn cmdItem
 
@@ -164,6 +177,16 @@ setupKnowledgebaseEnv path = do
     case eitherResult kb of
         Left e   -> error e
         Right ks -> return ks
+
+-- | Collect email
+extractEmailAddress :: Config -> Integer -> TicketId -> IO ()
+extractEmailAddress cfg agentId ticketId = do
+  comments <- getTicketComments cfg ticketId
+  let commentWithEmail = commentBody $ head comments
+      emailAddress = head $ T.lines commentWithEmail
+  guard ("@" `T.isInfixOf` emailAddress)
+  T.appendFile "emailAddress.txt" (emailAddress <> "\n")
+  T.putStrLn emailAddress
 
 -- | Process specifig ticket id (can be used for testing) only inspects the one's with logs
 processTicketAndId :: Config -> Integer -> TicketId -> IO ()
@@ -224,24 +247,19 @@ filterAnalyzedTickets = foldr (\TicketInfo{..} acc ->
                               ) []
 
 -- | Return list of ticketIds that has been requested by config user (not used)
-listRequestedTicketIds :: Config -> Integer -> IO [ TicketInfo ]
-listRequestedTicketIds cfg agentId = do
-  let req = apiRequest cfg ("/users/" <> tshow agentId <> "/tickets/requested.json")
-  (TicketList page0 nextPage) <- apiCall parseTickets req
-  pure page0
-
--- | Return list of ticketIds that has been assigned to config user
-listAssignedTickets :: Config -> Integer ->  IO [ TicketInfo ]
-listAssignedTickets cfg agentId = do
-  let
-    req = apiRequest cfg ("/users/" <> tshow agentId <> "/tickets/assigned.json")
-    go :: [ TicketInfo ] -> Text -> IO [ TicketInfo ]
-    go list nextPage' = do
-      let req' = apiRequestAbsolute cfg nextPage'
-      (TicketList pagen nextPagen) <- apiCall parseTickets req'
-      case nextPagen of
-        Just url -> go (list <> pagen) url
-        Nothing  -> pure (list <> pagen)
+listTickets :: Config -> Integer -> RequestType ->  IO [ TicketInfo ]
+listTickets cfg agentId request = do
+  let url = case request of
+                Requested -> "/users/" <> tshow agentId <> "/tickets/requested.json"
+                Assigned  -> "/users/" <> tshow agentId <> "/tickets/assigned.json"
+      req = apiRequest cfg url
+      go :: [ TicketInfo ] -> Text -> IO [ TicketInfo ]
+      go list nextPage' = do
+        let req' = apiRequestAbsolute cfg nextPage'
+        (TicketList pagen nextPagen) <- apiCall parseTickets req'
+        case nextPagen of
+          Just url -> go (list <> pagen) url
+          Nothing  -> pure (list <> pagen)
 
   (TicketList page0 nextPage) <- apiCall parseTickets req
   case nextPage of
