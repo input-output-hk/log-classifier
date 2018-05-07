@@ -2,7 +2,6 @@
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes        #-}
-{-# LANGUAGE RecordWildCards   #-}
 
 -- Currenty not used..
 module Classify (classifyZip, ErrorCode(..), ErrorName, postProcessError, ConfirmedError(..)) where
@@ -140,17 +139,14 @@ classifyZip rawzip = do
               $ compileBehavior behaviorList
   case zipmap' of
     Left err -> pure $ Left err
-    Right zipmap -> do
-      result <- classifyLogs behavior zipmap
-      pure $ Right result
+    Right zipmap -> Right <$> classifyLogs behavior zipmap
 
 isStaleLockFile :: Map FilePath [(ErrorName, ErrorCode)] -> Maybe LT.Text
-isStaleLockFile map = Map.foldl' checkFile Nothing map
+isStaleLockFile = Map.foldl' checkFile Nothing
   where
     checkFile :: Maybe LT.Text -> [(ErrorName, ErrorCode)] -> Maybe LT.Text
-    checkFile state list = foldl' isStale state list
+    checkFile = foldl' isStale
       where
-        matches = foldl' isStale Nothing list
         isStale :: Maybe LT.Text -> (ErrorName, ErrorCode) -> Maybe LT.Text
         isStale (Just x) _ = Just x
         isStale Nothing (_, StateLockFile str) = Just str

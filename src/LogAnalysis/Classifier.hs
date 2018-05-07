@@ -10,18 +10,15 @@ module LogAnalysis.Classifier
 
 import qualified Data.ByteString.Lazy as LBS
 import           Data.List                (foldl')
-import           Data.Map.Strict          (Map)
 import qualified Data.Map.Strict          as Map
 import           Data.Semigroup           ((<>))
 import           Data.Text                (Text)
-import qualified Data.Text                as T
 import           Data.Text.Encoding.Error (ignore)
 import qualified Data.Text.Lazy           as LT
 import qualified Data.Text.Lazy.Encoding  as LT
 
-import           LogAnalysis.Types        (Analysis, ErrorCode, Knowledge (..),
+import           LogAnalysis.Types        (Analysis, Knowledge (..),
                                            toTag)
-import           Util                     (tshow)
 
 -- | Number of error texts it should show
 numberOfErrorText :: Int
