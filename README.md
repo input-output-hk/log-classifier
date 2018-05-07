@@ -11,7 +11,7 @@ The purpose of this project is to analyze tickets that are in the IOHK Zendesk s
 
 ## How it works
 
-![system architecture](https://user-images.githubusercontent.com/15665039/39682475-1ef59a7a-51eb-11e8-8ca3-0632feae1638.png)
+![system architecture](https://user-images.githubusercontent.com/15665039/39685800-efaef634-51ff-11e8-972a-db3e01ca9223.png)
 
 - Many of the Daedalus's issues can be identified by analyzing the log file. Classifier will utilize this by analyzing the log file and map with possible solution and problem which can be provided to the end user.
 - Ticket sent from Daedalus bug report has log file attached. Classifier will analyze the log file that is attached to the ticket. If any known issues where found, it'll then post an comment to that ticket. (See example below)
