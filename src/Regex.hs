@@ -13,19 +13,19 @@ module Regex
 
 -- Not used, but want to use it in the future.
 
-import qualified Data.Array                      as Array
+import qualified Data.Array as Array
 
-import qualified Data.ByteString.Lazy            as LBS
+import qualified Data.ByteString.Lazy as LBS
 
-import qualified Text.Regex.TDFA                 as TDFA
+import qualified Text.Regex.TDFA as TDFA
 import           Text.Regex.TDFA.ByteString.Lazy (Regex)
 import qualified Text.Regex.TDFA.ByteString.Lazy as TDFA
 
-import           Data.Text                       (Text)
-import qualified Data.Text                       as Text
+import           Data.Text (Text)
+import qualified Data.Text as Text
 
-import           Data.Map.Strict                 (Map)
-import qualified Data.Map.Strict                 as Map
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 
 maybeToEither :: e -> Maybe a -> Either e a
 maybeToEither e Nothing  = Left e

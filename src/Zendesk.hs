@@ -1,50 +1,41 @@
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RecordWildCards            #-}
 
-module Zendesk where
+module Zendesk
+    ( runZendeskMain
+    ) where
 
-import           Control.Monad                  (guard, void)
-import           Control.Monad.Reader           (ReaderT, ask, runReaderT, MonadReader)
-import           Control.Monad.IO.Class         (MonadIO, liftIO)
-import           Data.Aeson                     (FromJSON, ToJSON, Value,
-                                                 encode)
-import           Data.Aeson.Text                (encodeToLazyText)
-import           Data.Aeson.Types               (Parser, parseEither)
-import           Data.Attoparsec.Text.Lazy      (eitherResult, parse)
-import qualified Data.ByteString.Char8          as B8
-import qualified Data.ByteString.Lazy           as BL
-import           Data.Monoid                    ((<>))
-import           Data.List                      (group, sort)
-import           Data.Text                      (Text)
-import qualified Data.Text                      as T
-import qualified Data.Text.Encoding             as T
-import qualified Data.Text.IO                   as T
-import qualified Data.Text.Lazy                 as LT
-import qualified Data.Text.Lazy.IO              as LT
-import           Network.HTTP.Simple            (Request, addRequestHeader,
-                                                 getResponseBody, httpJSON,
-                                                 httpLBS, parseRequest_,
-                                                 setRequestBasicAuth,
-                                                 setRequestBodyJSON,
-                                                 setRequestMethod,
-                                                 setRequestPath)
-import           System.Environment             (getArgs)
+import           Control.Monad (guard, void)
+import           Control.Monad.IO.Class (MonadIO, liftIO)
+import           Control.Monad.Reader (MonadReader, ReaderT, ask, runReaderT)
+import           Data.Aeson (FromJSON, ToJSON, Value, encode)
+import           Data.Aeson.Text (encodeToLazyText)
+import           Data.Aeson.Types (Parser, parseEither)
+import           Data.Attoparsec.Text.Lazy (eitherResult, parse)
+import qualified Data.ByteString.Char8 as B8
+import qualified Data.ByteString.Lazy as BL
+import           Data.List (group, sort)
+import           Data.Monoid ((<>))
+import           Data.Text (Text)
+import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
+import qualified Data.Text.IO as T
+import qualified Data.Text.Lazy as LT
+import qualified Data.Text.Lazy.IO as LT
+import           Network.HTTP.Simple (Request, addRequestHeader, getResponseBody, httpJSON, httpLBS,
+                                      parseRequest_, setRequestBasicAuth, setRequestBodyJSON,
+                                      setRequestMethod, setRequestPath)
+import           System.Environment (getArgs)
 
-import           LogAnalysis.Classifier         (extractErrorCodes,
-                                                 extractIssuesFromLogs,
-                                                 prettyFormatAnalysis)
+import           LogAnalysis.Classifier (extractErrorCodes, extractIssuesFromLogs,
+                                         prettyFormatAnalysis)
 import           LogAnalysis.KnowledgeCSVParser (parseKnowLedgeBase)
-import           LogAnalysis.Types              (ErrorCode (..), Knowledge,
-                                                 setupAnalysis, toComment,
-                                                 toTag)
-import           Types                          (Attachment (..), Comment (..), Ticket (..),
-                                                 TicketId, TicketInfo (..),
-                                                 TicketList (..),
-                                                 TicketStatus (..),
-                                                 parseAgentId, parseComments,
-                                                 parseTickets)
-import           Util                           (extractLogsFromZip, tshow)
+import           LogAnalysis.Types (ErrorCode (..), Knowledge, setupAnalysis, toComment, toTag)
+import           Types (Attachment (..), Comment (..), Ticket (..), TicketId, TicketInfo (..),
+                        TicketList (..), TicketStatus (..), parseAgentId, parseComments,
+                        parseTickets)
+import           Util (extractLogsFromZip, tshow)
 
 data Config = Config
     { cfgAgentId            :: !Integer
@@ -80,10 +71,10 @@ knowledgebasePath :: FilePath
 knowledgebasePath = "./knowledgebase/knowledge.csv"
 
 tokenPath :: FilePath
-tokenPath = "token"
+tokenPath = "./tmp-secrets/token"
 
 assignToPath :: FilePath
-assignToPath = "assign_to"
+assignToPath = "./tmp-secrets/assign_to"
 
 runZendeskMain :: IO ()
 runZendeskMain = do
@@ -169,7 +160,7 @@ sortTickets tickets =
         filteredTags  = filter (`notElem` ["s3", "s2", "cannot-sync", "closed-by-merge",
                                            "web_widget", "analyzed-by-script"]) extractedTags -- Filter tags
         groupByTags :: [ Text ] -> [(Text, Int)]
-        groupByTags ts = map (\l@[x] -> (x, length l)) (group $ sort ts)          -- Group them
+        groupByTags ts = map (\l@(x:_) -> (x, length l)) (group $ sort ts)          -- Group them
     in  groupByTags filteredTags
 
 -- | Read CSV file and setup knowledge base
@@ -270,12 +261,12 @@ listTickets request = do
           (TicketList pagen nextPagen) <- apiCall parseTickets req'
           case nextPagen of
             Just nextUrl -> go (list <> pagen) nextUrl
-            Nothing  -> pure (list <> pagen)
+            Nothing      -> pure (list <> pagen)
 
     (TicketList page0 nextPage) <- liftIO $ apiCall parseTickets req
     case nextPage of
       Just nextUrl -> liftIO $ go page0 nextUrl
-      Nothing  -> pure page0
+      Nothing      -> pure page0
 
 -- | Send API request to post comment
 postTicketComment :: TicketId -> Text -> [Text] -> Bool -> App ()

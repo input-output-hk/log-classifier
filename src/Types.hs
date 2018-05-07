@@ -16,7 +16,7 @@ module Types
 
 import           Data.Aeson
 import           Data.Aeson.Types (Parser)
-import           Data.Text        (Text)
+import           Data.Text (Text)
 
 -- | Comments
 data Comment = Comment
@@ -42,13 +42,13 @@ data Attachment = Attachment
 data Ticket = Ticket
     { ticketComment  :: !Comment   -- ^ Ticket comment
     , ticketAssignee :: !Integer   -- ^ Assignee of the ticket
-    , ticketTag      :: ![Text]  -- ^ Tags attached to ticket
+    , ticketTag      :: ![Text]    -- ^ Tags attached to ticket
     } deriving (Show, Eq)
 
 -- | List of zendesk ticket
 data TicketList = TicketList
     { ticketListTickets :: ![TicketInfo] -- ^ Information of tickets
-    , nextPage          :: Maybe Text     -- ^ Next page
+    , nextPage          :: Maybe Text    -- ^ Next page
     } deriving (Show, Eq)
 
 type TicketId = Int
