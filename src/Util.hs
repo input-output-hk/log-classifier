@@ -4,12 +4,12 @@ module Util
     , readZip
     ) where
 
-import qualified Codec.Archive.Zip    as Zip
+import qualified Codec.Archive.Zip as Zip
 import qualified Data.ByteString.Lazy as LBS
-import           Data.Map.Strict      (Map)
-import qualified Data.Map.Strict      as Map
-import           Data.Text            (Text)
-import qualified Data.Text            as T
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
+import           Data.Text (Text)
+import qualified Data.Text as T
 
 tshow :: Show a => a -> Text
 tshow = T.pack . show

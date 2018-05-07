@@ -1,6 +1,6 @@
 module Main where
 
-import Zendesk
+import Zendesk (runZendeskMain)
 
 main :: IO ()
 main = runZendeskMain

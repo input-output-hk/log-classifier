@@ -1,56 +1,41 @@
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RecordWildCards            #-}
 
-module Zendesk where
-    -- module Main
-    --     ( main
-    --     ) where
+module Zendesk
+    ( runZendeskMain
+    ) where
 
-import           Control.Monad                  (guard)
-import           Control.Monad.Reader           (ReaderT, ask, runReaderT, MonadReader)
-import           Control.Monad.IO.Class         (MonadIO, liftIO)
-import           Data.Aeson                     (FromJSON, ToJSON, Value,
-                                                 encode, object, parseJSON,
-                                                 toJSON, withObject, (.:), (.=))
-import           Data.Aeson.Text                (encodeToLazyText)
-import           Data.Aeson.Types               (Parser, parseEither)
-import           Data.Attoparsec.Text.Lazy      (eitherResult, parse)
-import qualified Data.ByteString.Char8          as B8
-import qualified Data.ByteString.Lazy           as BL
-import           Data.Map.Strict                (Map)
-import           Data.Monoid                    ((<>))
-import           Data.List                      (group, sort)
-import           Data.Text                      (Text)
-import qualified Data.Text                      as T
-import qualified Data.Text.Encoding             as T
-import qualified Data.Text.IO                   as T
-import qualified Data.Text.Lazy                 as LT
-import qualified Data.Text.Lazy.IO              as LT
-import           Network.HTTP.Simple            (Request, addRequestHeader,
-                                                 getResponseBody, httpJSON,
-                                                 httpLBS, parseRequest_,
-                                                 setRequestBasicAuth,
-                                                 setRequestBodyJSON,
-                                                 setRequestMethod,
-                                                 setRequestPath)
-import           System.Environment             (getArgs)
+import           Control.Monad (guard, void)
+import           Control.Monad.IO.Class (MonadIO, liftIO)
+import           Control.Monad.Reader (MonadReader, ReaderT, ask, runReaderT)
+import           Data.Aeson (FromJSON, ToJSON, Value, encode)
+import           Data.Aeson.Text (encodeToLazyText)
+import           Data.Aeson.Types (Parser, parseEither)
+import           Data.Attoparsec.Text.Lazy (eitherResult, parse)
+import qualified Data.ByteString.Char8 as B8
+import qualified Data.ByteString.Lazy as BL
+import           Data.List (group, sort)
+import           Data.Monoid ((<>))
+import           Data.Text (Text)
+import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
+import qualified Data.Text.IO as T
+import qualified Data.Text.Lazy as LT
+import qualified Data.Text.Lazy.IO as LT
+import           Network.HTTP.Simple (Request, addRequestHeader, getResponseBody, httpJSON, httpLBS,
+                                      parseRequest_, setRequestBasicAuth, setRequestBodyJSON,
+                                      setRequestMethod, setRequestPath)
+import           System.Environment (getArgs)
 
-import           LogAnalysis.Classifier         (extractErrorCodes,
-                                                 extractIssuesFromLogs,
-                                                 prettyFormatAnalysis)
+import           LogAnalysis.Classifier (extractErrorCodes, extractIssuesFromLogs,
+                                         prettyFormatAnalysis)
 import           LogAnalysis.KnowledgeCSVParser (parseKnowLedgeBase)
-import           LogAnalysis.Types              (ErrorCode (..), Knowledge,
-                                                 setupAnalysis, toComment,
-                                                 toTag)
-import           Types                          (Attachment (..), Comment (..),
-                                                 CommentOuter (..), Ticket (..),
-                                                 TicketId, TicketInfo (..),
-                                                 TicketList (..),
-                                                 TicketStatus (..),
-                                                 parseAgentId, parseComments,
-                                                 parseTickets)
-import           Util                           (extractLogsFromZip, tshow)
+import           LogAnalysis.Types (ErrorCode (..), Knowledge, setupAnalysis, toComment, toTag)
+import           Types (Attachment (..), Comment (..), Ticket (..), TicketId, TicketInfo (..),
+                        TicketList (..), TicketStatus (..), parseAgentId, parseComments,
+                        parseTickets)
+import           Util (extractLogsFromZip, tshow)
 
 data Config = Config
     { cfgAgentId            :: !Integer
@@ -86,10 +71,10 @@ knowledgebasePath :: FilePath
 knowledgebasePath = "./knowledgebase/knowledge.csv"
 
 tokenPath :: FilePath
-tokenPath = "token"
+tokenPath = "./tmp-secrets/token"
 
 assignToPath :: FilePath
-assignToPath = "assign_to"
+assignToPath = "./tmp-secrets/assign_to"
 
 runZendeskMain :: IO ()
 runZendeskMain = do
@@ -170,12 +155,12 @@ printTicketCountMessage tickets email = do
 
 -- | Sort the ticket so we can see the statistics
 sortTickets :: [TicketInfo] -> [(Text, Int)]
-sortTickets ts =
-    let extractedTags = foldr (\TicketInfo{..} acc -> ticketTags <> acc) [] ts   -- Extract tags from tickets
+sortTickets tickets =
+    let extractedTags = foldr (\TicketInfo{..} acc -> ticketTags <> acc) [] tickets   -- Extract tags from tickets
         filteredTags  = filter (`notElem` ["s3", "s2", "cannot-sync", "closed-by-merge",
                                            "web_widget", "analyzed-by-script"]) extractedTags -- Filter tags
         groupByTags :: [ Text ] -> [(Text, Int)]
-        groupByTags ts = map (\l@(x:xs) -> (x, length l)) (group $ sort ts)          -- Group them
+        groupByTags ts = map (\l@(x:_) -> (x, length l)) (group $ sort ts)          -- Group them
     in  groupByTags filteredTags
 
 -- | Read CSV file and setup knowledge base
@@ -235,8 +220,8 @@ inspectAttachment num ks att = do
     rawlog <- getAttachment att   -- Get attachment
     let results = extractLogsFromZip num rawlog
     case results of
-      Left error -> do
-        putStrLn "Error parsing zip"
+      Left err -> do
+        putStrLn $ "Error parsing zip:" <> err
         return (toComment SentLogCorrupted , [toTag SentLogCorrupted], False)
       Right result -> do
         let analysisEnv = setupAnalysis ks
@@ -247,9 +232,9 @@ inspectAttachment num ks att = do
             let commentRes = prettyFormatAnalysis analysisResult
             mapM_ T.putStrLn errorCodes
             return (LT.toStrict commentRes, errorCodes, False)
-          Left result -> do
-            putStrLn result
-            return (LT.toStrict (LT.pack result), [tshow NoKnownIssue], False)
+          Left noResult -> do
+            putStrLn noResult
+            return (LT.toStrict (LT.pack noResult), [tshow NoKnownIssue], False)
 
 -- | Filter analyzed tickets
 filterAnalyzedTickets :: [TicketInfo] -> [TicketId]
@@ -275,13 +260,13 @@ listTickets request = do
           let req' = apiRequestAbsolute cfg nextPage'
           (TicketList pagen nextPagen) <- apiCall parseTickets req'
           case nextPagen of
-            Just url -> go (list <> pagen) url
-            Nothing  -> pure (list <> pagen)
+            Just nextUrl -> go (list <> pagen) nextUrl
+            Nothing      -> pure (list <> pagen)
 
     (TicketList page0 nextPage) <- liftIO $ apiCall parseTickets req
     case nextPage of
-      Just url -> liftIO $ go page0 url
-      Nothing  -> pure page0
+      Just nextUrl -> liftIO $ go page0 nextUrl
+      Nothing      -> pure page0
 
 -- | Send API request to post comment
 postTicketComment :: TicketId -> Text -> [Text] -> Bool -> App ()
@@ -291,13 +276,12 @@ postTicketComment tid body tags public = do
       req1 = apiRequest cfg ("tickets/" <> tshow tid <> ".json")
       req2 = addJsonBody
               (Ticket
-                (Comment ("**Log classifier**\n\n" <> body) [] False (cfgAgentId cfg))
+                (Comment ("**Log classifier**\n\n" <> body) [] public (cfgAgentId cfg))
                 (cfgAssignTo cfg)
                 (tshow AnalyzedByScript:tags)
               )
               req1
-    v <- liftIO $ apiCall (pure . encodeToLazyText) req2
-    pure ()
+    void $ liftIO $ apiCall (pure . encodeToLazyText) req2
 
 -- | Get agent id that has been set on Config
 getAgentId :: App Integer

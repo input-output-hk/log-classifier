@@ -6,11 +6,11 @@ module LogAnalysis.KnowledgeCSVParser
 
 import           Control.Applicative
 import           Data.Attoparsec.Text.Lazy
-import qualified Data.Text.Lazy            as LT
+import qualified Data.Text.Lazy as LT
 
-import           LogAnalysis.Types         (ErrorCode (..), Knowledge (..))
+import           LogAnalysis.Types (ErrorCode (..), Knowledge (..))
 
-import           Prelude                   hiding (takeWhile)
+import           Prelude hiding (takeWhile)
 
 -- |Take any string that is inside quotes
 insideQuotes :: Parser LT.Text

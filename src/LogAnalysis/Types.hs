@@ -1,5 +1,4 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE FlexibleInstances #-}
 
 module LogAnalysis.Types
     ( Analysis
@@ -12,8 +11,8 @@ module LogAnalysis.Types
 
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import qualified Data.Text.Lazy  as LT
 import           Data.Text (Text)
+import qualified Data.Text.Lazy as LT
 
 -- | Identifier for each error
 data ErrorCode
