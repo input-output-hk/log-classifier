@@ -1,103 +1,126 @@
--- This file has been generated from package.yaml by hpack version 0.20.0.
---
--- see: https://github.com/sol/hpack
---
--- hash: ccf6237cef81dc21f25e3efdca48f9e04e5c47ee8ad73f59acf1a8357d3a7f88
-
-name:           log-classifier
-version:        0.1.0.0
-description:    Please see the README on Github at <https://github.com/githubuser/log-classifier#readme>
-homepage:       https://github.com/githubuser/log-classifier#readme
-bug-reports:    https://github.com/githubuser/log-classifier/issues
-author:         Author name here
-maintainer:     example@example.com
-copyright:      2018 Author name here
-license:        BSD3
-license-file:   LICENSE
-build-type:     Simple
-cabal-version:  >= 1.10
-
-extra-source-files:
-    ChangeLog.md
-    README.md
-
-source-repository head
-  type: git
-  location: https://github.com/githubuser/log-classifier
+name:                log-classifier
+version:             0.1.0.0
+synopsis:            Log classifier for a Cardano node
+description:         Please see the README
+homepage:            https://github.com/input-output-hk/log-classifier#readme
+author:              IOHK Engineering Team
+maintainer:          hiroto.shioi@iohk.io
+copyright:           2018 IOHK
+license:             MIT
+license-file:        LICENSE
+category:            Web
+build-type:          Simple
+extra-source-files:  README.md
+cabal-version:       >= 1.10
 
 library
-  hs-source-dirs:
-      src
-  build-depends:
-      aeson
-    , array
-    , attoparsec
-    , base >=4.7 && <5
-    , bytestring
-    , containers
-    , http-conduit
-    , mtl
-    , reflection
-    , regex-tdfa
-    , text
-    , zip-archive
-  exposed-modules:
-      Classify
-      Lib
-      LogAnalysis.Classifier
-      LogAnalysis.KnowledgeCSVParser
-      LogAnalysis.Types
-      Regex
-      Types
-      Util
-      Zendesk
-  other-modules:
-      Paths_log_classifier
-  default-language: Haskell2010
+  hs-source-dirs:      src
+  exposed-modules:     Classify
+                       Lib
+                       LogAnalysis.Classifier
+                       LogAnalysis.KnowledgeCSVParser
+                       LogAnalysis.Types
+                       Regex
+                       Types
+                       Util
+                       Zendesk
+  other-modules:       Paths_log_classifier
+  ghc-options:         -Wall
+  build-depends:       aeson
+                     , array
+                     , attoparsec
+                     , base >=4.7 && <5
+                     , bytestring
+                     , containers
+                     , http-conduit
+                     , mtl
+                     , reflection
+                     , regex-tdfa
+                     , text
+                     , zip-archive
+
+  default-language:    Haskell2010
+  default-extensions: TypeOperators
+                      DataKinds
+                      DefaultSignatures
+                      MultiParamTypeClasses
+                      OverloadedStrings
+                      ScopedTypeVariables
+                      FlexibleInstances
+                      FlexibleContexts
+                      TypeFamilies
+                      TypeApplications
+                      TypeOperators
+                      TemplateHaskell
+                      RecordWildCards
+                      ScopedTypeVariables
+                      UndecidableInstances
+                      MonadFailDesugaring
+                      TupleSections
 
 executable log-classifier-exe
-  main-is: Main.hs
-  hs-source-dirs:
-      app
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N
-  build-depends:
-      aeson
-    , array
-    , attoparsec
-    , base >=4.7 && <5
-    , bytestring
-    , containers
-    , http-conduit
-    , log-classifier
-    , mtl
-    , reflection
-    , regex-tdfa
-    , text
-    , zip-archive
-  other-modules:
-      Paths_log_classifier
-  default-language: Haskell2010
+  hs-source-dirs:      app
+  main-is:             Main.hs
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+                       -Wall
+  build-depends:       base >=4.7 && <5
+                     , log-classifier
+  other-modules:       Paths_log_classifier
+
+  default-language:    Haskell2010
+  default-extensions: TypeOperators
+                      DataKinds
+                      DefaultSignatures
+                      MultiParamTypeClasses
+                      OverloadedStrings
+                      ScopedTypeVariables
+                      FlexibleInstances
+                      FlexibleContexts
+                      TypeFamilies
+                      TypeApplications
+                      TypeOperators
+                      TemplateHaskell
+                      RecordWildCards
+                      ScopedTypeVariables
+                      UndecidableInstances
+                      MonadFailDesugaring
+                      TupleSections
 
 test-suite log-classifier-test
-  type: exitcode-stdio-1.0
-  main-is: Spec.hs
-  hs-source-dirs:
-      test
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N
-  build-depends:
-      aeson
-    , array
-    , attoparsec
-    , base >=4.7 && <5
-    , bytestring
-    , containers
-    , http-conduit
-    , log-classifier
-    , mtl
-    , reflection
-    , regex-tdfa
-    , text
-    , zip-archive
-  other-modules:
-      Paths_log_classifier
-  default-language: Haskell2010
+  hs-source-dirs:      test
+  type:                exitcode-stdio-1.0
+  main-is:             Spec.hs
+  ghc-options:         -Wall
+  other-modules:       Paths_log_classifier
+  build-depends:       aeson
+                     , array
+                     , attoparsec
+                     , base >=4.7 && <5
+                     , bytestring
+                     , containers
+                     , http-conduit
+                     , log-classifier
+                     , mtl
+                     , reflection
+                     , regex-tdfa
+                     , text
+                     , zip-archive
+
+  default-language:    Haskell2010
+  default-extensions: TypeOperators
+                      DataKinds
+                      DefaultSignatures
+                      MultiParamTypeClasses
+                      OverloadedStrings
+                      ScopedTypeVariables
+                      FlexibleInstances
+                      FlexibleContexts
+                      TypeFamilies
+                      TypeApplications
+                      TypeOperators
+                      TemplateHaskell
+                      RecordWildCards
+                      ScopedTypeVariables
+                      UndecidableInstances
+                      MonadFailDesugaring
+                      TupleSections
