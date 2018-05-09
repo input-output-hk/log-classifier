@@ -13,7 +13,7 @@ data CLI
     = CollectEmails     -- ^ Collect email addresses
     | ProcessTicket Int -- ^ Process ticket of an given ticket id
     | ProcessTickets    -- ^ Procss all the tickets in the Zendesk
-    | RawRequest String -- ^ Raw requestto the given url
+    | RawRequest String -- ^ Raw request to the given url
     | ShowStatistics    -- ^ Show statistics
     deriving (Show)
 
