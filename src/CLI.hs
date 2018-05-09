@@ -10,24 +10,26 @@ import           Options.Applicative (Parser, argument, auto, command, execParse
 import           Paths_log_classifier (version)
 
 data CLI
-    = CollectEmails
-    | ProcessTicket Int
-    | ProcessTickets
-    | RawRequest String
-    | ShowStatistics
-    deriving (Eq, Show)
+    = CollectEmails     -- ^ Collect email addresses
+    | ProcessTicket Int -- ^ Process ticket of an given ticket id
+    | ProcessTickets    -- ^ Procss all the tickets in the Zendesk
+    | RawRequest String -- ^ Raw requestto the given url
+    | ShowStatistics    -- ^ Show statistics
+    deriving (Show)
 
--- How do I dispaly helper..
+-- | Parser for ProcessTicket
 cmdProcessTicket :: Parser CLI
 cmdProcessTicket = ProcessTicket <$> argument auto
                        ( metavar "TICKET_ID"
                       <> help "Specify ticket id to analyze")
 
+-- | Parser for RawRequest
 cmdRawRequest :: Parser CLI
 cmdRawRequest = RawRequest <$> strOption
                     ( metavar "URL"
                    <> help "Specify url to request")
 
+-- | Parser for CLI commands
 cli :: Parser CLI
 cli = subparser $ mconcat
         [
