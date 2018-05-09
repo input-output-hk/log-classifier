@@ -11,7 +11,10 @@ The purpose of this project is to analyze tickets that are in the IOHK Zendesk s
 
 ## How it works
 
-![system architecture](https://user-images.githubusercontent.com/15665039/39685800-efaef634-51ff-11e8-972a-db3e01ca9223.png)
+![system architecture](https://user-images.githubusercontent.com/15665039/39685800-efaef634-51ff-11e8-972a-db3e01ca9223.png)<br/>
+This is an use case diagram. Use case diagrams overview the usage requirements for a system. They are useful for presentations to management and/or project stakeholders, but for actual development you will find that use cases provide significantly more value because they describe "the meat" of the actual requirements. For more details, please see [here](http://www.agilemodeling.com/artifacts/useCaseDiagram.htm)
+
+### Overview
 
 - Many of the Daedalus's issues can be identified by analyzing the log file. Classifier will utilize this by analyzing the log file and map with possible solution and problem which can be provided to the end user.
 - Ticket sent from Daedalus bug report has log file attached. Classifier will analyze the log file that is attached to the ticket. If any known issues where found, it'll then post an comment to that ticket. (See example below)
