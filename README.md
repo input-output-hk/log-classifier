@@ -20,11 +20,11 @@ This is an use case diagram. Use case diagrams overview the usage requirements f
 - Ticket sent from Daedalus bug report has log file attached. Classifier will analyze the log file that is attached to the ticket. If any known issues where found, it'll then post an comment to that ticket. (See example below)
 - It uses [CSV](https://en.wikipedia.org/wiki/Comma-separated_values) (basically small record file) which contains all the information need to perform analysis. This make it so it is easy to add new known issues.
 - Zendesk agent will use [command line interface](https://en.wikipedia.org/wiki/Command-line_interface) in order to run the classifier.
-- Classifier will use the [Zendesk API](https://developer.zendesk.com/rest_api/docs/core/introduction) to perform any action. Because of this, agents will need to provide Zendesk token to the classifier.
+- Classifier will use the [Zendesk API](https://developer.zendesk.com/rest_api/docs/core/introduction) to perform any action. Because of this, agents will need to provide their email address and password to the classifier.
 
 ## Requirements
 
-In order to use this, user must be IOHK Zendesk agent and be able to acquire Zendesk token.
+In order to use this, user must be IOHK Zendesk agent and be able to provide email and password to the classifier.
 
 ## Features
 
