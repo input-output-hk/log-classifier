@@ -36,15 +36,18 @@ library
                      , http-conduit
                      , mtl
                      , optparse-applicative
+                     , safe-exceptions
                      , reflection
                      , regex-tdfa
                      , text
+                     , universum
                      , zip-archive
 
   default-language:    Haskell2010
   default-extensions: TypeOperators
                       DataKinds
                       DefaultSignatures
+                      NoImplicitPrelude
                       MultiParamTypeClasses
                       OverloadedStrings
                       ScopedTypeVariables
@@ -67,12 +70,14 @@ executable log-classifier-exe
                        -Wall
   build-depends:       base >=4.7 && <5
                      , log-classifier
+                     , universum
   other-modules:       Paths_log_classifier
 
   default-language:    Haskell2010
   default-extensions: TypeOperators
                       DataKinds
                       DefaultSignatures
+                      NoImplicitPrelude
                       MultiParamTypeClasses
                       OverloadedStrings
                       ScopedTypeVariables
@@ -106,12 +111,14 @@ test-suite log-classifier-test
                      , reflection
                      , regex-tdfa
                      , text
+                     , universum
                      , zip-archive
 
   default-language:    Haskell2010
   default-extensions: TypeOperators
                       DataKinds
                       DefaultSignatures
+                      NoImplicitPrelude
                       MultiParamTypeClasses
                       OverloadedStrings
                       ScopedTypeVariables
