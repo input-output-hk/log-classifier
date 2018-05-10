@@ -5,9 +5,11 @@ module LogAnalysis.Types
     , ErrorCode (..)
     , Knowledge (..)
     , setupAnalysis
-    , toTag
+    , renderErrorCode
     , toComment
     ) where
+
+import           Universum
 
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -41,22 +43,22 @@ data Knowledge = Knowledge
   ,  kSolution  :: !LT.Text   -- ^ Text describing how to solve the issue
   } deriving (Show)
 
-toTag :: ErrorCode -> Text
-toTag ShortStorage      = "short-storage"
-toTag UserNameError     = "user-name-error"
-toTag TimeSync          = "time-out-of-sync"
-toTag FileNotFound      = "directory-not-found"
-toTag StaleLockFile     = "stale-lock-file"
-toTag SentLogCorrupted  = "sent-log-corrupted"
-toTag DBError           = "DB-corrupted"
-toTag DBPath            = "DB-path-error"
-toTag CannotGetDBSize   = "cannot-get-db-size"
-toTag BalanceError      = "incorrect-balance"
-toTag NetworkError      = "network-error"
-toTag ConnectionRefused = "connection-refused"
-toTag ResourceVanished  = "resource-vanished"
-toTag Unknown           = "unknown"
-toTag Error             = "error"
+renderErrorCode :: ErrorCode -> Text
+renderErrorCode ShortStorage      = "short-storage"
+renderErrorCode UserNameError     = "user-name-error"
+renderErrorCode TimeSync          = "time-out-of-sync"
+renderErrorCode FileNotFound      = "directory-not-found"
+renderErrorCode StaleLockFile     = "stale-lock-file"
+renderErrorCode SentLogCorrupted  = "sent-log-corrupted"
+renderErrorCode DBError           = "DB-corrupted"
+renderErrorCode DBPath            = "DB-path-error"
+renderErrorCode CannotGetDBSize   = "cannot-get-db-size"
+renderErrorCode BalanceError      = "incorrect-balance"
+renderErrorCode NetworkError      = "network-error"
+renderErrorCode ConnectionRefused = "connection-refused"
+renderErrorCode ResourceVanished  = "resource-vanished"
+renderErrorCode Unknown           = "unknown"
+renderErrorCode Error             = "error"
 
 toComment :: ErrorCode -> Text
 toComment SentLogCorrupted = "Log file is corrupted"

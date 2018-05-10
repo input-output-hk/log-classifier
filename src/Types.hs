@@ -12,7 +12,10 @@ module Types
     , parseAgentId
     , parseComments
     , parseTickets
+    , renderTicketStatus
     ) where
+
+import           Universum
 
 import           Data.Aeson
 import           Data.Aeson.Types (Parser)
@@ -24,52 +27,50 @@ data Comment = Comment
     , commentAttachments :: ![Attachment] -- ^ Attachment
     , commentPublic      :: !Bool         -- ^ Flag of whether comment should be public
     , commentAuthor      :: !Integer      -- ^ Auther of comment
-    } deriving (Show, Eq)
+    }
 
 -- | Outer comment ??
 newtype CommentOuter = CommentOuter {
       coComment :: Comment
-    } deriving (Show, Eq)
+    }
 
 -- | Attachment of the ticket
 data Attachment = Attachment
     { attachmentURL         :: !Text -- ^ URL of the attachment
     , attachmentContentType :: !Text -- ^ ContentType of the attachment
     , attachmentSize        :: !Int  -- ^ Attachment size
-    } deriving (Show, Eq)
+    }
 
 -- | Zendexk ticket
 data Ticket = Ticket
     { ticketComment  :: !Comment   -- ^ Ticket comment
     , ticketAssignee :: !Integer   -- ^ Assignee of the ticket
     , ticketTag      :: ![Text]    -- ^ Tags attached to ticket
-    } deriving (Show, Eq)
+    }
 
 -- | List of zendesk ticket
 data TicketList = TicketList
     { ticketListTickets :: ![TicketInfo] -- ^ Information of tickets
     , nextPage          :: Maybe Text    -- ^ Next page
-    } deriving (Show, Eq)
+    }
 
 type TicketId = Int
 
 data TicketInfo = TicketInfo
     { ticketId   :: !Int    -- ^ Id of an ticket
     , ticketTags :: ![Text] -- ^ Tags associated with ticket
-    } deriving (Eq)
-
-instance Show TicketInfo where
-  show (TicketInfo tid _) = show tid
+    }
 
 -- | Ticket status
 data TicketStatus =
       AnalyzedByScript -- ^ Ticket has been analyzed
     | NoKnownIssue     -- ^ Ticket had no known issue
+    deriving Show
 
 -- | Defining it's own show instance to use it as tags
-instance Show TicketStatus where
-  show AnalyzedByScript = "analyzed-by-script"
-  show NoKnownIssue     = "no-known-issues"
+renderTicketStatus :: TicketStatus -> Text
+renderTicketStatus AnalyzedByScript = "analyzed-by-script"
+renderTicketStatus NoKnownIssue     = "no-known-issues"
 
 -- | JSON Parsing
 instance FromJSON Comment where

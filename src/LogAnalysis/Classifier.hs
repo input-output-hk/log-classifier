@@ -18,7 +18,7 @@ import           Data.Text.Encoding.Error (ignore)
 import qualified Data.Text.Lazy as LT
 import qualified Data.Text.Lazy.Encoding as LT
 
-import           LogAnalysis.Types (Analysis, Knowledge (..), toTag)
+import           LogAnalysis.Types (Analysis, Knowledge (..), renderErrorCode)
 
 -- | Number of error texts it should show
 numberOfErrorText :: Int
@@ -54,8 +54,9 @@ filterAnalysis as = do
       else return $ Map.map (take numberOfErrorText) filteredAnalysis
 
 extractErrorCodes :: Analysis -> [ Text ]
-extractErrorCodes as = map (\(Knowledge{..}, _) -> toTag kErrorCode) $ Map.toList as
+extractErrorCodes as = map (\(Knowledge{..}, _) -> renderErrorCode kErrorCode) $ Map.toList as
 
+-- | TODO: Format the text in better way
 prettyFormatAnalysis :: Analysis -> LT.Text
 prettyFormatAnalysis as =
     let aList = Map.toList as
