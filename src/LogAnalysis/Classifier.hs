@@ -8,8 +8,9 @@ module LogAnalysis.Classifier
        , prettyFormatAnalysis
        ) where
 
+import           Universum
+
 import qualified Data.ByteString.Lazy as LBS
-import           Data.List (foldl')
 import qualified Data.Map.Strict as Map
 import           Data.Semigroup ((<>))
 import           Data.Text (Text)
@@ -24,7 +25,7 @@ numberOfErrorText :: Int
 numberOfErrorText = 3
 
 -- | Analyze each log file based on the knowlodgebases' data.
-extractIssuesFromLogs :: [LBS.ByteString] -> Analysis -> Either String Analysis
+extractIssuesFromLogs :: [LBS.ByteString] -> Analysis -> Either Text Analysis
 extractIssuesFromLogs files analysis = filterAnalysis $ foldl' runClassifiers analysis files
 
 -- | Run analysis on given file
@@ -45,7 +46,7 @@ compareWithKnowledge str Knowledge{..} xs =
     else xs
 
 -- | Filter out any records that are empty (i.e couldn't catch any string related)
-filterAnalysis :: Analysis -> Either String Analysis
+filterAnalysis :: Analysis -> Either Text Analysis
 filterAnalysis as = do
     let filteredAnalysis = Map.filter (/=[]) as
     if null filteredAnalysis

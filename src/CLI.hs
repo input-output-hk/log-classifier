@@ -3,6 +3,8 @@ module CLI
     , getCliArgs
     ) where
 
+import           Universum
+
 import           Data.Semigroup ((<>))
 import           Options.Applicative (Parser, argument, auto, command, execParser, fullDesc, header,
                                       help, helper, hsubparser, info, infoOption, long, metavar,

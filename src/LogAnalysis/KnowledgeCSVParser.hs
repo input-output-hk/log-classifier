@@ -4,18 +4,17 @@ module LogAnalysis.KnowledgeCSVParser
        ( parseKnowLedgeBase
        ) where
 
-import           Control.Applicative
-import           Data.Attoparsec.Text.Lazy
+import           Universum
+
+import           Data.Attoparsec.Text.Lazy as ALT
 import qualified Data.Text.Lazy as LT
 
 import           LogAnalysis.Types (ErrorCode (..), Knowledge (..))
 
-import           Prelude hiding (takeWhile)
-
 -- |Take any string that is inside quotes
 insideQuotes :: Parser LT.Text
 insideQuotes =
-    LT.append <$> (LT.fromStrict <$> takeWhile (/= '"'))
+    LT.append <$> (LT.fromStrict <$> ALT.takeWhile (/= '"'))
               <*> (LT.concat <$> many (LT.cons <$> dquotes <*> insideQuotes))
     <?> "inside of double quotes"
     where

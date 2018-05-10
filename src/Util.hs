@@ -4,6 +4,8 @@ module Util
     , readZip
     ) where
 
+import           Universum
+
 import qualified Codec.Archive.Zip as Zip
 import qualified Data.ByteString.Lazy as LBS
 import           Data.Map.Strict (Map)
@@ -15,7 +17,7 @@ tshow :: Show a => a -> Text
 tshow = T.pack . show
 
 -- | Extract log file from given zip file
-extractLogsFromZip :: Int -> LBS.ByteString -> Either String [LBS.ByteString]
+extractLogsFromZip :: Int -> LBS.ByteString -> Either Text [LBS.ByteString]
 extractLogsFromZip numberOfFiles file = do
     zipMap <- readZip file                             -- Read File
     let extractedLogs = Map.elems $ mTake numberOfFiles zipMap        -- Extract selected logs
@@ -23,9 +25,9 @@ extractLogsFromZip numberOfFiles file = do
   where
     mTake n = Map.fromDistinctAscList . take n . Map.toAscList
 
-readZip :: LBS.ByteString -> Either String (Map FilePath LBS.ByteString)
+readZip :: LBS.ByteString -> Either Text (Map FilePath LBS.ByteString)
 readZip rawzip = case Zip.toArchiveOrFail rawzip of
-    Left err      -> Left err
+    Left err      -> Left (toText err)
     Right archive -> Right $ finishProcessing archive
   where
     finishProcessing :: Zip.Archive -> Map FilePath LBS.ByteString

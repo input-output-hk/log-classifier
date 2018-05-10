@@ -12,6 +12,7 @@ module Regex
   ) where
 
 -- Not used, but want to use it in the future.
+import           Universum
 
 import qualified Data.Array as Array
 
