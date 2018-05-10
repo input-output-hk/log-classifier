@@ -13,8 +13,6 @@ import           Universum
 
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Text (Text)
-import qualified Data.Text.Lazy as LT
 
 -- | Identifier for each error
 data ErrorCode
@@ -37,10 +35,10 @@ data ErrorCode
 
 -- | Record identifying the issue
 data Knowledge = Knowledge
-  {  kErrorText :: !LT.Text   -- ^ Text used for matching error lines
+  {  kErrorText :: !LText   -- ^ Text used for matching error lines
   ,  kErrorCode :: !ErrorCode -- ^ Identity for error code
-  ,  kProblem   :: !LT.Text   -- ^ Text describing what is the problem
-  ,  kSolution  :: !LT.Text   -- ^ Text describing how to solve the issue
+  ,  kProblem   :: !LText   -- ^ Text describing what is the problem
+  ,  kSolution  :: !LText   -- ^ Text describing how to solve the issue
   } deriving (Show)
 
 renderErrorCode :: ErrorCode -> Text
@@ -65,7 +63,7 @@ toComment SentLogCorrupted = "Log file is corrupted"
 toComment _                = "Error"
 
 -- | Map used to collect error lines
-type Analysis = Map Knowledge [LT.Text]
+type Analysis = Map Knowledge [LText]
 
 -- | Create initial analysis environment
 setupAnalysis :: [Knowledge] -> Analysis

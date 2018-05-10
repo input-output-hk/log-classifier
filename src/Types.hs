@@ -19,7 +19,6 @@ import           Universum
 
 import           Data.Aeson
 import           Data.Aeson.Types (Parser)
-import           Data.Text (Text)
 
 -- | Comments
 data Comment = Comment
@@ -65,7 +64,6 @@ data TicketInfo = TicketInfo
 data TicketStatus =
       AnalyzedByScript -- ^ Ticket has been analyzed
     | NoKnownIssue     -- ^ Ticket had no known issue
-    deriving Show
 
 -- | Defining it's own show instance to use it as tags
 renderTicketStatus :: TicketStatus -> Text

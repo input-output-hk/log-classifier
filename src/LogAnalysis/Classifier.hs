@@ -12,11 +12,8 @@ import           Universum
 
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Map.Strict as Map
-import           Data.Semigroup ((<>))
-import           Data.Text (Text)
 import           Data.Text.Encoding.Error (ignore)
-import qualified Data.Text.Lazy as LT
-import qualified Data.Text.Lazy.Encoding as LT
+import           Data.Text.Lazy (isInfixOf)
 
 import           LogAnalysis.Types (Analysis, Knowledge (..), renderErrorCode)
 
@@ -25,23 +22,23 @@ numberOfErrorText :: Int
 numberOfErrorText = 3
 
 -- | Analyze each log file based on the knowlodgebases' data.
-extractIssuesFromLogs :: [LBS.ByteString] -> Analysis -> Either Text Analysis
+extractIssuesFromLogs :: [LByteString] -> Analysis -> Either Text Analysis
 extractIssuesFromLogs files analysis = filterAnalysis $ foldl' runClassifiers analysis files
 
 -- | Run analysis on given file
-runClassifiers :: Analysis -> LBS.ByteString -> Analysis
+runClassifiers :: Analysis -> LByteString -> Analysis
 runClassifiers analysis logfile =
-    let logLines = LT.lines $ LT.decodeUtf8With ignore logfile
-    in foldl' analyzeLine analysis logLines
+    let logLines = lines $ decodeUtf8With ignore (LBS.toStrict logfile)
+    in foldl' analyzeLine analysis (toLText <$> logLines)
 
 -- | Analyze each line
-analyzeLine :: Analysis -> LT.Text -> Analysis
+analyzeLine :: Analysis -> LText -> Analysis
 analyzeLine analysis str = Map.mapWithKey (compareWithKnowledge str) analysis
 
 -- | Compare the line with knowledge lists
-compareWithKnowledge :: LT.Text -> Knowledge -> [ LT.Text ] -> [ LT.Text ]
+compareWithKnowledge :: LText -> Knowledge -> [ LText ] -> [ LText ]
 compareWithKnowledge str Knowledge{..} xs =
-    if kErrorText `LT.isInfixOf` str
+    if kErrorText `isInfixOf` str
     then str : xs
     else xs
 
@@ -57,15 +54,15 @@ extractErrorCodes :: Analysis -> [ Text ]
 extractErrorCodes as = map (\(Knowledge{..}, _) -> renderErrorCode kErrorCode) $ Map.toList as
 
 -- | TODO: Format the text in better way
-prettyFormatAnalysis :: Analysis -> LT.Text
+prettyFormatAnalysis :: Analysis -> LText
 prettyFormatAnalysis as =
     let aList = Map.toList as
     in foldr (\(Knowledge{..}, txts) acc ->
-         "\n" <> LT.pack (show kErrorCode)
+         "\n" <> show kErrorCode
       <> "\n" <> kProblem
       <> "\n **" <> kSolution
       <> "** \n"
-      <> foldr (\txt ts -> "\n" <> txt <> "\n" <> ts) LT.empty txts -- List errors
+      <> foldr1 (\txt ts -> "\n" <> txt <> "\n" <> ts) txts -- List errors
       <> "\n" <> acc
       <> "\n\n"
-      ) LT.empty aList
+      ) "" aList

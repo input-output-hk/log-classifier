@@ -12,7 +12,7 @@ import qualified Data.Text.Lazy as LT
 import           LogAnalysis.Types (ErrorCode (..), Knowledge (..))
 
 -- |Take any string that is inside quotes
-insideQuotes :: Parser LT.Text
+insideQuotes :: Parser LText
 insideQuotes =
     LT.append <$> (LT.fromStrict <$> ALT.takeWhile (/= '"'))
               <*> (LT.concat <$> many (LT.cons <$> dquotes <*> insideQuotes))
@@ -23,7 +23,7 @@ insideQuotes =
         <?> "paired double quotes"
 
 -- | Parse quoted field
-quotedField :: Parser LT.Text
+quotedField :: Parser LText
 quotedField =
     char '"' *> insideQuotes <* char '"'
     <?> "quoted field"
