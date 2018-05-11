@@ -15,7 +15,6 @@ module Regex
 import           Universum
 
 import qualified Data.Array as Array
-import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Text.Regex.TDFA as TDFA
 import           Text.Regex.TDFA.ByteString.Lazy (Regex)

@@ -11,7 +11,7 @@ import qualified Data.Text.Lazy as LT
 
 import           LogAnalysis.Types (ErrorCode (..), Knowledge (..))
 
--- |Take any string that is inside quotes
+-- | Take any string that is inside quotes
 insideQuotes :: Parser LText
 insideQuotes =
     LT.append <$> (LT.fromStrict <$> ALT.takeWhile (/= '"'))
@@ -46,7 +46,7 @@ parseErrorCode =
     <|> (string "Unknown"           >> return Unknown)
     <|> (string "Error"             >> return Error)
 
--- |Parse each csv records
+-- | Parse each csv records
 parseKnowledge :: Parser Knowledge -- not really clean code..
 parseKnowledge = do
     e <- quotedField
@@ -60,6 +60,6 @@ parseKnowledge = do
     s <- quotedField
     return $ Knowledge e c p s
 
--- |Parse CSV file and create knowledgebase
+-- | Parse CSV file and create knowledgebase
 parseKnowLedgeBase :: Parser [ Knowledge ]
 parseKnowLedgeBase = many $ parseKnowledge <* endOfLine

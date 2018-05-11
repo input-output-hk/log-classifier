@@ -63,9 +63,11 @@ defaultConfig = Config 0 "https://iohk.zendesk.com" "" "daedalus-bug-reports@ioh
 knowledgebasePath :: FilePath
 knowledgebasePath = "./knowledgebase/knowledge.csv"
 
+-- | Filepath to token file
 tokenPath :: FilePath
 tokenPath = "./tmp-secrets/token"
 
+-- | Filepath to assign_to file
 assignToPath :: FilePath
 assignToPath = "./tmp-secrets/assign_to"
 

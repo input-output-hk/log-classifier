@@ -53,7 +53,7 @@ filterAnalysis as = do
 extractErrorCodes :: Analysis -> [ Text ]
 extractErrorCodes as = map (\(Knowledge{..}, _) -> renderErrorCode kErrorCode) $ Map.toList as
 
--- | TODO: Format the text in better way
+-- | TODO (Hiroto): Format the text in better way
 prettyFormatAnalysis :: Analysis -> LText
 prettyFormatAnalysis as =
     let aList = Map.toList as

@@ -11,7 +11,6 @@ module LogAnalysis.Types
 
 import           Universum
 
-import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 
 -- | Identifier for each error
@@ -35,10 +34,10 @@ data ErrorCode
 
 -- | Record identifying the issue
 data Knowledge = Knowledge
-  {  kErrorText :: !LText   -- ^ Text used for matching error lines
+  {  kErrorText :: !LText   　-- ^ Text used for matching error lines
   ,  kErrorCode :: !ErrorCode -- ^ Identity for error code
-  ,  kProblem   :: !LText   -- ^ Text describing what is the problem
-  ,  kSolution  :: !LText   -- ^ Text describing how to solve the issue
+  ,  kProblem   :: !LText   　-- ^ Text describing what is the problem
+  ,  kSolution  :: !LText   　-- ^ Text describing how to solve the issue
   } deriving (Show)
 
 renderErrorCode :: ErrorCode -> Text

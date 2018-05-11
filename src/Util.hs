@@ -6,7 +6,6 @@ module Util
 import           Universum
 
 import qualified Codec.Archive.Zip as Zip
-import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 
 -- | Extract log file from given zip file
