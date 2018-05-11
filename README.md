@@ -32,7 +32,7 @@ In order to use this, user must be IOHK Zendesk agent and be able to provide ema
 
 Classifier will analyze the log file attached to the ticket. If any issues where found, it will post a comment which states
 
-- Errror code
+- Error code
 - What is the issue
 - Possible solution
 - Error text classifier caught in the log file that is related to the issue.
