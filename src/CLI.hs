@@ -34,15 +34,15 @@ cmdRawRequest = RawRequest <$> strOption
 cli :: Parser CLI
 cli = hsubparser $ mconcat
         [
-          command "collectEmails" (info (pure CollectEmails)
+          command "collect-emails" (info (pure CollectEmails)
             (progDesc "Collect emails requested by single user"))
-        , command "processTickets" (info (pure ProcessTickets)
+        , command "process-tickets" (info (pure ProcessTickets)
             (progDesc "Process all the tickets i.e add comments, tags."))
-        , command "processTicket" (info cmdProcessTicket
+        , command "process-ticket" (info cmdProcessTicket
             (progDesc "Process Zendesk ticket of an given ticket id"))
-        , command "rawRequest" (info cmdRawRequest
+        , command "raw-request" (info cmdRawRequest
             (progDesc "Raw request to the given url"))
-        , command "showStats" (info (pure ShowStatistics)
+        , command "show-stats" (info (pure ShowStatistics)
             (progDesc "Print list of ticket Ids that agent has been assigned"))
         ]
 
