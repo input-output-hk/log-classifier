@@ -53,9 +53,28 @@ filterAnalysis as = do
 extractErrorCodes :: Analysis -> [ Text ]
 extractErrorCodes as = map (\(Knowledge{..}, _) -> renderErrorCode kErrorCode) $ Map.toList as
 
--- | TODO (Hiroto): Format the text in better way
+-- | We need to fix this, this will pick the last issue found.
 prettyFormatAnalysis :: Analysis -> LText
 prettyFormatAnalysis as =
+    foldr (\(Knowledge{..}, _) _ ->
+    "Dear user," <>
+    "\n" <>
+    "\n" <>
+        "Thank you for contacting the IOHK Technical Support Desk. We appologize for the delay in responding to you. We have analyzed the log that you submitted and it appears that your issue is addressed in the Daedalus FAQ in Issue " <> kFAQNumber <> ". Please go to https://daedaluswallet.io/faq/ and check Issue " <> kFAQNumber <> " to resolve your problem." <>
+    "\n" <>
+    "Please let us know if your issue is resolved. If you are still having trouble please reply back to this email and attach a new log file so that we can work with you to fix your problem." <>
+    "\n" <>
+    "Thanks, " <>
+    "\n" <>
+    "The IOHK Technical Support Desk Team" <>
+    "\n") LT.empty aList
+  where
+    aList  = Map.toList as
+
+-- | The formatting we use to respond as the analysis result. In the @ZenDesk@ case,
+-- this is the comment.
+_prettyOldFormatAnalysis :: Analysis -> LT.Text
+_prettyOldFormatAnalysis as =
     let aList = Map.toList as
     in foldr (\(Knowledge{..}, txts) acc ->
                 "\n" <> show kErrorCode

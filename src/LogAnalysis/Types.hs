@@ -42,6 +42,8 @@ data Knowledge = Knowledge
     -- ^ Text describing what is the problem
     ,  kSolution  :: !LText
     -- ^ Text describing how to solve the issue
+    ,  kFAQNumber :: !LText
+    -- ^ The FAQ number that will be displayed on the official Cardano FAQ page
     } deriving (Show)
 
 renderErrorCode :: ErrorCode -> Text

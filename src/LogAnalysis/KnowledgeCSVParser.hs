@@ -58,7 +58,15 @@ parseKnowledge = do
     p <- quotedField
     _ <- char ','
     s <- quotedField
-    return $ Knowledge e c p s
+    _ <- char ','
+    f <- quotedField
+    return $ Knowledge
+        {  kErrorText = e
+        ,  kErrorCode = c
+        ,  kProblem   = p
+        ,  kSolution  = s
+        ,  kFAQNumber = f
+        }
 
 -- | Parse CSV file and create knowledgebase
 parseKnowLedgeBase :: Parser [ Knowledge ]

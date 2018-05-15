@@ -48,8 +48,9 @@ data Config = Config
     -- ^ Number of files classifier will analyze
     } deriving (Eq, Show)
 
-data RequestType = Requested
-                 | Assigned
+data RequestType
+    = Requested
+    | Assigned
 
 newtype App a = App (ReaderT Config IO a)
     deriving ( Applicative
@@ -238,7 +239,7 @@ filterAnalyzedTickets = foldr (\TicketInfo{..} acc ->
                                 then acc
                                 else tiId : acc
                               ) []
-                       where 
+                       where
                          analyzedIndicatorTag :: Text
                          analyzedIndicatorTag = renderTicketStatus AnalyzedByScript
 
