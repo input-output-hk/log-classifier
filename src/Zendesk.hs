@@ -26,8 +26,8 @@ import qualified Data.Text.Lazy.IO as LT
 import           Network.HTTP.Simple (Request, addRequestHeader, getResponseBody, httpJSON, httpLBS,
                                       parseRequest_, setRequestBasicAuth, setRequestBodyJSON,
                                       setRequestMethod, setRequestPath)
-import           System.Environment (getArgs)
 
+import           CLI (CLI (..), getCliArgs)
 import           LogAnalysis.Classifier (extractErrorCodes, extractIssuesFromLogs,
                                          prettyFormatAnalysis)
 import           LogAnalysis.KnowledgeCSVParser (parseKnowLedgeBase)
@@ -78,6 +78,7 @@ assignToPath = "./tmp-secrets/assign_to"
 
 runZendeskMain :: IO ()
 runZendeskMain = do
+    args <- getCliArgs
     putStrLn "Welcome to Zendesk classifier!"
     token <- B8.readFile tokenPath        -- Zendesk token
     assignto <- B8.readFile assignToPath  -- Select assignee
@@ -88,52 +89,41 @@ runZendeskMain = do
                             }
     agentId <- runApp getAgentId cfg'
     let cfg = cfg' { cfgAgentId = agentId }
-    args <- getArgs
     case args of
-      -- Process all the tikects that are requested by agent
-      [ "extractEmailAddress" ] -> do
-        T.putStrLn $  "Classifier is going to extract emails requested by: " <> cfgEmail cfg
-        tickets <- runApp (listTickets Requested) cfg
-        putStrLn $ "There are " <> show (length tickets) <> " tickets requested by this user."
-        let ticketIds = foldr (\TicketInfo{..} acc -> ticketId : acc) [] tickets
-        mapM_ (\tid -> runApp (extractEmailAddress tid) cfg) ticketIds
-      -- Process given ticket
-      [ "processTicket", ticketId ] -> do
-        putStrLn "Processing single ticket"
-        runApp (processTicketAndId $ read ticketId) cfg
-        putStrLn "Process finished, please see the following url"
-        putStrLn $ "https://iohk.zendesk.com/agent/tickets/" <> ticketId
-      -- Process all the tickets (WARNING: This is really long process)
-      [ "processTickets" ] -> do
-        T.putStrLn $  "Classifier is going to process tickets assign to: " <> cfgEmail cfg
-        printWarning
-        tickets <- runApp (listTickets Assigned) cfg
-        let filteredTicketIds = filterAnalyzedTickets tickets
-        putStrLn $ "There are " <> show (length filteredTicketIds) <> " unanalyzed tickets."
-        putStrLn "Processing tickets, this may take hours to finish."
-        mapM_ (\tid -> runApp (processTicketAndId tid) cfg) filteredTicketIds
-        putStrLn "All the tickets has been processed."
-      -- Return raw request
-      [ "raw_request", url ] -> do
-        let
-          req = apiRequest cfg (T.pack url)
-        res <- apiCall (pure . encodeToLazyText)  req
-        LT.putStrLn res
-      -- Count assigned tickets
-      [ "showStats" ] -> do
-        T.putStrLn $  "Classifier is going to gather ticket information assigned to: " <> cfgEmail cfg
-        printWarning
-        tickets <- runApp (listTickets Assigned) cfg
-        printTicketCountMessage tickets (cfgEmail cfg)
-      _  -> do
-        let cmdItem = [ "extractEmailAddress : Collect emails requested by single user"
-                      , "processTicket <id>  : Process single ticket of id"
-                      , "processTickets      : Process all the tickets i.e add comments, tags. WARNING:" <>
-                        "This is really long process, please use with care"
-                      , "raw_request <url>   : Request raw request to the given url"
-                      , "showStats           : Print list of ticket Ids that agent has been assigned"]
-        putStrLn "Invalid argument, please add following argument to run the command:"
-        mapM_ putStrLn cmdItem
+        -- Process all the tikects that are requested by agent
+        CollectEmails -> do
+            T.putStrLn $  "Classifier is going to extract emails requested by: " <> cfgEmail cfg
+            tickets <- runApp (listTickets Requested) cfg
+            putStrLn $ "There are " <> show (length tickets) <> " tickets requested by this user."
+            let ticketIds = foldr (\TicketInfo{..} acc -> ticketId : acc) [] tickets
+            mapM_ (\tid -> runApp (extractEmailAddress tid) cfg) ticketIds
+        -- Process given ticket
+        (ProcessTicket ticketId) -> do
+            putStrLn "Processing single ticket"
+            runApp (processTicketAndId ticketId) cfg
+            putStrLn "Process finished, please see the following url"
+            putStrLn $ "https://iohk.zendesk.com/agent/tickets/" <> show ticketId
+        -- Process all the tickets (WARNING: This is really long process)
+        ProcessTickets -> do
+            T.putStrLn $  "Classifier is going to process tickets assign to: " <> cfgEmail cfg
+            printWarning
+            tickets <- runApp (listTickets Assigned) cfg
+            let filteredTicketIds = filterAnalyzedTickets tickets
+            putStrLn $ "There are " <> show (length filteredTicketIds) <> " unanalyzed tickets."
+            putStrLn "Processing tickets, this may take hours to finish."
+            mapM_ (\tid -> runApp (processTicketAndId tid) cfg) filteredTicketIds
+            putStrLn "All the tickets has been processed."
+        -- Return raw request
+        (RawRequest url) -> do
+            let req = apiRequest cfg (T.pack url)
+            res <- apiCall (pure . encodeToLazyText)  req
+            LT.putStrLn res
+        -- Collect statistics
+        ShowStatistics -> do
+            T.putStrLn $  "Classifier is going to gather ticket information assigned to: " <> cfgEmail cfg
+            printWarning
+            tickets <- runApp (listTickets Assigned) cfg
+            printTicketCountMessage tickets (cfgEmail cfg)
 
 -- | Warning
 printWarning :: IO ()
@@ -157,8 +147,8 @@ printTicketCountMessage tickets email = do
 sortTickets :: [TicketInfo] -> [(Text, Int)]
 sortTickets tickets =
     let extractedTags = foldr (\TicketInfo{..} acc -> ticketTags <> acc) [] tickets   -- Extract tags from tickets
-        filteredTags  = filter (`notElem` ["s3", "s2", "cannot-sync", "closed-by-merge",
-                                           "web_widget", "analyzed-by-script"]) extractedTags -- Filter tags
+        tags2Filter     = ["s3", "s2", "cannot-sync", "closed-by-merge", "web_widget", "analyzed-by-script"]
+        filteredTags  = filter (`notElem` tags2Filter) extractedTags -- Filter tags
         groupByTags :: [ Text ] -> [(Text, Int)]
         groupByTags ts = map (\l@(x:_) -> (x, length l)) (group $ sort ts)          -- Group them
     in  groupByTags filteredTags
@@ -200,13 +190,9 @@ processTicketAndId ticketId = do
 
 -- | Inspect attachment then post comment to the ticket
 inspectAttachmentAndPostComment :: TicketId -> Attachment -> App ()
-inspectAttachmentAndPostComment ticketId att = do
-    Config{..} <- ask
+inspectAttachmentAndPostComment ticketId attachment = do
     liftIO $ putStrLn $ "Analyzing ticket id: " <> show ticketId
-    (comment, tags, isPublicComment) <- liftIO $ inspectAttachment
-                                                  cfgNumOfLogsToAnalyze
-                                                  cfgKnowledgebase
-                                                  att
+    (comment, tags, isPublicComment) <- inspectAttachment attachment
     postTicketComment ticketId comment tags isPublicComment
 
 -- | Given number of file of inspect, knowledgebase and attachment,
@@ -215,26 +201,27 @@ inspectAttachmentAndPostComment ticketId att = do
 -- The results are following:
 --
 -- __(comment, tags, bool of whether is should be public comment)__
-inspectAttachment :: Int -> [Knowledge] -> Attachment -> IO (Text, [Text], Bool)
-inspectAttachment num ks att = do
-    rawlog <- getAttachment att   -- Get attachment
-    let results = extractLogsFromZip num rawlog
+inspectAttachment :: Attachment -> App (Text, [Text], Bool)
+inspectAttachment att = do
+    Config{..} <- ask
+    rawlog <- liftIO $ getAttachment att   -- Get attachment
+    let results = extractLogsFromZip cfgNumOfLogsToAnalyze rawlog
     case results of
-      Left err -> do
-        putStrLn $ "Error parsing zip:" <> err
-        return (toComment SentLogCorrupted , [toTag SentLogCorrupted], False)
-      Right result -> do
-        let analysisEnv = setupAnalysis ks
-            eitherAnalysisResult = extractIssuesFromLogs result analysisEnv
-        case eitherAnalysisResult of
-          Right analysisResult -> do -- do something!
-            let errorCodes = extractErrorCodes analysisResult
-            let commentRes = prettyFormatAnalysis analysisResult
-            mapM_ T.putStrLn errorCodes
-            return (LT.toStrict commentRes, errorCodes, False)
-          Left noResult -> do
-            putStrLn noResult
-            return (LT.toStrict (LT.pack noResult), [tshow NoKnownIssue], False)
+        Left err -> do
+          liftIO $ putStrLn $ "Error parsing zip:" <> err
+          return (toComment SentLogCorrupted , [toTag SentLogCorrupted], False)
+        Right result -> do
+          let analysisEnv = setupAnalysis cfgKnowledgebase
+              eitherAnalysisResult = extractIssuesFromLogs result analysisEnv
+          case eitherAnalysisResult of
+              Right analysisResult -> do -- do something!
+                let errorCodes = extractErrorCodes analysisResult
+                let commentRes = prettyFormatAnalysis analysisResult
+                liftIO $ mapM_ T.putStrLn errorCodes
+                return (LT.toStrict commentRes, errorCodes, False)
+              Left noResult -> do
+                liftIO $ putStrLn noResult
+                return (LT.toStrict (LT.pack noResult), [tshow NoKnownIssue], False)
 
 -- | Filter analyzed tickets
 filterAnalyzedTickets :: [TicketInfo] -> [TicketId]
@@ -260,28 +247,28 @@ listTickets request = do
           let req' = apiRequestAbsolute cfg nextPage'
           (TicketList pagen nextPagen) <- apiCall parseTickets req'
           case nextPagen of
-            Just nextUrl -> go (list <> pagen) nextUrl
-            Nothing      -> pure (list <> pagen)
+              Just nextUrl -> go (list <> pagen) nextUrl
+              Nothing      -> pure (list <> pagen)
 
     (TicketList page0 nextPage) <- liftIO $ apiCall parseTickets req
     case nextPage of
-      Just nextUrl -> liftIO $ go page0 nextUrl
-      Nothing      -> pure page0
+        Just nextUrl -> liftIO $ go page0 nextUrl
+        Nothing      -> pure page0
 
 -- | Send API request to post comment
 postTicketComment :: TicketId -> Text -> [Text] -> Bool -> App ()
 postTicketComment tid body tags public = do
     cfg <- ask
-    let
-      req1 = apiRequest cfg ("tickets/" <> tshow tid <> ".json")
-      req2 = addJsonBody
-              (Ticket
-                (Comment ("**Log classifier**\n\n" <> body) [] public (cfgAgentId cfg))
-                (cfgAssignTo cfg)
-                (tshow AnalyzedByScript:tags)
-              )
-              req1
+    let req1 = apiRequest cfg ("tickets/" <> tshow tid <> ".json")
+        req2 = addJsonBody
+                 (Ticket
+                   (Comment ("**Log classifier**\n\n" <> body) [] public (cfgAgentId cfg))
+                   (cfgAssignTo cfg)
+                   (tshow AnalyzedByScript:tags)
+                 )
+                 req1
     void $ liftIO $ apiCall (pure . encodeToLazyText) req2
+    pure ()
 
 -- | Get agent id that has been set on Config
 getAgentId :: App Integer
@@ -311,9 +298,9 @@ apiCall :: FromJSON a => (Value -> Parser a) -> Request -> IO a
 apiCall parser req = do
     v <- getResponseBody <$> httpJSON req
     case parseEither parser v of
-      Right o -> pure o
-      Left e -> error $ "couldn't parse response "
-        <> e <> "\n" <> (T.unpack $ T.decodeUtf8 $ BL.toStrict $ encode v)
+        Right o -> pure o
+        Left e -> error $ "couldn't parse response "
+          <> e <> "\n" <> (T.unpack $ T.decodeUtf8 $ BL.toStrict $ encode v)
 
 -- | General api request function
 apiRequest :: Config -> Text -> Request
