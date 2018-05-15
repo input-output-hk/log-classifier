@@ -1,15 +1,15 @@
 module Regex
-  ( Regex
-  , RegexString
-  , RegexCompileError
-  , Match
-  , MatchWithCaptures
-  , compileRegex
-  , matchOnce
-  , matchCount
-  , matchTest
-  , matchAll
-  ) where
+       ( Match
+       , MatchWithCaptures
+       , Regex
+       , RegexCompileError
+       , RegexString
+       , compileRegex
+       , matchAll
+       , matchCount
+       , matchOnce
+       , matchTest
+       ) where
 
 -- Not used, but want to use it in the future.
 import           Universum

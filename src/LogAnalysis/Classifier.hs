@@ -3,8 +3,8 @@
 {-# LANGUAGE RecordWildCards   #-}
 
 module LogAnalysis.Classifier
-       ( extractIssuesFromLogs
-       , extractErrorCodes
+       ( extractErrorCodes
+       , extractIssuesFromLogs
        , prettyFormatAnalysis
        ) where
 
@@ -47,8 +47,8 @@ filterAnalysis :: Analysis -> Either Text Analysis
 filterAnalysis as = do
     let filteredAnalysis = Map.filter (/=[]) as
     if null filteredAnalysis
-      then Left "Cannot find any known issues"
-      else return $ Map.map (take numberOfErrorText) filteredAnalysis
+    then Left "Cannot find any known issues"
+    else return $ Map.map (take numberOfErrorText) filteredAnalysis
 
 extractErrorCodes :: Analysis -> [ Text ]
 extractErrorCodes as = map (\(Knowledge{..}, _) -> renderErrorCode kErrorCode) $ Map.toList as
@@ -58,11 +58,11 @@ prettyFormatAnalysis :: Analysis -> LText
 prettyFormatAnalysis as =
     let aList = Map.toList as
     in foldr (\(Knowledge{..}, txts) acc ->
-         "\n" <> show kErrorCode
-      <> "\n" <> kProblem
-      <> "\n **" <> kSolution
-      <> "** \n"
-      <> foldr1 (\txt ts -> "\n" <> txt <> "\n" <> ts) txts -- List errors
-      <> "\n" <> acc
-      <> "\n\n"
-      ) "" aList
+                "\n" <> show kErrorCode
+             <> "\n" <> kProblem
+             <> "\n **" <> kSolution
+             <> "** \n"
+             <> foldr1 (\txt ts -> "\n" <> txt <> "\n" <> ts) txts -- List errors
+             <> "\n" <> acc
+             <> "\n\n"
+             ) "" aList

@@ -3,8 +3,8 @@
 {-# LANGUAGE RecordWildCards            #-}
 
 module Zendesk
-    ( runZendeskMain
-    ) where
+       ( runZendeskMain
+       ) where
 
 import           Universum
 
@@ -13,7 +13,7 @@ import           Data.Aeson (FromJSON, ToJSON, Value, encode)
 import           Data.Aeson.Text (encodeToLazyText)
 import           Data.Aeson.Types (Parser, parseEither)
 import           Data.Attoparsec.Text.Lazy (eitherResult, parse)
-import           Data.Text (stripEnd, isInfixOf)
+import           Data.Text (isInfixOf, stripEnd)
 import           Network.HTTP.Simple (Request, addRequestHeader, getResponseBody, httpJSON, httpLBS,
                                       parseRequest_, setRequestBasicAuth, setRequestBodyJSON,
                                       setRequestMethod, setRequestPath)
@@ -22,7 +22,8 @@ import           CLI (CLI (..), getCliArgs)
 import           LogAnalysis.Classifier (extractErrorCodes, extractIssuesFromLogs,
                                          prettyFormatAnalysis)
 import           LogAnalysis.KnowledgeCSVParser (parseKnowLedgeBase)
-import           LogAnalysis.Types (ErrorCode (..), Knowledge, setupAnalysis, toComment, renderErrorCode)
+import           LogAnalysis.Types (ErrorCode (..), Knowledge, renderErrorCode, setupAnalysis,
+                                    toComment)
 import           Types (Attachment (..), Comment (..), Ticket (..), TicketId, TicketInfo (..),
                         TicketList (..), TicketStatus (..), parseAgentId, parseComments,
                         parseTickets, renderTicketStatus)
@@ -32,17 +33,23 @@ import           Util (extractLogsFromZip)
 
 data Config = Config
     { cfgAgentId            :: !Integer
+    -- ^ Zendesk agent id
     , cfgZendesk            :: !Text
+    -- ^ URL to Zendesk
     , cfgToken              :: !Text
+    -- ^ Zendesk token
     , cfgEmail              :: !Text
+    -- ^ Email address of the user the classifier will process on
     , cfgAssignTo           :: !Integer
+    -- ^ User that will be assigned to after the classifier has done the analysis
     , cfgKnowledgebase      :: ![Knowledge]
+    -- ^ Knowledgebase
     , cfgNumOfLogsToAnalyze :: !Int
-    } deriving (Show, Eq)
+    -- ^ Number of files classifier will analyze
+    } deriving (Eq, Show)
 
-data RequestType =
-      Requested
-    | Assigned
+data RequestType = Requested
+                 | Assigned
 
 newtype App a = App (ReaderT Config IO a)
     deriving ( Applicative
@@ -55,7 +62,6 @@ newtype App a = App (ReaderT Config IO a)
 runApp :: App a -> Config -> IO a
 runApp (App a) = runReaderT a
 
--- | This scirpt will look through tickets that are assigned by cfgEmail
 defaultConfig :: Config
 defaultConfig = Config 0 "https://iohk.zendesk.com" "" "daedalus-bug-reports@iohk.io" 0 [] 5
 
@@ -79,12 +85,13 @@ runZendeskMain = do
     assignFile <- readFile assignToPath  -- Select assignee
     knowledges <- setupKnowledgebaseEnv knowledgebasePath
     assignTo <- case readEither assignFile of
-                    Right aid -> return aid
-                    Left  err -> error err
-    let cfg' = defaultConfig { cfgToken = stripEnd token
-                            , cfgAssignTo = assignTo
-                            , cfgKnowledgebase = knowledges
-                            }
+        Right agentid -> return agentid
+        Left  err     -> error err
+    let cfg' = defaultConfig
+                   { cfgToken = stripEnd token
+                   , cfgAssignTo = assignTo
+                   , cfgKnowledgebase = knowledges
+                   }
     agentId <- runApp getAgentId cfg'
     let cfg = cfg' { cfgAgentId = agentId }
     case args of
@@ -118,7 +125,8 @@ runZendeskMain = do
             putTextLn (toText res)
         -- Collect statistics
         ShowStatistics -> do
-            putTextLn $  "Classifier is going to gather ticket information assigned to: " <> cfgEmail cfg
+            putTextLn $ "Classifier is going to gather ticket information assigned to: "
+                <> cfgEmail cfg
             printWarning
             tickets <- runApp (listTickets Assigned) cfg
             printTicketCountMessage tickets (cfgEmail cfg)
@@ -133,9 +141,10 @@ printTicketCountMessage tickets email = do
     let ticketCount = length tickets
     putTextLn "Done!"
     putTextLn $ "There are currently " <> show ticketCount
-                <> " tickets in the system assigned to " <> email
+        <> " tickets in the system assigned to " <> email
     let filteredTicketCount = length $ filterAnalyzedTickets tickets
-    putTextLn $ show (ticketCount - filteredTicketCount) <> " tickets has been analyzed by the classifier."
+    putTextLn $ show (ticketCount - filteredTicketCount)
+        <> " tickets has been analyzed by the classifier."
     putTextLn $ show filteredTicketCount <> " tickets are not analyzed."
     putTextLn "Below are statistics:"
     let tagGroups = sortTickets tickets
@@ -145,7 +154,8 @@ printTicketCountMessage tickets email = do
 sortTickets :: [TicketInfo] -> [(Text, Int)]
 sortTickets tickets =
     let extractedTags = foldr (\TicketInfo{..} acc -> ticketTags <> acc) [] tickets   -- Extract tags from tickets
-        tags2Filter     = ["s3", "s2", "cannot-sync", "closed-by-merge", "web_widget", "analyzed-by-script"]
+        tags2Filter   = ["s3", "s2", "cannot-sync", "closed-by-merge"
+                        , "web_widget", "analyzed-by-script"]
         filteredTags  = filter (`notElem` tags2Filter) extractedTags -- Filter tags
         groupByTags :: [ Text ] -> [(Text, Int)]
         groupByTags ts = map (\l@(x:_) -> (x, length l)) (group $ sort ts)          -- Group them
@@ -203,23 +213,23 @@ inspectAttachment :: Attachment -> App (Text, [Text], Bool)
 inspectAttachment att = do
     Config{..} <- ask
     rawlog <- liftIO $ getAttachment att   -- Get attachment
-    let results = extractLogsFromZip cfgNumOfLogsToAnalyze rawlog
-    case results of
+    let extractResult = extractLogsFromZip cfgNumOfLogsToAnalyze rawlog
+    case extractResult of
         Left err -> do
-          liftIO $ putTextLn $ "Error parsing zip:" <> err
-          return (toComment SentLogCorrupted , [renderErrorCode SentLogCorrupted], False)
+            liftIO $ putTextLn $ "Error parsing zip:" <> err
+            return (toComment SentLogCorrupted , [renderErrorCode SentLogCorrupted], False)
         Right result -> do
-          let analysisEnv = setupAnalysis cfgKnowledgebase
-              eitherAnalysisResult = extractIssuesFromLogs result analysisEnv
-          case eitherAnalysisResult of
-              Right analysisResult -> do -- do something!
-                let errorCodes = extractErrorCodes analysisResult
-                let commentRes = prettyFormatAnalysis analysisResult
-                liftIO $ mapM_ putTextLn errorCodes
-                return (toText commentRes, errorCodes, False)
-              Left noResult -> do
-                liftIO $ putTextLn noResult
-                return (noResult, [renderTicketStatus NoKnownIssue], False)
+            let analysisEnv = setupAnalysis cfgKnowledgebase
+                eitherAnalysisResult = extractIssuesFromLogs result analysisEnv
+            case eitherAnalysisResult of
+                Right analysisResult -> do -- do something!
+                    let errorCodes = extractErrorCodes analysisResult
+                        commentRes = prettyFormatAnalysis analysisResult
+                    liftIO $ mapM_ putTextLn errorCodes
+                    return (toText commentRes, errorCodes, False)
+                Left noResult -> do
+                    liftIO $ putTextLn noResult
+                    return (noResult, [renderTicketStatus NoKnownIssue], False)
 
 -- | Filter analyzed tickets
 filterAnalyzedTickets :: [TicketInfo] -> [TicketId]
@@ -228,8 +238,8 @@ filterAnalyzedTickets = foldr (\TicketInfo{..} acc ->
                                 then acc
                                 else ticketId : acc
                               ) []
-    where analyzedIndicatorTag :: Text
-          analyzedIndicatorTag = renderTicketStatus AnalyzedByScript
+                       where analyzedIndicatorTag :: Text
+                             analyzedIndicatorTag = renderTicketStatus AnalyzedByScript
 
 -- | Return list of ticketIds that has been requested by config user (not used)
 listTickets :: RequestType ->  App [TicketInfo]
@@ -242,11 +252,11 @@ listTickets request = do
         req = apiRequest cfg url
         go :: [TicketInfo] -> Text -> IO [TicketInfo]
         go tlist nextPage' = do
-          let req' = apiRequestAbsolute cfg nextPage'
-          (TicketList pagen nextPagen) <- apiCall parseTickets req'
-          case nextPagen of
-              Just nextUrl -> go (tlist <> pagen) nextUrl
-              Nothing      -> pure (tlist <> pagen)
+            let req' = apiRequestAbsolute cfg nextPage'
+            (TicketList pagen nextPagen) <- apiCall parseTickets req'
+            case nextPagen of
+                Just nextUrl -> go (tlist <> pagen) nextUrl
+                Nothing      -> pure (tlist <> pagen)
 
     (TicketList page0 nextPage) <- liftIO $ apiCall parseTickets req
     case nextPage of
@@ -259,12 +269,12 @@ postTicketComment tid body tags public = do
     cfg <- ask
     let req1 = apiRequest cfg ("tickets/" <> show tid <> ".json")
         req2 = addJsonBody
-                 (Ticket
-                   (Comment ("**Log classifier**\n\n" <> body) [] public (cfgAgentId cfg))
-                   (cfgAssignTo cfg)
-                   (renderTicketStatus AnalyzedByScript:tags)
-                 )
-                 req1
+                   (Ticket
+                       (Comment ("**Log classifier**\n\n" <> body) [] public (cfgAgentId cfg))
+                       (cfgAssignTo cfg)
+                       (renderTicketStatus AnalyzedByScript:tags)
+                   )
+                   req1
     void $ liftIO $ apiCall (pure . encodeToLazyText) req2
     pure ()
 
@@ -298,15 +308,15 @@ apiCall parser req = do
     case parseEither parser v of
         Right o -> pure o
         Left e -> error $ "couldn't parse response "
-          <> toText e <> "\n" <> decodeUtf8 (encode v)
+            <> toText e <> "\n" <> decodeUtf8 (encode v)
 
 -- | General api request function
 apiRequest :: Config -> Text -> Request
 apiRequest Config{..} u = setRequestPath (encodeUtf8 path) $
                           addRequestHeader "Content-Type" "application/json" $
                           setRequestBasicAuth
-                            (encodeUtf8 cfgEmail <> "/token")
-                            (encodeUtf8 cfgToken) $
+                              (encodeUtf8 cfgEmail <> "/token")
+                              (encodeUtf8 cfgToken) $
                           parseRequest_ (toString (cfgZendesk <> path))
                         where
                           path ="/api/v2/" <> u
@@ -315,6 +325,6 @@ apiRequest Config{..} u = setRequestPath (encodeUtf8 path) $
 apiRequestAbsolute :: Config -> Text -> Request
 apiRequestAbsolute Config{..} u = addRequestHeader "Content-Type" "application/json" $
                                   setRequestBasicAuth
-                                    (encodeUtf8 cfgEmail <> "/token")
-                                    (encodeUtf8 cfgToken) $
+                                      (encodeUtf8 cfgEmail <> "/token")
+                                      (encodeUtf8 cfgToken) $
                                   parseRequest_ (toString u)

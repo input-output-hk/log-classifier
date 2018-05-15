@@ -17,10 +17,9 @@ insideQuotes =
     LT.append <$> (LT.fromStrict <$> ALT.takeWhile (/= '"'))
               <*> (LT.concat <$> many (LT.cons <$> dquotes <*> insideQuotes))
     <?> "inside of double quotes"
-    where
-      dquotes =
-        string "\"\"" >> return '"'
-        <?> "paired double quotes"
+  where
+    dquotes = string "\"\"" >> return '"'
+             <?> "paired double quotes"
 
 -- | Parse quoted field
 quotedField :: Parser LText
