@@ -34,15 +34,15 @@ data ErrorCode
 
 -- | Record identifying the issue
 data Knowledge = Knowledge
-    {  kErrorText :: !LText
+    {  kErrorText :: !Text
     -- ^ Text used for matching error lines
     ,  kErrorCode :: !ErrorCode
     -- ^ Identity for error code
-    ,  kProblem   :: !LText
+    ,  kProblem   :: !Text
     -- ^ Text describing what is the problem
-    ,  kSolution  :: !LText
+    ,  kSolution  :: !Text
     -- ^ Text describing how to solve the issue
-    ,  kFAQNumber :: !LText
+    ,  kFAQNumber :: !Text
     -- ^ The FAQ number that will be displayed on the official Cardano FAQ page
     } deriving (Show)
 

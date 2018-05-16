@@ -20,13 +20,13 @@ import           Network.HTTP.Simple (Request, addRequestHeader, getResponseBody
 
 import           CLI (CLI (..), getCliArgs)
 import           LogAnalysis.Classifier (extractErrorCodes, extractIssuesFromLogs,
-                                         prettyFormatAnalysis)
+                                         prettyFormatAnalysis, prettyFormatLogReadError,
+                                         prettyFormatNoIssues)
 import           LogAnalysis.KnowledgeCSVParser (parseKnowLedgeBase)
-import           LogAnalysis.Types (ErrorCode (..), Knowledge, renderErrorCode, setupAnalysis,
-                                    toComment)
+import           LogAnalysis.Types (ErrorCode (..), Knowledge, renderErrorCode, setupAnalysis)
 import           Types (Attachment (..), Comment (..), Ticket (..), TicketId, TicketInfo (..),
-                        TicketList (..), TicketStatus (..), parseAgentId, parseComments,
-                        parseTickets, renderTicketStatus)
+                        TicketList (..), TicketTag (..), ZendeskResponse (..), parseAgentId,
+                        parseComments, parseTickets, renderTicketStatus)
 import           Util (extractLogsFromZip)
 
 -- TODO: Better exception handling
@@ -101,7 +101,7 @@ runZendeskMain = do
             putTextLn $  "Classifier is going to extract emails requested by: " <> cfgEmail cfg
             tickets <- runApp (listTickets Requested) cfg
             putTextLn $ "There are " <> show (length tickets) <> " tickets requested by this user."
-            let ticketIds = foldr (\TicketInfo{..} acc -> tiId : acc) [] tickets
+            let ticketIds = foldr (\TicketInfo{..} acc -> ticketId : acc) [] tickets
             mapM_ (\tid -> runApp (extractEmailAddress tid) cfg) ticketIds
         -- Process given ticket
         (ProcessTicket ticketId) -> do
@@ -118,6 +118,16 @@ runZendeskMain = do
             putTextLn $ "There are " <> show (length filteredTicketIds) <> " unanalyzed tickets."
             putTextLn "Processing tickets, this may take hours to finish."
             mapM_ (\tid -> runApp (processTicketAndId tid) cfg) filteredTicketIds
+            putTextLn "All the tickets has been processed."
+        -- Fetch all the tickets
+        FetchTickets -> do
+            putTextLn $  "Classifier is going to fetch tickets assign to: " <> cfgEmail cfg
+            printWarning
+            tickets <- runApp (listTickets Assigned) cfg
+            let filteredTicketIds = filterAnalyzedTickets tickets
+            putTextLn $ "There are " <> show (length filteredTicketIds) <> " unanalyzed tickets."
+            putTextLn "Processing tickets, this may take hours to finish."
+            mapM_ (putTextLn . show) filteredTicketIds
             putTextLn "All the tickets has been processed."
         -- Return raw request
         (RawRequest url) -> do
@@ -154,7 +164,7 @@ printTicketCountMessage tickets email = do
 -- | Sort the ticket so we can see the statistics
 sortTickets :: [TicketInfo] -> [(Text, Int)]
 sortTickets tickets =
-    let extractedTags = foldr (\TicketInfo{..} acc -> tiTags <> acc) [] tickets  -- Extract tags from tickets
+    let extractedTags = foldr (\TicketInfo{..} acc -> ticketTags <> acc) [] tickets  -- Extract tags from tickets
         tags2Filter   = ["s3", "s2", "cannot-sync", "closed-by-merge"
                         , "web_widget", "analyzed-by-script"]
         filteredTags  = filter (`notElem` tags2Filter) extractedTags  -- Filter tags
@@ -185,23 +195,31 @@ extractEmailAddress ticketId = do
 processTicketAndId :: TicketId -> App ()
 processTicketAndId ticketId = do
     comments <- getTicketComments ticketId
-    let
-      -- Filter tickets without logs
-      -- Could analyze the comments but I don't see it useful..
-      commentsWithAttachments :: [Comment]
-      commentsWithAttachments = filter (\x -> length (cAttachments x) > 0) comments
-      -- Filter out ticket without logs
-    let attachments :: [ Attachment ]
+
+    -- Filter tickets without logs
+    -- Could analyze the comments but I don't see it useful..
+    let commentsWithAttachments :: [Comment]
+        commentsWithAttachments = filter (\x -> length (cAttachments x) > 0) comments
+
+    -- Filter out ticket without logs
+    let attachments :: [Attachment]
         attachments = concatMap cAttachments commentsWithAttachments
-    let justLogs = filter (\x -> "application/zip" == aContentType x) attachments
+
+    let justLogs :: [Attachment]
+        justLogs = filter (\x -> "application/zip" == aContentType x) attachments
+
     mapM_ (inspectAttachmentAndPostComment ticketId) justLogs
-    pure ()
 
 -- | Inspect attachment then post comment to the ticket
 inspectAttachmentAndPostComment :: TicketId -> Attachment -> App ()
 inspectAttachmentAndPostComment ticketId attachment = do
     liftIO $ putTextLn $ "Analyzing ticket id: " <> show ticketId
-    (comment, tags, isPublicComment) <- inspectAttachment attachment
+    zendeskResponse <- inspectAttachment attachment
+
+    let comment         = zrComment zendeskResponse
+    let tags            = zrTags zendeskResponse
+    let isPublicComment = zrIsPublic zendeskResponse
+
     postTicketComment ticketId comment tags isPublicComment
 
 -- | Given number of file of inspect, knowledgebase and attachment,
@@ -210,55 +228,79 @@ inspectAttachmentAndPostComment ticketId attachment = do
 -- The results are following:
 --
 -- __(comment, tags, bool of whether is should be public comment)__
-inspectAttachment :: Attachment -> App (Text, [Text], Bool)
+inspectAttachment :: Attachment -> App ZendeskResponse
 inspectAttachment att = do
     Config{..} <- ask
-    rawlog <- liftIO $ getAttachment att  -- Get attachment
-    let extractResult = extractLogsFromZip cfgNumOfLogsToAnalyze rawlog
-    case extractResult of
+
+    rawlog <- liftIO $ getAttachment att   -- Get attachment
+    let results = extractLogsFromZip cfgNumOfLogsToAnalyze rawlog
+
+    case results of
         Left err -> do
             liftIO $ putTextLn $ "Error parsing zip:" <> err
-            return (toComment SentLogCorrupted , [renderErrorCode SentLogCorrupted], False)
+            pure ZendeskResponse
+                { zrComment     = prettyFormatLogReadError
+                , zrTags        = [renderErrorCode SentLogCorrupted]
+                , zrIsPublic    = False
+                }
         Right result -> do
-            let analysisEnv = setupAnalysis cfgKnowledgebase
-                eitherAnalysisResult = extractIssuesFromLogs result analysisEnv
+            let analysisEnv             = setupAnalysis cfgKnowledgebase
+            let eitherAnalysisResult    = extractIssuesFromLogs result analysisEnv
+
             case eitherAnalysisResult of
                 Right analysisResult -> do
                     let errorCodes = extractErrorCodes analysisResult
                     let commentRes = prettyFormatAnalysis analysisResult
+
                     liftIO $ mapM_ putTextLn errorCodes
-                    return (toText commentRes, errorCodes, False)
+
+                    pure ZendeskResponse
+                        { zrComment     = commentRes
+                        , zrTags        = errorCodes
+                        , zrIsPublic    = False
+                        }
+
                 Left noResult -> do
-                    liftIO $ putTextLn noResult
-                    return (noResult, [renderTicketStatus NoKnownIssue], False)
+                    liftIO $ putStrLn noResult
+                    pure ZendeskResponse
+                        { zrComment     = prettyFormatNoIssues
+                        , zrTags        = [renderTicketStatus NoKnownIssue]
+                        , zrIsPublic    = False
+                        }
 
 -- | Filter analyzed tickets
 filterAnalyzedTickets :: [TicketInfo] -> [TicketId]
-filterAnalyzedTickets = foldr (\TicketInfo{..} acc ->
-                                if analyzedIndicatorTag `elem` tiTags
-                                then acc
-                                else tiId : acc
-                              ) []
-                       where
-                         analyzedIndicatorTag :: Text
-                         analyzedIndicatorTag = renderTicketStatus AnalyzedByScript
+filterAnalyzedTickets ticketsInfo =
+    map ticketId $ filter ticketsFilter ticketsInfo
+  where
+    ticketsFilter :: TicketInfo -> Bool
+    ticketsFilter ticketInfo =
+        isTicketAnalyzed ticketInfo && isTicketOpen ticketInfo
+
+    isTicketAnalyzed :: TicketInfo -> Bool
+    isTicketAnalyzed TicketInfo{..} = (renderTicketStatus AnalyzedByScript) `notElem` ticketTags
+
+    isTicketOpen :: TicketInfo -> Bool
+    isTicketOpen TicketInfo{..} = ticketStatus == "open" -- || ticketStatus == "new"
 
 -- | Return list of ticketIds that has been requested by config user (not used)
 listTickets :: RequestType ->  App [TicketInfo]
 listTickets request = do
     cfg <- ask
+
     let agentId = cfgAgentId cfg
     let url = case request of
                   Requested -> "/users/" <> show agentId <> "/tickets/requested.json"
                   Assigned  -> "/users/" <> show agentId <> "/tickets/assigned.json"
     let req = apiRequest cfg url
+
     let go :: [TicketInfo] -> Text -> IO [TicketInfo]
-        go tlist nextPage' = do
-            let req' = apiRequestAbsolute cfg nextPage'
-            (TicketList pagen nextPagen) <- apiCall parseTickets req'
-            case nextPagen of
-                Just nextUrl -> go (tlist <> pagen) nextUrl
-                Nothing      -> pure (tlist <> pagen)
+        go list' nextPage' = do
+          let req' = apiRequestAbsolute cfg nextPage'
+          (TicketList pagen nextPagen) <- apiCall parseTickets req'
+          case nextPagen of
+              Just nextUrl -> go (list' <> pagen) nextUrl
+              Nothing      -> pure (list' <> pagen)
 
     (TicketList page0 nextPage) <- liftIO $ apiCall parseTickets req
     case nextPage of

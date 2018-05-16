@@ -9,5 +9,3 @@
 "IO error: Failed to create dir","UserNameError","Daedalus Wallet Support Issue 9 User is using non-latin characters for username","To fix this issue, pleae change your PC's username using only latin-characters","235"
 "open.lock: Locked by","StaleLockFile","Daedalus Wallet Support Issue 10 open.lock file is corrupted due to improper shutdown","The issue is that the application was improperly shutdown. As a workaround, you'll need to delete open.lock file.","236"
 "Network.Socket.recvBuf: failed (No error)","ConnectionRefused","Daedalus Wallet Support Issue 11 Firewall is blocking the connection","To fix this issue, please try other ISP provider","234"
-"The system cannot find the file specified","DBPath","Daedalus Wallet Support Issue 12 Daedalus cannot find certain files","Unfortunately, there's no workaround for this solution. Need more information","000"
-"IO error: Can not get size for","CannotGetDBSize","Daedalus Wallet Support Issue 13 Error message of Couldn’t pack log files shows up","Unfortunately, there's no workaround for this solution. Please contact support@iohk.io","000"

@@ -10,12 +10,14 @@ import           Options.Applicative (Parser, ParserInfo, argument, auto, comman
                                       progDesc, strOption, (<**>))
 import           Paths_log_classifier (version)
 
-data CLI = CollectEmails      -- ^ Collect email addresses
-         | ProcessTicket Int  -- ^ Process ticket of an given ticket id
-         | ProcessTickets     -- ^ Procss all the tickets in the Zendesk
-         | RawRequest String  -- ^ Raw request to the given url
-         | ShowStatistics     -- ^ Show statistics
-         deriving (Show)
+data CLI
+    = CollectEmails     -- ^ Collect email addresses
+    | ProcessTicket Int -- ^ Process ticket of an given ticket id
+    | ProcessTickets    -- ^ Process all the tickets in Zendesk
+    | FetchTickets      -- ^ Fetch all the tickets in Zendesk
+    | RawRequest String -- ^ Raw request to the given url
+    | ShowStatistics    -- ^ Show statistics
+    deriving (Show)
 
 -- | Parser for ProcessTicket
 cmdProcessTicket :: Parser CLI
@@ -32,17 +34,18 @@ cmdRawRequest = RawRequest <$> strOption
 -- | Parser for CLI commands
 cli :: Parser CLI
 cli = hsubparser $ mconcat
-    [
-      command "collect-emails" (info (pure CollectEmails)
-          (progDesc "Collect emails requested by single user"))
+    [ command "collect-emails" (info (pure CollectEmails)
+        (progDesc "Collect emails requested by single user"))
     , command "process-tickets" (info (pure ProcessTickets)
-          (progDesc "Process all the tickets i.e add comments, tags."))
+        (progDesc "Process all the tickets i.e add comments, tags."))
+    , command "fetch-tickets" (info (pure FetchTickets)
+        (progDesc "Fetch all the tickets that need to be analyzes."))
     , command "process-ticket" (info cmdProcessTicket
-          (progDesc "Process Zendesk ticket of an given ticket id"))
+        (progDesc "Process Zendesk ticket of an given ticket id"))
     , command "raw-request" (info cmdRawRequest
-          (progDesc "Raw request to the given url"))
+        (progDesc "Raw request to the given url"))
     , command "show-stats" (info (pure ShowStatistics)
-          (progDesc "Print list of ticket Ids that agent has been assigned"))
+        (progDesc "Print list of ticket Ids that agent has been assigned"))
     ]
 
 -- | Get CLI arguments from command line
