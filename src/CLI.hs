@@ -5,7 +5,7 @@ module CLI
 
 import           Universum
 
-import           Options.Applicative (Parser, argument, auto, command, execParser, fullDesc, header,
+import           Options.Applicative (Parser, ParserInfo, argument, auto, command, execParser, fullDesc, header,
                                       help, helper, hsubparser, info, infoOption, long, metavar,
                                       progDesc, strOption, (<**>))
 import           Paths_log_classifier (version)
@@ -48,12 +48,14 @@ cli = hsubparser $ mconcat
 -- | Get CLI arguments from command line
 getCliArgs :: IO CLI
 getCliArgs = execParser opts
-      where
-        opts = info (cli <**> helper <**> versionHelper)
-            (fullDesc
-            <> header "Log classifier"
-            <> progDesc "Client for peforming analysis on Zendesk"
-            )
-        versionHelper = infoOption
-            ("Log classifier version" <> show version)
-            (long "version" <> help "Show version")
+  where
+    opts ::  ParserInfo CLI
+    opts = info (cli <**> helper <**> versionHelper)
+        ( fullDesc
+        <> header "Log classifier"
+        <> progDesc "Client for peforming analysis on Zendesk"
+        )
+    versionHelper :: Parser (a -> a)
+    versionHelper = infoOption
+        ("Log classifier version" <> show version)
+        (long "version" <> help "Show version")
