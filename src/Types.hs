@@ -24,23 +24,23 @@ import           Data.Aeson.Types (Parser)
 
 -- | Attachment of the ticket
 data Attachment = Attachment
-    { attachmentURL         :: !Text
+    { aURL         :: !Text
     -- ^ URL of the attachment
-    , attachmentContentType :: !Text
+    , aContentType :: !Text
     -- ^ ContentType of the attachment
-    , attachmentSize        :: !Int
+    , aSize        :: !Int
     -- ^ Attachment size
     }
 
 -- | Comments
 data Comment = Comment
-    { commentBody        :: !Text
+    { cBody        :: !Text
     -- ^ Body of comment
-    , commentAttachments :: ![Attachment]
+    , cAttachments :: ![Attachment]
     -- ^ Attachment
-    , commentPublic      :: !Bool
+    , cPublic      :: !Bool
     -- ^ Flag of whether comment should be public
-    , commentAuthor      :: !Integer
+    , cAuthor      :: !Integer
     -- ^ Auther of comment
     }
 
@@ -51,17 +51,17 @@ newtype CommentOuter = CommentOuter {
 
 -- | Zendexk ticket
 data Ticket = Ticket
-    { ticketComment  :: !Comment
+    { tComment  :: !Comment
     -- ^ Ticket comment
-    , ticketAssignee :: !Integer
+    , tAssignee :: !Integer
     -- ^ Assignee of the ticket
-    , ticketTag      :: ![Text]
+    , tTag      :: ![Text]
     -- ^ Tags attached to ticket
     }
 
 -- | List of zendesk ticket
 data TicketList = TicketList
-    { ticketListTickets :: ![TicketInfo]
+    { tlTickets :: ![TicketInfo]
     -- ^ Information of tickets
     , nextPage          :: Maybe Text
     -- ^ Next page
@@ -70,9 +70,9 @@ data TicketList = TicketList
 type TicketId = Int
 
 data TicketInfo = TicketInfo
-    { ticketId   :: !Int
+    { tiId   :: !Int
     -- ^ Id of an ticket
-    , ticketTags :: ![Text]
+    , tiTags :: ![Text]
     -- ^ Tags associated with ticket
     }
 

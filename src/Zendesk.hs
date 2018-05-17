@@ -100,7 +100,7 @@ runZendeskMain = do
             putTextLn $  "Classifier is going to extract emails requested by: " <> cfgEmail cfg
             tickets <- runApp (listTickets Requested) cfg
             putTextLn $ "There are " <> show (length tickets) <> " tickets requested by this user."
-            let ticketIds = foldr (\TicketInfo{..} acc -> ticketId : acc) [] tickets
+            let ticketIds = foldr (\TicketInfo{..} acc -> tiId : acc) [] tickets
             mapM_ (\tid -> runApp (extractEmailAddress tid) cfg) ticketIds
         -- Process given ticket
         (ProcessTicket ticketId) -> do
@@ -153,7 +153,7 @@ printTicketCountMessage tickets email = do
 -- | Sort the ticket so we can see the statistics
 sortTickets :: [TicketInfo] -> [(Text, Int)]
 sortTickets tickets =
-    let extractedTags = foldr (\TicketInfo{..} acc -> ticketTags <> acc) [] tickets  -- Extract tags from tickets
+    let extractedTags = foldr (\TicketInfo{..} acc -> tiTags <> acc) [] tickets  -- Extract tags from tickets
         tags2Filter   = ["s3", "s2", "cannot-sync", "closed-by-merge"
                         , "web_widget", "analyzed-by-script"]
         filteredTags  = filter (`notElem` tags2Filter) extractedTags  -- Filter tags
@@ -174,7 +174,7 @@ setupKnowledgebaseEnv path = do
 extractEmailAddress :: TicketId -> App ()
 extractEmailAddress ticketId = do
     comments <- getTicketComments ticketId
-    let commentWithEmail = commentBody $ fromMaybe (error "No comment") (safeHead comments)
+    let commentWithEmail = cBody $ fromMaybe (error "No comment") (safeHead comments)
         emailAddress = fromMaybe (error "No email") (safeHead $ lines commentWithEmail)
     liftIO $ guard ("@" `isInfixOf` emailAddress)
     liftIO $ appendFile "emailAddress.txt" (emailAddress <> "\n")
@@ -188,11 +188,11 @@ processTicketAndId ticketId = do
       -- Filter tickets without logs
       -- Could analyze the comments but I don't see it useful..
       commentsWithAttachments :: [Comment]
-      commentsWithAttachments = filter (\x -> length (commentAttachments x) > 0) comments
+      commentsWithAttachments = filter (\x -> length (cAttachments x) > 0) comments
       -- Filter out ticket without logs
       attachments :: [ Attachment ]
-      attachments = concatMap commentAttachments commentsWithAttachments
-      justLogs = filter (\x -> "application/zip" == attachmentContentType x) attachments
+      attachments = concatMap cAttachments commentsWithAttachments
+      justLogs = filter (\x -> "application/zip" == aContentType x) attachments
     mapM_ (inspectAttachmentAndPostComment ticketId) justLogs
     pure ()
 
@@ -234,9 +234,9 @@ inspectAttachment att = do
 -- | Filter analyzed tickets
 filterAnalyzedTickets :: [TicketInfo] -> [TicketId]
 filterAnalyzedTickets = foldr (\TicketInfo{..} acc ->
-                                if analyzedIndicatorTag `elem` ticketTags
+                                if analyzedIndicatorTag `elem` tiTags
                                 then acc
-                                else ticketId : acc
+                                else tiId : acc
                               ) []
                        where 
                          analyzedIndicatorTag :: Text
@@ -291,7 +291,7 @@ getAttachment :: Attachment -> IO LByteString
 getAttachment Attachment{..} = getResponseBody <$> httpLBS req
     where
       req :: Request
-      req = parseRequest_ (toString attachmentURL)
+      req = parseRequest_ (toString aURL)
 
 -- | Get ticket's comments
 getTicketComments :: TicketId -> App [Comment]
