@@ -65,7 +65,7 @@ runBehavior (Behavior behavior) files = do
         checkFile :: FilePath -> LByteString -> IO (Maybe [(ErrorName, ErrorCode)])
         checkFile fp contents = do
             hits <- Map.traverseMaybeWithKey (checkBehaviorOnFile fp contents) behavior
-            if length hits > 0 
+            if length hits > 0
             then pure $ Just $ Map.toList hits
             else pure Nothing
         checkBehaviorOnFile :: FilePath

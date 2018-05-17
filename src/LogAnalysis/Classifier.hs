@@ -62,7 +62,7 @@ prettyFormatAnalysis as =
              <> "\n" <> kProblem
              <> "\n **" <> kSolution
              <> "** \n"
-             <> foldr1 (\txt ts -> "\n" <> txt <> "\n" <> ts) txts -- List errors
+             <> foldr1 (\txt ts -> "\n" <> txt <> "\n" <> ts) txts  -- List errors
              <> "\n" <> acc
              <> "\n\n"
              ) "" aList

@@ -14,7 +14,7 @@ import           Universum
 import qualified Data.Map.Strict as Map
 
 -- | Identifier for each error
-data ErrorCode 
+data ErrorCode
     = ShortStorage       -- ^ Not enough space on hard drive to store block data
     | UserNameError      -- ^ User is using non-latin characters for username
     | TimeSync           -- ^ User's PC's time is out of sync

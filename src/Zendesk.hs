@@ -81,7 +81,7 @@ runZendeskMain :: IO ()
 runZendeskMain = do
     args <- getCliArgs
     putTextLn "Welcome to Zendesk classifier!"
-    token <- readFile tokenPath        -- Zendesk token
+    token <- readFile tokenPath  -- Zendesk token
     assignFile <- readFile assignToPath  -- Select assignee
     knowledges <- setupKnowledgebaseEnv knowledgebasePath
     assignTo <- case readEither assignFile of
@@ -153,12 +153,12 @@ printTicketCountMessage tickets email = do
 -- | Sort the ticket so we can see the statistics
 sortTickets :: [TicketInfo] -> [(Text, Int)]
 sortTickets tickets =
-    let extractedTags = foldr (\TicketInfo{..} acc -> ticketTags <> acc) [] tickets   -- Extract tags from tickets
+    let extractedTags = foldr (\TicketInfo{..} acc -> ticketTags <> acc) [] tickets  -- Extract tags from tickets
         tags2Filter   = ["s3", "s2", "cannot-sync", "closed-by-merge"
                         , "web_widget", "analyzed-by-script"]
-        filteredTags  = filter (`notElem` tags2Filter) extractedTags -- Filter tags
+        filteredTags  = filter (`notElem` tags2Filter) extractedTags  -- Filter tags
         groupByTags :: [ Text ] -> [(Text, Int)]
-        groupByTags ts = map (\l@(x:_) -> (x, length l)) (group $ sort ts)          -- Group them
+        groupByTags ts = map (\l@(x:_) -> (x, length l)) (group $ sort ts)  -- Group them
     in  groupByTags filteredTags
 
 -- | Read CSV file and setup knowledge base
@@ -212,7 +212,7 @@ inspectAttachmentAndPostComment ticketId attachment = do
 inspectAttachment :: Attachment -> App (Text, [Text], Bool)
 inspectAttachment att = do
     Config{..} <- ask
-    rawlog <- liftIO $ getAttachment att   -- Get attachment
+    rawlog <- liftIO $ getAttachment att  -- Get attachment
     let extractResult = extractLogsFromZip cfgNumOfLogsToAnalyze rawlog
     case extractResult of
         Left err -> do
@@ -222,7 +222,7 @@ inspectAttachment att = do
             let analysisEnv = setupAnalysis cfgKnowledgebase
                 eitherAnalysisResult = extractIssuesFromLogs result analysisEnv
             case eitherAnalysisResult of
-                Right analysisResult -> do -- do something!
+                Right analysisResult -> do
                     let errorCodes = extractErrorCodes analysisResult
                         commentRes = prettyFormatAnalysis analysisResult
                     liftIO $ mapM_ putTextLn errorCodes
@@ -238,8 +238,9 @@ filterAnalyzedTickets = foldr (\TicketInfo{..} acc ->
                                 then acc
                                 else ticketId : acc
                               ) []
-                       where analyzedIndicatorTag :: Text
-                             analyzedIndicatorTag = renderTicketStatus AnalyzedByScript
+                       where 
+                         analyzedIndicatorTag :: Text
+                         analyzedIndicatorTag = renderTicketStatus AnalyzedByScript
 
 -- | Return list of ticketIds that has been requested by config user (not used)
 listTickets :: RequestType ->  App [TicketInfo]
@@ -288,7 +289,9 @@ getAgentId = do
 -- | Given attachmentUrl, return attachment in bytestring
 getAttachment :: Attachment -> IO LByteString
 getAttachment Attachment{..} = getResponseBody <$> httpLBS req
-    where req = parseRequest_ (toString attachmentURL)
+    where
+      req :: Request
+      req = parseRequest_ (toString attachmentURL)
 
 -- | Get ticket's comments
 getTicketComments :: TicketId -> App [Comment]
@@ -319,7 +322,8 @@ apiRequest Config{..} u = setRequestPath (encodeUtf8 path) $
                               (encodeUtf8 cfgToken) $
                           parseRequest_ (toString (cfgZendesk <> path))
                         where
-                          path ="/api/v2/" <> u
+                          path :: Text
+                          path = "/api/v2/" <> u
 
 -- | Api request but use absolute path
 apiRequestAbsolute :: Config -> Text -> Request

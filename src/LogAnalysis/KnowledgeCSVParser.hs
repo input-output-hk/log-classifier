@@ -18,8 +18,9 @@ insideQuotes =
               <*> (LT.concat <$> many (LT.cons <$> dquotes <*> insideQuotes))
     <?> "inside of double quotes"
   where
+    dquotes :: Parser Char
     dquotes = string "\"\"" >> return '"'
-             <?> "paired double quotes"
+              <?> "paired double quotes"
 
 -- | Parse quoted field
 quotedField :: Parser LText
@@ -46,16 +47,16 @@ parseErrorCode =
     <|> (string "Error"             >> return Error)
 
 -- | Parse each csv records
-parseKnowledge :: Parser Knowledge -- not really clean code..
+parseKnowledge :: Parser Knowledge  -- not really clean code..
 parseKnowledge = do
     e <- quotedField
-    _ <- char ','
-    _ <- char '"'
+    () <$ char ','
+    () <$ char '"'
     c <- parseErrorCode
-    _ <- char '"'
-    _ <- char ','
+    () <$ char '"'
+    () <$ char ','
     p <- quotedField
-    _ <- char ','
+    () <$ char ','
     s <- quotedField
     return $ Knowledge e c p s
 

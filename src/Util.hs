@@ -11,10 +11,11 @@ import qualified Data.Map.Strict as Map
 -- | Extract log file from given zip file
 extractLogsFromZip :: Int -> LByteString -> Either Text [LByteString]
 extractLogsFromZip numberOfFiles file = do
-    zipMap <- readZip file -- Read File
-    let extractedLogs = Map.elems $ mTake numberOfFiles zipMap -- Extract selected logs
+    zipMap <- readZip file  -- Read File
+    let extractedLogs = Map.elems $ mTake numberOfFiles zipMap  -- Extract selected logs
     return extractedLogs
   where
+    mTake :: Int -> Map k a -> Map k a
     mTake n = Map.fromDistinctAscList . take n . Map.toAscList
 
 -- | Read zipe file

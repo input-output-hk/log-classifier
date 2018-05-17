@@ -10,11 +10,11 @@ import           Options.Applicative (Parser, argument, auto, command, execParse
                                       progDesc, strOption, (<**>))
 import           Paths_log_classifier (version)
 
-data CLI = CollectEmails     -- ^ Collect email addresses
-         | ProcessTicket Int -- ^ Process ticket of an given ticket id
-         | ProcessTickets    -- ^ Procss all the tickets in the Zendesk
-         | RawRequest String -- ^ Raw request to the given url
-         | ShowStatistics    -- ^ Show statistics
+data CLI = CollectEmails      -- ^ Collect email addresses
+         | ProcessTicket Int  -- ^ Process ticket of an given ticket id
+         | ProcessTickets     -- ^ Procss all the tickets in the Zendesk
+         | RawRequest String  -- ^ Raw request to the given url
+         | ShowStatistics     -- ^ Show statistics
          deriving Show
 
 -- | Parser for ProcessTicket
@@ -45,6 +45,7 @@ cli = hsubparser $ mconcat
           (progDesc "Print list of ticket Ids that agent has been assigned"))
     ]
 
+-- | Get CLI arguments from command line
 getCliArgs :: IO CLI
 getCliArgs = execParser opts
       where
