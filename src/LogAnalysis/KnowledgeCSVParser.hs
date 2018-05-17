@@ -50,13 +50,13 @@ parseErrorCode =
 parseKnowledge :: Parser Knowledge  -- not really clean code..
 parseKnowledge = do
     e <- quotedField
-    () <$ char ','
-    () <$ char '"'
+    _ <- char ','
+    _ <- char '"'
     c <- parseErrorCode
-    () <$ char '"'
-    () <$ char ','
+    _ <- char '"'
+    _ <- char ','
     p <- quotedField
-    () <$ char ','
+    _ <- char ','
     s <- quotedField
     return $ Knowledge e c p s
 
