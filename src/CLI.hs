@@ -15,7 +15,7 @@ data CLI = CollectEmails      -- ^ Collect email addresses
          | ProcessTickets     -- ^ Procss all the tickets in the Zendesk
          | RawRequest String  -- ^ Raw request to the given url
          | ShowStatistics     -- ^ Show statistics
-         deriving Show
+         deriving (Show)
 
 -- | Parser for ProcessTicket
 cmdProcessTicket :: Parser CLI

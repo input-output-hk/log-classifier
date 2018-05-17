@@ -175,7 +175,7 @@ extractEmailAddress :: TicketId -> App ()
 extractEmailAddress ticketId = do
     comments <- getTicketComments ticketId
     let commentWithEmail = cBody $ fromMaybe (error "No comment") (safeHead comments)
-        emailAddress = fromMaybe (error "No email") (safeHead $ lines commentWithEmail)
+    let emailAddress = fromMaybe (error "No email") (safeHead $ lines commentWithEmail)
     liftIO $ guard ("@" `isInfixOf` emailAddress)
     liftIO $ appendFile "emailAddress.txt" (emailAddress <> "\n")
     liftIO $ putTextLn emailAddress
@@ -190,9 +190,9 @@ processTicketAndId ticketId = do
       commentsWithAttachments :: [Comment]
       commentsWithAttachments = filter (\x -> length (cAttachments x) > 0) comments
       -- Filter out ticket without logs
-      attachments :: [ Attachment ]
-      attachments = concatMap cAttachments commentsWithAttachments
-      justLogs = filter (\x -> "application/zip" == aContentType x) attachments
+    let attachments :: [ Attachment ]
+        attachments = concatMap cAttachments commentsWithAttachments
+    let justLogs = filter (\x -> "application/zip" == aContentType x) attachments
     mapM_ (inspectAttachmentAndPostComment ticketId) justLogs
     pure ()
 
@@ -224,7 +224,7 @@ inspectAttachment att = do
             case eitherAnalysisResult of
                 Right analysisResult -> do
                     let errorCodes = extractErrorCodes analysisResult
-                        commentRes = prettyFormatAnalysis analysisResult
+                    let commentRes = prettyFormatAnalysis analysisResult
                     liftIO $ mapM_ putTextLn errorCodes
                     return (toText commentRes, errorCodes, False)
                 Left noResult -> do
@@ -247,11 +247,11 @@ listTickets :: RequestType ->  App [TicketInfo]
 listTickets request = do
     cfg <- ask
     let agentId = cfgAgentId cfg
-        url = case request of
+    let url = case request of
                   Requested -> "/users/" <> show agentId <> "/tickets/requested.json"
                   Assigned  -> "/users/" <> show agentId <> "/tickets/assigned.json"
-        req = apiRequest cfg url
-        go :: [TicketInfo] -> Text -> IO [TicketInfo]
+    let req = apiRequest cfg url
+    let go :: [TicketInfo] -> Text -> IO [TicketInfo]
         go tlist nextPage' = do
             let req' = apiRequestAbsolute cfg nextPage'
             (TicketList pagen nextPagen) <- apiCall parseTickets req'
@@ -269,7 +269,7 @@ postTicketComment :: TicketId -> Text -> [Text] -> Bool -> App ()
 postTicketComment tid body tags public = do
     cfg <- ask
     let req1 = apiRequest cfg ("tickets/" <> show tid <> ".json")
-        req2 = addJsonBody
+    let req2 = addJsonBody
                    (Ticket
                        (Comment ("**Log classifier**\n\n" <> body) [] public (cfgAgentId cfg))
                        (cfgAssignTo cfg)
