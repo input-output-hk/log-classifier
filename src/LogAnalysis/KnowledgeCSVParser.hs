@@ -6,15 +6,26 @@ module LogAnalysis.KnowledgeCSVParser
 
 import           Universum
 
-import           Data.Attoparsec.Text (Parser, char, endOfLine, string, takeText, (<?>))
+import           Data.Attoparsec.Text (Parser, char, endOfLine, takeTill, string)
 
 import           LogAnalysis.Types (ErrorCode (..), Knowledge (..))
 
+
+{-
+
+stack ghci
+fContent <- readFile "./knowledgebase/knowledge.csv"
+parseOnly parseKnowLedgeBase fContent
+
+-}
+
 -- | Parse quoted text field
 quotedText :: Parser Text
-quotedText =
-    char '"' *> takeText <* char '"'
-    <?> "quoted field"
+quotedText = do
+    _       <- char '"'
+    result  <- takeTill (=='\"')
+    _       <- char '"'
+    pure result
 
 --- | Parse ErrorCode
 parseErrorCode :: Parser ErrorCode
