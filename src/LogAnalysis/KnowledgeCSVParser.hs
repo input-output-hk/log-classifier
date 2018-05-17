@@ -4,27 +4,26 @@ module LogAnalysis.KnowledgeCSVParser
        ( parseKnowLedgeBase
        ) where
 
-import           Control.Applicative
-import           Data.Attoparsec.Text.Lazy
+import           Universum
+
+import           Data.Attoparsec.Text.Lazy as ALT
 import qualified Data.Text.Lazy as LT
 
 import           LogAnalysis.Types (ErrorCode (..), Knowledge (..))
 
-import           Prelude hiding (takeWhile)
-
--- |Take any string that is inside quotes
-insideQuotes :: Parser LT.Text
+-- | Take any string that is inside quotes
+insideQuotes :: Parser LText
 insideQuotes =
-    LT.append <$> (LT.fromStrict <$> takeWhile (/= '"'))
+    LT.append <$> (LT.fromStrict <$> ALT.takeWhile (/= '"'))
               <*> (LT.concat <$> many (LT.cons <$> dquotes <*> insideQuotes))
     <?> "inside of double quotes"
-    where
-      dquotes =
-        string "\"\"" >> return '"'
-        <?> "paired double quotes"
+  where
+    dquotes :: Parser Char
+    dquotes = string "\"\"" >> return '"'
+              <?> "paired double quotes"
 
 -- | Parse quoted field
-quotedField :: Parser LT.Text
+quotedField :: Parser LText
 quotedField =
     char '"' *> insideQuotes <* char '"'
     <?> "quoted field"
@@ -47,8 +46,8 @@ parseErrorCode =
     <|> (string "Unknown"           >> return Unknown)
     <|> (string "Error"             >> return Error)
 
--- |Parse each csv records
-parseKnowledge :: Parser Knowledge -- not really clean code..
+-- | Parse each csv records
+parseKnowledge :: Parser Knowledge  -- not really clean code..
 parseKnowledge = do
     e <- quotedField
     _ <- char ','
@@ -61,6 +60,6 @@ parseKnowledge = do
     s <- quotedField
     return $ Knowledge e c p s
 
--- |Parse CSV file and create knowledgebase
+-- | Parse CSV file and create knowledgebase
 parseKnowLedgeBase :: Parser [ Knowledge ]
 parseKnowLedgeBase = many $ parseKnowledge <* endOfLine

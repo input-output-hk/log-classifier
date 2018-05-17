@@ -3,67 +3,66 @@
 {-# LANGUAGE RecordWildCards   #-}
 
 module LogAnalysis.Classifier
-       ( extractIssuesFromLogs
-       , extractErrorCodes
+       ( extractErrorCodes
+       , extractIssuesFromLogs
        , prettyFormatAnalysis
        ) where
 
-import qualified Data.ByteString.Lazy as LBS
-import           Data.List (foldl')
-import qualified Data.Map.Strict as Map
-import           Data.Semigroup ((<>))
-import           Data.Text (Text)
-import           Data.Text.Encoding.Error (ignore)
-import qualified Data.Text.Lazy as LT
-import qualified Data.Text.Lazy.Encoding as LT
+import           Universum
 
-import           LogAnalysis.Types (Analysis, Knowledge (..), toTag)
+import qualified Data.ByteString.Lazy as LBS
+import qualified Data.Map.Strict as Map
+import           Data.Text.Encoding.Error (ignore)
+import           Data.Text.Lazy (isInfixOf)
+
+import           LogAnalysis.Types (Analysis, Knowledge (..), renderErrorCode)
 
 -- | Number of error texts it should show
 numberOfErrorText :: Int
 numberOfErrorText = 3
 
 -- | Analyze each log file based on the knowlodgebases' data.
-extractIssuesFromLogs :: [LBS.ByteString] -> Analysis -> Either String Analysis
+extractIssuesFromLogs :: [LByteString] -> Analysis -> Either Text Analysis
 extractIssuesFromLogs files analysis = filterAnalysis $ foldl' runClassifiers analysis files
 
 -- | Run analysis on given file
-runClassifiers :: Analysis -> LBS.ByteString -> Analysis
+runClassifiers :: Analysis -> LByteString -> Analysis
 runClassifiers analysis logfile =
-    let logLines = LT.lines $ LT.decodeUtf8With ignore logfile
-    in foldl' analyzeLine analysis logLines
+    let logLines = lines $ decodeUtf8With ignore (LBS.toStrict logfile)
+    in foldl' analyzeLine analysis (toLText <$> logLines)
 
 -- | Analyze each line
-analyzeLine :: Analysis -> LT.Text -> Analysis
+analyzeLine :: Analysis -> LText -> Analysis
 analyzeLine analysis str = Map.mapWithKey (compareWithKnowledge str) analysis
 
 -- | Compare the line with knowledge lists
-compareWithKnowledge :: LT.Text -> Knowledge -> [ LT.Text ] -> [ LT.Text ]
+compareWithKnowledge :: LText -> Knowledge -> [ LText ] -> [ LText ]
 compareWithKnowledge str Knowledge{..} xs =
-    if kErrorText `LT.isInfixOf` str
+    if kErrorText `isInfixOf` str
     then str : xs
     else xs
 
 -- | Filter out any records that are empty (i.e couldn't catch any string related)
-filterAnalysis :: Analysis -> Either String Analysis
+filterAnalysis :: Analysis -> Either Text Analysis
 filterAnalysis as = do
     let filteredAnalysis = Map.filter (/=[]) as
     if null filteredAnalysis
-      then Left "Cannot find any known issues"
-      else return $ Map.map (take numberOfErrorText) filteredAnalysis
+    then Left "Cannot find any known issues"
+    else return $ Map.map (take numberOfErrorText) filteredAnalysis
 
 extractErrorCodes :: Analysis -> [ Text ]
-extractErrorCodes as = map (\(Knowledge{..}, _) -> toTag kErrorCode) $ Map.toList as
+extractErrorCodes as = map (\(Knowledge{..}, _) -> renderErrorCode kErrorCode) $ Map.toList as
 
-prettyFormatAnalysis :: Analysis -> LT.Text
+-- | TODO (Hiroto): Format the text in better way
+prettyFormatAnalysis :: Analysis -> LText
 prettyFormatAnalysis as =
     let aList = Map.toList as
     in foldr (\(Knowledge{..}, txts) acc ->
-         "\n" <> LT.pack (show kErrorCode)
-      <> "\n" <> kProblem
-      <> "\n **" <> kSolution
-      <> "** \n"
-      <> foldr (\txt ts -> "\n" <> txt <> "\n" <> ts) LT.empty txts -- List errors
-      <> "\n" <> acc
-      <> "\n\n"
-      ) LT.empty aList
+                "\n" <> show kErrorCode
+             <> "\n" <> kProblem
+             <> "\n **" <> kSolution
+             <> "** \n"
+             <> foldr1 (\txt ts -> "\n" <> txt <> "\n" <> ts) txts  -- List errors
+             <> "\n" <> acc
+             <> "\n\n"
+             ) "" aList
