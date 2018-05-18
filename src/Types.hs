@@ -1,19 +1,20 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Types
-       ( Attachment(..)
-       , Comment(..)
-       , CommentOuter(..)
-       , Ticket(..)
-       , TicketInfo(..)
-       , TicketId
-       , TicketList(..)
-       , TicketStatus(..)
-       , parseAgentId
-       , parseComments
-       , parseTickets
-       , renderTicketStatus
-       ) where
+    ( ZendeskResponse (..)
+    , Comment(..)
+    , CommentOuter(..)
+    , Attachment(..)
+    , Ticket(..)
+    , TicketList(..)
+    , TicketId
+    , TicketInfo(..)
+    , TicketTag(..)
+    , parseAgentId
+    , parseComments
+    , parseTickets
+    , renderTicketStatus
+    ) where
 
 import           Universum
 
@@ -30,6 +31,13 @@ data Attachment = Attachment
     -- ^ ContentType of the attachment
     , aSize        :: !Int
     -- ^ Attachment size
+    }
+
+-- | The response for ZenDesk.
+data ZendeskResponse = ZendeskResponse
+    { zrComment     :: Text
+    , zrTags        :: [Text] -- TODO(ks): This should be wrapped
+    , zrIsPublic    :: Bool
     }
 
 -- | Comments
@@ -49,7 +57,7 @@ newtype CommentOuter = CommentOuter {
       coComment :: Comment
     }
 
--- | Zendexk ticket
+-- | Zendesk ticket
 data Ticket = Ticket
     { tComment  :: !Comment
     -- ^ Ticket comment
@@ -70,20 +78,18 @@ data TicketList = TicketList
 type TicketId = Int
 
 data TicketInfo = TicketInfo
-    { tiId   :: !Int
-    -- ^ Id of an ticket
-    , tiTags :: ![Text]
-    -- ^ Tags associated with ticket
-    }
+    { ticketId      :: !TicketId    -- ^ Id of an ticket
+    , ticketTags    :: ![Text]      -- ^ Tags associated with ticket
+    , ticketStatus  :: !Text        -- ^ The status of the ticket
+    } deriving (Eq)
 
--- | Ticket status
-data TicketStatus = AnalyzedByScript
-                  -- ^ Ticket has been analyzed
-                  | NoKnownIssue
-                  -- ^ Ticket had no known issue
+-- | Ticket tag
+data TicketTag
+    = AnalyzedByScript -- ^ Ticket has been analyzed
+    | NoKnownIssue     -- ^ Ticket had no known issue
 
 -- | Defining it's own show instance to use it as tags
-renderTicketStatus :: TicketStatus -> Text
+renderTicketStatus :: TicketTag -> Text
 renderTicketStatus AnalyzedByScript = "analyzed-by-script"
 renderTicketStatus NoKnownIssue     = "no-known-issues"
 
@@ -115,7 +121,12 @@ instance ToJSON Attachment where
         object [ "content_url" .= url, "content_type" .= contenttype, "size" .= size]
 
 instance FromJSON TicketInfo where
-    parseJSON = withObject "ticket" $ \o -> TicketInfo <$> (o .: "id") <*> (o .: "tags")
+    parseJSON = withObject "ticket" $ \o -> do
+        ticketId        <- o .: "id"
+        ticketTags      <- o .: "tags"
+        ticketStatus    <- o .: "status"
+
+        pure TicketInfo{..}
 
 instance FromJSON TicketList where
     parseJSON = withObject "ticketList" $ \o -> TicketList <$> o .: "tickets" <*> o .: "next_page"

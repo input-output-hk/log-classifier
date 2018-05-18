@@ -9,6 +9,7 @@ import qualified Codec.Archive.Zip as Zip
 import qualified Data.Map.Strict as Map
 
 -- | Extract log file from given zip file
+-- TODO(ks): What happens with the other files? We just ignore them?
 extractLogsFromZip :: Int -> LByteString -> Either Text [LByteString]
 extractLogsFromZip numberOfFiles file = do
     zipMap <- readZip file  -- Read File

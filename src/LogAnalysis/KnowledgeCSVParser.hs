@@ -6,27 +6,26 @@ module LogAnalysis.KnowledgeCSVParser
 
 import           Universum
 
-import           Data.Attoparsec.Text.Lazy as ALT
-import qualified Data.Text.Lazy as LT
+import           Data.Attoparsec.Text (Parser, char, endOfLine, takeTill, string)
 
 import           LogAnalysis.Types (ErrorCode (..), Knowledge (..))
 
--- | Take any string that is inside quotes
-insideQuotes :: Parser LText
-insideQuotes =
-    LT.append <$> (LT.fromStrict <$> ALT.takeWhile (/= '"'))
-              <*> (LT.concat <$> many (LT.cons <$> dquotes <*> insideQuotes))
-    <?> "inside of double quotes"
-  where
-    dquotes :: Parser Char
-    dquotes = string "\"\"" >> return '"'
-              <?> "paired double quotes"
 
--- | Parse quoted field
-quotedField :: Parser LText
-quotedField =
-    char '"' *> insideQuotes <* char '"'
-    <?> "quoted field"
+{-
+
+stack ghci
+fContent <- readFile "./knowledgebase/knowledge.csv"
+parseOnly parseKnowLedgeBase fContent
+
+-}
+
+-- | Parse quoted text field
+quotedText :: Parser Text
+quotedText = do
+    _       <- char '"'
+    result  <- takeTill (=='\"')
+    _       <- char '"'
+    pure result
 
 --- | Parse ErrorCode
 parseErrorCode :: Parser ErrorCode
@@ -49,16 +48,24 @@ parseErrorCode =
 -- | Parse each csv records
 parseKnowledge :: Parser Knowledge  -- not really clean code..
 parseKnowledge = do
-    e <- quotedField
+    e <- quotedText
     _ <- char ','
     _ <- char '"'
     c <- parseErrorCode
     _ <- char '"'
     _ <- char ','
-    p <- quotedField
+    p <- quotedText
     _ <- char ','
-    s <- quotedField
-    return $ Knowledge e c p s
+    s <- quotedText
+    _ <- char ','
+    f <- quotedText
+    return $ Knowledge
+        {  kErrorText = e
+        ,  kErrorCode = c
+        ,  kProblem   = p
+        ,  kSolution  = s
+        ,  kFAQNumber = f
+        }
 
 -- | Parse CSV file and create knowledgebase
 parseKnowLedgeBase :: Parser [ Knowledge ]
