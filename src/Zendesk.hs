@@ -133,7 +133,6 @@ runZendeskMain = do
             tickets <- runApp (listTickets Assigned) cfg
             printTicketCountMessage tickets (cfgEmail cfg)
 
-
 processBatchTickets :: Config -> IO [TicketInfo]
 processBatchTickets cfg = do
     putTextLn $  "Classifier is going to process tickets assign to: " <> cfgEmail cfg
@@ -236,7 +235,7 @@ inspectAttachmentAndPostComment ticketInfo@TicketInfo{..} attachment = do
 --
 -- __(comment, tags, bool of whether is should be public comment)__
 inspectAttachment :: TicketInfo -> Attachment -> App ZendeskResponse
-inspectAttachment TicketInfo{..} att = do
+inspectAttachment ticketInfo att = do
     Config{..} <- ask
 
     rawlog <- liftIO $ getAttachment att   -- Get attachment
@@ -246,7 +245,7 @@ inspectAttachment TicketInfo{..} att = do
         Left err -> do
             liftIO $ putTextLn $ "Error parsing zip:" <> err
             pure ZendeskResponse
-                { zrComment     = prettyFormatLogReadError ticketUrl
+                { zrComment     = prettyFormatLogReadError ticketInfo
                 , zrTags        = [renderErrorCode SentLogCorrupted]
                 , zrIsPublic    = False
                 }
@@ -257,7 +256,7 @@ inspectAttachment TicketInfo{..} att = do
             case eitherAnalysisResult of
                 Right analysisResult -> do
                     let errorCodes = extractErrorCodes analysisResult
-                    let commentRes = prettyFormatAnalysis analysisResult ticketUrl
+                    let commentRes = prettyFormatAnalysis analysisResult ticketInfo
 
                     liftIO $ mapM_ putTextLn errorCodes
 
@@ -270,7 +269,7 @@ inspectAttachment TicketInfo{..} att = do
                 Left noResult -> do
                     liftIO $ putStrLn noResult
                     pure ZendeskResponse
-                        { zrComment     = prettyFormatNoIssues ticketUrl
+                        { zrComment     = prettyFormatNoIssues ticketInfo
                         , zrTags        = [renderTicketStatus NoKnownIssue]
                         , zrIsPublic    = False
                         }
