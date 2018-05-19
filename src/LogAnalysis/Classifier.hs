@@ -17,6 +17,7 @@ import qualified Data.Map.Strict as Map
 import           Data.Text.Encoding.Error (ignore)
 import           Data.Text (isInfixOf)
 
+import           Types (TicketURL)
 import           LogAnalysis.Types (Analysis, Knowledge (..), renderErrorCode)
 
 -- | Number of error texts it should show
@@ -63,11 +64,11 @@ prettyHeader =
     "Thank you for contacting the IOHK Technical Support Desk. We appologize for the delay in responding to you. " <>
     "\n"
 
-prettyFooter :: Text
-prettyFooter =
-    "\n" <>
-    "Please be patient since we have a large number of such requests to respond to. We will respond as soon as we can, but in the meantime, if you want to check the status of your ticket you can do so here." <>
-    "\n" <>
+prettyFooter :: TicketURL -> Text
+prettyFooter ticketUrl =
+    "\n\n" <>
+        "Please be patient since we have a large number of such requests to respond to. We will respond as soon as we can, but in the meantime, if you want to check the status of your ticket you can do so here - " <> ticketUrl <>
+    "\n\n" <>
     "Please let us know if your issue is resolved. If you are still having trouble please reply back to this email and attach a new log file so that we can work with you to fix your problem." <>
     "\n" <>
     "Thanks, " <>
@@ -76,24 +77,26 @@ prettyFooter =
     "\n"
 
 -- | We need to fix this, this will pick the last issue found.
-prettyFormatAnalysis :: Analysis -> Text
-prettyFormatAnalysis as =
+prettyFormatAnalysis :: Analysis -> TicketURL -> Text
+prettyFormatAnalysis as ticketUrl =
     prettyHeader <>
-    show foundIssues <>
-    prettyFooter
+    prettyIssueComment <>
+    foundIssues <>
+    prettyFooter ticketUrl
   where
-    foundIssues = foldr (\(Knowledge{..}, _) acc -> acc <> foundIssuesTemplate kFAQNumber) "" $ Map.toList as
-    foundIssuesTemplate kFAQNumber = "\n" <> "We have analyzed the log that you submitted and it appears that your issue is addressed in the Daedalus FAQ in Issue " <> kFAQNumber <> ". Please go to https://daedaluswallet.io/faq/ and check Issue " <> kFAQNumber <> " to resolve your problem." <> "\n\n"
+    prettyIssueComment  = "Thank you for contacting the IOHK Technical Support Desk. We apologize for the delay in responding to you. We have analyzed the log that you submitted and it appears that your issue is addressed in the Daedalus FAQ Please go to https://daedaluswallet.io/faq/ and check FAQ Issue(s) listed below to resolve your problem:"
+    foundIssues         =
+        foldr (\(Knowledge{..}, _) acc -> acc <> "\n - " <> kFAQNumber <> ", " <> kProblem) "" $ Map.toList as
 
-prettyFormatNoIssues :: Text
-prettyFormatNoIssues =
+prettyFormatNoIssues :: TicketURL -> Text
+prettyFormatNoIssues ticketUrl =
     prettyHeader <>
-    "We have analyzed the log that you submitted and it appears that you do not have an identifiable technical issue." <>
-    prettyFooter
+    "We have analyzed the log that you submitted and it appears that you do not have an identifiable technical issue. Please be patient while our developers analyze this issue further since we have a large number of such requests to respond to." <>
+    prettyFooter ticketUrl
 
-prettyFormatLogReadError :: Text
-prettyFormatLogReadError =
+prettyFormatLogReadError :: TicketURL -> Text
+prettyFormatLogReadError ticketUrl =
     prettyHeader <>
-    "We tried to analyze the log that you submitted and it appears that your log cannot be processed. Please try attaching the log file once again in the agreed format." <>
-    prettyFooter
+    "Thank you for contacting the IOHK Technical Support Desk. We apologize for the delay in responding to you. We tried to analyze the log that you submitted and it appears that your log cannot be processed. Please try sending the log file once again. Please go to https://daedaluswallet.io/faq/ and see Issue 200 for instructions. Please reply to this email with when you respond." <>
+    prettyFooter ticketUrl
 

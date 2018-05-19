@@ -3,13 +3,13 @@
 {-# LANGUAGE RecordWildCards            #-}
 
 module Zendesk
-       ( runZendeskMain
-       ) where
+    ( runZendeskMain
+    ) where
 
 import           Universum
 
 import           Control.Monad.Reader (MonadReader, ReaderT, ask, runReaderT)
-import           Data.Aeson (FromJSON, ToJSON, Value, encode)
+import           Data.Aeson (FromJSON, ToJSON, Value, encode, parseJSON)
 import           Data.Aeson.Text (encodeToLazyText)
 import           Data.Aeson.Types (Parser, parseEither)
 import           Data.Attoparsec.Text.Lazy (eitherResult, parse)
@@ -106,28 +106,19 @@ runZendeskMain = do
         -- Process given ticket
         (ProcessTicket ticketId) -> do
             putTextLn "Processing single ticket"
-            runApp (processTicketAndId ticketId) cfg
+            ticketInfo <- runApp (getTicketInfo ticketId) cfg
+            runApp (processTicketAndId ticketInfo) cfg
             putTextLn "Process finished, please see the following url"
             putTextLn $ "https://iohk.zendesk.com/agent/tickets/" <> show ticketId
         -- Process all the tickets (WARNING: This is really long process)
         ProcessTickets -> do
-            putTextLn $  "Classifier is going to process tickets assign to: " <> cfgEmail cfg
-            printWarning
-            tickets <- runApp (listTickets Assigned) cfg
-            let filteredTicketIds = filterAnalyzedTickets tickets
-            putTextLn $ "There are " <> show (length filteredTicketIds) <> " unanalyzed tickets."
-            putTextLn "Processing tickets, this may take hours to finish."
-            mapM_ (\tid -> runApp (processTicketAndId tid) cfg) filteredTicketIds
+            sortedTicketIds <- processBatchTickets cfg
+            mapM_ (\ticketInfo -> runApp (processTicketAndId ticketInfo) cfg) sortedTicketIds
             putTextLn "All the tickets has been processed."
         -- Fetch all the tickets
         FetchTickets -> do
-            putTextLn $  "Classifier is going to fetch tickets assign to: " <> cfgEmail cfg
-            printWarning
-            tickets <- runApp (listTickets Assigned) cfg
-            let filteredTicketIds = filterAnalyzedTickets tickets
-            putTextLn $ "There are " <> show (length filteredTicketIds) <> " unanalyzed tickets."
-            putTextLn "Processing tickets, this may take hours to finish."
-            mapM_ (putTextLn . show) filteredTicketIds
+            sortedTicketIds <- processBatchTickets cfg
+            mapM_ (putTextLn . show) sortedTicketIds
             putTextLn "All the tickets has been processed."
         -- Return raw request
         (RawRequest url) -> do
@@ -141,6 +132,22 @@ runZendeskMain = do
             printWarning
             tickets <- runApp (listTickets Assigned) cfg
             printTicketCountMessage tickets (cfgEmail cfg)
+
+
+processBatchTickets :: Config -> IO [TicketInfo]
+processBatchTickets cfg = do
+    putTextLn $  "Classifier is going to process tickets assign to: " <> cfgEmail cfg
+    printWarning
+    tickets <- runApp (listTickets Assigned) cfg
+
+    let filteredTicketIds = filterAnalyzedTickets tickets
+    let sortedTicketIds   = sortBy compare filteredTicketIds
+
+    putTextLn $ "There are " <> show (length sortedTicketIds) <> " unanalyzed tickets."
+    putTextLn "Processing tickets, this may take hours to finish."
+
+    pure sortedTicketIds
+
 
 -- | Warning
 printWarning :: IO ()
@@ -192,8 +199,8 @@ extractEmailAddress ticketId = do
     liftIO $ putTextLn emailAddress
 
 -- | Process specifig ticket id (can be used for testing) only inspects the one's with logs
-processTicketAndId :: TicketId -> App ()
-processTicketAndId ticketId = do
+processTicketAndId :: TicketInfo -> App ()
+processTicketAndId ticketInfo@TicketInfo{..} = do
     comments <- getTicketComments ticketId
 
     -- Filter tickets without logs
@@ -208,13 +215,13 @@ processTicketAndId ticketId = do
     let justLogs :: [Attachment]
         justLogs = filter (\x -> "application/zip" == aContentType x) attachments
 
-    mapM_ (inspectAttachmentAndPostComment ticketId) justLogs
+    mapM_ (inspectAttachmentAndPostComment ticketInfo) justLogs
 
 -- | Inspect attachment then post comment to the ticket
-inspectAttachmentAndPostComment :: TicketId -> Attachment -> App ()
-inspectAttachmentAndPostComment ticketId attachment = do
+inspectAttachmentAndPostComment :: TicketInfo -> Attachment -> App ()
+inspectAttachmentAndPostComment ticketInfo@TicketInfo{..} attachment = do
     liftIO $ putTextLn $ "Analyzing ticket id: " <> show ticketId
-    zendeskResponse <- inspectAttachment attachment
+    zendeskResponse <- inspectAttachment ticketInfo attachment
 
     let comment         = zrComment zendeskResponse
     let tags            = zrTags zendeskResponse
@@ -228,8 +235,8 @@ inspectAttachmentAndPostComment ticketId attachment = do
 -- The results are following:
 --
 -- __(comment, tags, bool of whether is should be public comment)__
-inspectAttachment :: Attachment -> App ZendeskResponse
-inspectAttachment att = do
+inspectAttachment :: TicketInfo -> Attachment -> App ZendeskResponse
+inspectAttachment TicketInfo{..} att = do
     Config{..} <- ask
 
     rawlog <- liftIO $ getAttachment att   -- Get attachment
@@ -239,7 +246,7 @@ inspectAttachment att = do
         Left err -> do
             liftIO $ putTextLn $ "Error parsing zip:" <> err
             pure ZendeskResponse
-                { zrComment     = prettyFormatLogReadError
+                { zrComment     = prettyFormatLogReadError ticketUrl
                 , zrTags        = [renderErrorCode SentLogCorrupted]
                 , zrIsPublic    = False
                 }
@@ -250,7 +257,7 @@ inspectAttachment att = do
             case eitherAnalysisResult of
                 Right analysisResult -> do
                     let errorCodes = extractErrorCodes analysisResult
-                    let commentRes = prettyFormatAnalysis analysisResult
+                    let commentRes = prettyFormatAnalysis analysisResult ticketUrl
 
                     liftIO $ mapM_ putTextLn errorCodes
 
@@ -263,15 +270,15 @@ inspectAttachment att = do
                 Left noResult -> do
                     liftIO $ putStrLn noResult
                     pure ZendeskResponse
-                        { zrComment     = prettyFormatNoIssues
+                        { zrComment     = prettyFormatNoIssues ticketUrl
                         , zrTags        = [renderTicketStatus NoKnownIssue]
                         , zrIsPublic    = False
                         }
 
 -- | Filter analyzed tickets
-filterAnalyzedTickets :: [TicketInfo] -> [TicketId]
+filterAnalyzedTickets :: [TicketInfo] -> [TicketInfo]
 filterAnalyzedTickets ticketsInfo =
-    map ticketId $ filter ticketsFilter ticketsInfo
+    filter ticketsFilter ticketsInfo
   where
     ticketsFilter :: TicketInfo -> Bool
     ticketsFilter ticketInfo =
@@ -282,6 +289,15 @@ filterAnalyzedTickets ticketsInfo =
 
     isTicketOpen :: TicketInfo -> Bool
     isTicketOpen TicketInfo{..} = ticketStatus == "open" -- || ticketStatus == "new"
+
+
+-- | Get single ticket info.
+getTicketInfo :: TicketId -> App TicketInfo
+getTicketInfo ticketId = do
+    cfg <- ask
+
+    let req = apiRequest cfg ("tickets/" <> show ticketId <> ".json")
+    liftIO $ apiCall parseJSON req
 
 -- | Return list of ticketIds that has been requested by config user (not used)
 listTickets :: RequestType ->  App [TicketInfo]
