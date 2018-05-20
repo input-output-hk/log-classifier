@@ -281,13 +281,17 @@ filterAnalyzedTickets ticketsInfo =
   where
     ticketsFilter :: TicketInfo -> Bool
     ticketsFilter ticketInfo =
-        isTicketAnalyzed ticketInfo && isTicketOpen ticketInfo
+        isTicketAnalyzed ticketInfo && isTicketOpen ticketInfo && isTicketBlacklisted ticketInfo
 
     isTicketAnalyzed :: TicketInfo -> Bool
     isTicketAnalyzed TicketInfo{..} = (renderTicketStatus AnalyzedByScript) `notElem` ticketTags
 
     isTicketOpen :: TicketInfo -> Bool
     isTicketOpen TicketInfo{..} = ticketStatus == "open" -- || ticketStatus == "new"
+
+    -- | If we have a ticket we are having issues with...
+    isTicketBlacklisted :: TicketInfo -> Bool
+    isTicketBlacklisted TicketInfo{..} = ticketId `notElem` [10815]
 
 
 -- | Get single ticket info.
