@@ -46,6 +46,8 @@ data Config = Config
     -- ^ Knowledgebase
     , cfgNumOfLogsToAnalyze :: !Int
     -- ^ Number of files classifier will analyze
+    , cfgIsCommentPublic    :: !Bool
+    -- ^ If the comment is public or not, for a test run we use an internal comment.
     } deriving (Eq, Show)
 
 data RequestType
@@ -64,7 +66,17 @@ runApp :: App a -> Config -> IO a
 runApp (App a) = runReaderT a
 
 defaultConfig :: Config
-defaultConfig = Config 0 "https://iohk.zendesk.com" "" "daedalus-bug-reports@iohk.io" 0 [] 5
+defaultConfig =
+    Config
+        { cfgAgentId            = 0
+        , cfgZendesk            = "https://iohk.zendesk.com"
+        , cfgToken              = ""
+        , cfgEmail              = "daedalus-bug-reports@iohk.io"
+        , cfgAssignTo           = 0
+        , cfgKnowledgebase      = []
+        , cfgNumOfLogsToAnalyze = 5
+        , cfgIsCommentPublic    = False -- TODO(ks): For now, we need this in CLI.
+        }
 
 -- | Path to knowledgebase
 knowledgebasePath :: FilePath
@@ -243,11 +255,11 @@ inspectAttachment ticketInfo att = do
 
     case results of
         Left err -> do
-            liftIO $ putTextLn $ "Error parsing zip:" <> err
+            liftIO $ putTextLn $ "Error parsing zip: " <> err
             pure ZendeskResponse
                 { zrComment     = prettyFormatLogReadError ticketInfo
                 , zrTags        = [renderErrorCode SentLogCorrupted]
-                , zrIsPublic    = False
+                , zrIsPublic    = cfgIsCommentPublic
                 }
         Right result -> do
             let analysisEnv             = setupAnalysis cfgKnowledgebase
@@ -263,7 +275,7 @@ inspectAttachment ticketInfo att = do
                     pure ZendeskResponse
                         { zrComment     = commentRes
                         , zrTags        = errorCodes
-                        , zrIsPublic    = False
+                        , zrIsPublic    = cfgIsCommentPublic
                         }
 
                 Left noResult -> do
@@ -271,7 +283,7 @@ inspectAttachment ticketInfo att = do
                     pure ZendeskResponse
                         { zrComment     = prettyFormatNoIssues ticketInfo
                         , zrTags        = [renderTicketStatus NoKnownIssue]
-                        , zrIsPublic    = False
+                        , zrIsPublic    = cfgIsCommentPublic
                         }
 
 -- | Filter analyzed tickets
@@ -284,7 +296,7 @@ filterAnalyzedTickets ticketsInfo =
         isTicketAnalyzed ticketInfo && isTicketOpen ticketInfo && isTicketBlacklisted ticketInfo
 
     isTicketAnalyzed :: TicketInfo -> Bool
-    isTicketAnalyzed TicketInfo{..} = (renderTicketStatus AnalyzedByScript) `notElem` ticketTags
+    isTicketAnalyzed TicketInfo{..} = (renderTicketStatus AnalyzedByScriptV1_0) `notElem` ticketTags
 
     isTicketOpen :: TicketInfo -> Bool
     isTicketOpen TicketInfo{..} = ticketStatus == "open" -- || ticketStatus == "new"
@@ -335,7 +347,7 @@ postTicketComment tid body tags public = do
                    (Ticket
                        (Comment ("**Log classifier**\n\n" <> body) [] public (cfgAgentId cfg))
                        (cfgAssignTo cfg)
-                       (renderTicketStatus AnalyzedByScript:tags)
+                       (renderTicketStatus AnalyzedByScriptV1_0:tags)
                    )
                    req1
     void $ liftIO $ apiCall (pure . encodeToLazyText) req2
