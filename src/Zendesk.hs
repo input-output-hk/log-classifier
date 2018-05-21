@@ -270,7 +270,10 @@ inspectAttachment ticketInfo att = do
                     let errorCodes = extractErrorCodes analysisResult
                     let commentRes = prettyFormatAnalysis analysisResult ticketInfo
 
-                    liftIO $ mapM_ putTextLn errorCodes
+                    let fErrorCode = foldr (\errorCode acc -> acc <> ";" <> errorCode) "" errorCodes
+
+                    liftIO . putTextLn . show $ ticketInfo
+                    liftIO . putTextLn $ fErrorCode
 
                     pure ZendeskResponse
                         { zrComment     = commentRes
