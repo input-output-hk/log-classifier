@@ -46,20 +46,21 @@ data Knowledge = Knowledge
     -- ^ The FAQ number that will be displayed on the official Cardano FAQ page
     } deriving (Show)
 
+-- | Sorted accoring to knowledgebase.
 renderErrorCode :: ErrorCode -> Text
-renderErrorCode ShortStorage      = "short-storage"
-renderErrorCode UserNameError     = "user-name-error"
-renderErrorCode TimeSync          = "time-out-of-sync"
-renderErrorCode FileNotFound      = "directory-not-found"
-renderErrorCode StaleLockFile     = "stale-lock-file"
-renderErrorCode SentLogCorrupted  = "sent-log-corrupted"
 renderErrorCode DBError           = "DB-corrupted"
+renderErrorCode StaleLockFile     = "stale-lock-file"
+renderErrorCode FileNotFound      = "directory-not-found"
+renderErrorCode ShortStorage      = "short-storage"
+renderErrorCode NetworkError      = "network-error"
+renderErrorCode BalanceError      = "incorrect-balance"
+renderErrorCode ResourceVanished  = "resource-vanished"
+renderErrorCode UserNameError     = "user-name-error"
+renderErrorCode ConnectionRefused = "connection-refused"
+renderErrorCode TimeSync          = "time-out-of-sync"
+renderErrorCode SentLogCorrupted  = "sent-log-corrupted"
 renderErrorCode DBPath            = "DB-path-error"
 renderErrorCode CannotGetDBSize   = "cannot-get-db-size"
-renderErrorCode BalanceError      = "incorrect-balance"
-renderErrorCode NetworkError      = "network-error"
-renderErrorCode ConnectionRefused = "connection-refused"
-renderErrorCode ResourceVanished  = "resource-vanished"
 renderErrorCode Unknown           = "unknown"
 renderErrorCode Error             = "error"
 

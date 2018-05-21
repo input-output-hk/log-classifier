@@ -8,6 +8,7 @@ module Types
     , Ticket(..)
     , TicketList(..)
     , TicketId
+    , TicketURL
     , TicketInfo(..)
     , TicketTag(..)
     , parseAgentId
@@ -76,12 +77,17 @@ data TicketList = TicketList
     }
 
 type TicketId = Int
+type TicketURL = Text -- TODO(ks): We should wrap all these...
 
 data TicketInfo = TicketInfo
     { ticketId      :: !TicketId    -- ^ Id of an ticket
+    , ticketUrl     :: !TicketURL   -- ^ The ticket URL
     , ticketTags    :: ![Text]      -- ^ Tags associated with ticket
     , ticketStatus  :: !Text        -- ^ The status of the ticket
-    } deriving (Eq)
+    } deriving (Eq, Show)
+
+instance Ord TicketInfo where
+    compare t1 t2 = compare (ticketId t1) (ticketId t2)
 
 -- | Ticket tag
 data TicketTag
@@ -123,6 +129,7 @@ instance ToJSON Attachment where
 instance FromJSON TicketInfo where
     parseJSON = withObject "ticket" $ \o -> do
         ticketId        <- o .: "id"
+        ticketUrl       <- o .: "url"
         ticketTags      <- o .: "tags"
         ticketStatus    <- o .: "status"
 
