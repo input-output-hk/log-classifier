@@ -75,7 +75,7 @@ defaultConfig =
         , cfgAssignTo           = 0
         , cfgKnowledgebase      = []
         , cfgNumOfLogsToAnalyze = 5
-        , cfgIsCommentPublic    = False -- TODO(ks): For now, we need this in CLI.
+        , cfgIsCommentPublic    = True -- TODO(ks): For now, we need this in CLI.
         }
 
 -- | Path to knowledgebase
@@ -231,7 +231,7 @@ processTicketAndId ticketInfo@TicketInfo{..} = do
 -- | Inspect attachment then post comment to the ticket
 inspectAttachmentAndPostComment :: TicketInfo -> Attachment -> App ()
 inspectAttachmentAndPostComment ticketInfo@TicketInfo{..} attachment = do
-    liftIO $ putTextLn $ "Analyzing ticket id: " <> show ticketId
+    liftIO $ putTextLn $ "Analyzing ticket: " <> show ticketInfo
     zendeskResponse <- inspectAttachment ticketInfo attachment
 
     let comment         = zrComment zendeskResponse
@@ -254,8 +254,10 @@ inspectAttachment ticketInfo att = do
     let results = extractLogsFromZip cfgNumOfLogsToAnalyze rawlog
 
     case results of
-        Left err -> do
-            liftIO $ putTextLn $ "Error parsing zip: " <> err
+        Left _ -> do
+
+            liftIO . putStrLn . renderErrorCode $ SentLogCorrupted
+
             pure ZendeskResponse
                 { zrComment     = prettyFormatLogReadError ticketInfo
                 , zrTags        = [renderErrorCode SentLogCorrupted]
@@ -270,9 +272,8 @@ inspectAttachment ticketInfo att = do
                     let errorCodes = extractErrorCodes analysisResult
                     let commentRes = prettyFormatAnalysis analysisResult ticketInfo
 
-                    let fErrorCode = foldr (\errorCode acc -> acc <> ";" <> errorCode) "" errorCodes
+                    let fErrorCode = foldr (\errorCode acc -> errorCode <> ";" <> acc) "" errorCodes
 
-                    liftIO . putTextLn . show $ ticketInfo
                     liftIO . putTextLn $ fErrorCode
 
                     pure ZendeskResponse
@@ -281,8 +282,10 @@ inspectAttachment ticketInfo att = do
                         , zrIsPublic    = cfgIsCommentPublic
                         }
 
-                Left noResult -> do
-                    liftIO $ putStrLn noResult
+                Left _ -> do
+
+                    liftIO . putStrLn . renderTicketStatus $ NoKnownIssue
+
                     pure ZendeskResponse
                         { zrComment     = prettyFormatNoIssues ticketInfo
                         , zrTags        = [renderTicketStatus NoKnownIssue]
@@ -306,7 +309,7 @@ filterAnalyzedTickets ticketsInfo =
 
     -- | If we have a ticket we are having issues with...
     isTicketBlacklisted :: TicketInfo -> Bool
-    isTicketBlacklisted TicketInfo{..} = ticketId `notElem` [10815]
+    isTicketBlacklisted TicketInfo{..} = ticketId `notElem` [9377,10815]
 
 
 -- | Get single ticket info.
