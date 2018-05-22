@@ -1,8 +1,12 @@
 # log-classifier
 
+Original version by Hiroto Shioi (https://github.com/HirotoShioi).
+
 The purpose of this project is to analyze Cardano log file and provide a solution to the end user while collecting statistics so Cardano developers can prioritize the issues.
 
 ## What it is
+
+![log-classifier](https://user-images.githubusercontent.com/6264437/40305397-b5f182f8-5cfa-11e8-822e-c0c74d3dbce0.png)
 
 - Log-classifier is a [command line interface](https://en.wikipedia.org/wiki/Command-line_interface) IOHK help desk agents can use to classify tickets.
 - Currently, identifying the issue manually takes a decent amount of time and knowledge. Using classifier, the agent will be able to automate the identification of the issue without having to know all the known issues.
