@@ -1,16 +1,18 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Types
-    ( ZendeskResponse (..)
-    , Comment(..)
-    , CommentOuter(..)
-    , Attachment(..)
-    , Ticket(..)
-    , TicketList(..)
+module Zendesk.Types
+    ( ZendeskLayer (..)
+    , ZendeskResponse (..)
+    , Comment (..)
+    , CommentOuter (..)
+    , Attachment (..)
+    , RequestType (..)
+    , Ticket (..)
+    , TicketList (..)
     , TicketId
     , TicketURL
-    , TicketInfo(..)
-    , TicketTag(..)
+    , TicketInfo (..)
+    , TicketTag (..)
     , parseAgentId
     , parseComments
     , parseTickets
@@ -19,10 +21,23 @@ module Types
 
 import           Universum
 
+
 import           Data.Aeson (FromJSON, ToJSON, Value, object, parseJSON, toJSON, withObject, (.:),
                              (.=))
 import           Data.Aeson.Types (Parser)
 
+
+-- | The Zendesk API interface that we want to expose.
+-- We don't want anything to leak out, so we expose only the most relevant information,
+-- anything relating to how it internaly works should NOT be exposed.
+data ZendeskLayer m = ZendeskLayer
+    { zlGetTicketInfo          :: TicketId -> m TicketInfo
+    , zlListTickets            :: RequestType -> m [TicketInfo]
+    , zlPostTicketComment      :: TicketId -> Text -> [Text] -> Bool -> m ()
+    , zlGetAgentId             :: m Integer
+    , zlGetAttachment          :: Attachment -> m LByteString
+    , zlGetTicketComments      :: TicketId -> m [Comment]
+    }
 
 -- | Attachment of the ticket
 data Attachment = Attachment
@@ -34,11 +49,16 @@ data Attachment = Attachment
     -- ^ Attachment size
     }
 
+-- | Request type of the ticket
+data RequestType
+    = Requested
+    | Assigned
+
 -- | The response for ZenDesk.
 data ZendeskResponse = ZendeskResponse
-    { zrComment     :: Text
-    , zrTags        :: [Text] -- TODO(ks): This should be wrapped
-    , zrIsPublic    :: Bool
+    { zrComment  :: Text
+    , zrTags     :: [Text] -- TODO(ks): This should be wrapped
+    , zrIsPublic :: Bool
     }
 
 -- | Comments
@@ -72,7 +92,7 @@ data Ticket = Ticket
 data TicketList = TicketList
     { tlTickets :: ![TicketInfo]
     -- ^ Information of tickets
-    , nextPage          :: Maybe Text
+    , nextPage  :: Maybe Text
     -- ^ Next page
     }
 
@@ -80,10 +100,10 @@ type TicketId = Int
 type TicketURL = Text -- TODO(ks): We should wrap all these...
 
 data TicketInfo = TicketInfo
-    { ticketId      :: !TicketId    -- ^ Id of an ticket
-    , ticketUrl     :: !TicketURL   -- ^ The ticket URL
-    , ticketTags    :: ![Text]      -- ^ Tags associated with ticket
-    , ticketStatus  :: !Text        -- ^ The status of the ticket
+    { ticketId     :: !TicketId    -- ^ Id of an ticket
+    , ticketUrl    :: !TicketURL   -- ^ The ticket URL
+    , ticketTags   :: ![Text]      -- ^ Tags associated with ticket
+    , ticketStatus :: !Text        -- ^ The status of the ticket
     } deriving (Eq, Show)
 
 instance Ord TicketInfo where
@@ -154,3 +174,5 @@ parseComments = withObject "comments" $ \o -> o .: "comments"
 -- | Parse the apiRequest of getAgentId
 parseAgentId :: Value -> Parser Integer
 parseAgentId = withObject "user" $ \o -> (o .: "user") >>= (.: "id")
+
+

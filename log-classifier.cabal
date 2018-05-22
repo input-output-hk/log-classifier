@@ -22,9 +22,11 @@ library
                        LogAnalysis.KnowledgeCSVParser
                        LogAnalysis.Types
                        Regex
-                       Types
                        Util
+                       Config
                        Zendesk
+                       Zendesk.Types
+                       Zendesk.Functions
   other-modules:       Paths_log_classifier
   ghc-options:         -Wall
   build-depends:       aeson
