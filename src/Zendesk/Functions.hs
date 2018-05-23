@@ -3,6 +3,7 @@
 
 module Zendesk.Functions
     ( basicZendeskLayer
+    , defaultConfig
     ) where
 
 import           Universum
@@ -15,12 +16,26 @@ import           Network.HTTP.Simple (Request, addRequestHeader, getResponseBody
                                       parseRequest_, setRequestBasicAuth, setRequestBodyJSON,
                                       setRequestMethod, setRequestPath)
 
-import           Config (Config (..))
 import           Zendesk.Types (Attachment (..), Comment (..), RequestType (..), Ticket (..),
                                 TicketId, TicketInfo (..), TicketList (..), TicketTag (..),
                                 ZendeskLayer (..), parseAgentId, parseComments, parseTickets,
-                                renderTicketStatus)
+                                renderTicketStatus, Config (..))
 
+
+-- | The default configuration.
+defaultConfig :: Config
+defaultConfig =
+    Config
+        { cfgAgentId            = 0
+        , cfgZendesk            = "https://iohk.zendesk.com"
+        , cfgToken              = ""
+        , cfgEmail              = "daedalus-bug-reports@iohk.io"
+        , cfgAssignTo           = 0
+        , cfgKnowledgebase      = []
+        , cfgNumOfLogsToAnalyze = 5
+        , cfgIsCommentPublic    = True -- TODO(ks): For now, we need this in CLI.
+        , cfgZendeskLayer       = basicZendeskLayer
+        }
 
 -- | The basic Zendesk layer.
 basicZendeskLayer :: (MonadIO m, MonadReader Config m) => ZendeskLayer m

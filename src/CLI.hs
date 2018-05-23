@@ -10,6 +10,8 @@ import           Options.Applicative (Parser, ParserInfo, argument, auto, comman
                                       progDesc, (<**>))
 import           Paths_log_classifier (version)
 
+-- | TODO(ks): Ideally we should drop this and
+-- use direct function calls.
 data CLI
     = CollectEmails     -- ^ Collect email addresses
     | ProcessTicket Int -- ^ Process ticket of an given ticket id

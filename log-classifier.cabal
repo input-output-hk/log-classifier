@@ -23,7 +23,6 @@ library
                        LogAnalysis.Types
                        Regex
                        Util
-                       Config
                        Zendesk
                        Zendesk.Types
                        Zendesk.Functions
@@ -38,7 +37,6 @@ library
                      , http-conduit
                      , mtl
                      , optparse-applicative
-                     , safe-exceptions
                      , reflection
                      , regex-tdfa
                      , text

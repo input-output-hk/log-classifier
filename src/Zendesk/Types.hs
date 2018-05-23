@@ -1,4 +1,6 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RecordWildCards            #-}
 
 module Zendesk.Types
     ( ZendeskLayer (..)
@@ -17,26 +19,94 @@ module Zendesk.Types
     , parseComments
     , parseTickets
     , renderTicketStatus
+    -- * General configuration
+    , Config (..)
+    , knowledgebasePath
+    , tokenPath
+    , assignToPath
+    , asksZendeskLayer
+    , App
+    , runApp
     ) where
 
 import           Universum
 
-
 import           Data.Aeson (FromJSON, ToJSON, Value, object, parseJSON, toJSON, withObject, (.:),
                              (.=))
 import           Data.Aeson.Types (Parser)
+import           LogAnalysis.Types (Knowledge)
 
+------------------------------------------------------------
+-- Configuration
+------------------------------------------------------------
+
+newtype App a = App (ReaderT Config IO a)
+    deriving ( Applicative
+             , Functor
+             , Monad
+             , MonadReader Config
+             , MonadIO
+             )
+
+runApp :: App a -> Config -> IO a
+runApp (App a) = runReaderT a
+
+-- | The basic configuration.
+data Config = Config
+    { cfgAgentId            :: !Integer
+    -- ^ Zendesk agent id
+    , cfgZendesk            :: !Text
+    -- ^ URL to Zendesk
+    , cfgToken              :: !Text
+    -- ^ Zendesk token
+    , cfgEmail              :: !Text
+    -- ^ Email address of the user the classifier will process on
+    , cfgAssignTo           :: !Integer
+    -- ^ User that will be assigned to after the classifier has done the analysis
+    , cfgKnowledgebase      :: ![Knowledge]
+    -- ^ Knowledgebase
+    , cfgNumOfLogsToAnalyze :: !Int
+    -- ^ Number of files classifier will analyze
+    , cfgIsCommentPublic    :: !Bool
+    -- ^ If the comment is public or not, for a test run we use an internal comment.
+    , cfgZendeskLayer       :: !(ZendeskLayer App)
+    -- ^ The Zendesk API layer. We will ideally move this into a
+    -- separate configuration containing all the layer (yes, there a couple of them).
+    } -- deriving (Eq, Show)
+
+
+-- | Utility function for getting a function of the @ZendeskLayer@.
+-- There are plenty of other alternatives, but this is the simplest
+-- and most direct one.
+asksZendeskLayer :: forall m a. (MonadReader Config m) => (ZendeskLayer App -> a) -> m a
+asksZendeskLayer getter = do
+    Config{..} <- ask
+    pure $ getter cfgZendeskLayer
+
+
+-- TODO(ks): Move these three below to CLI!
+-- | Path to knowledgebase
+knowledgebasePath :: FilePath
+knowledgebasePath = "./knowledgebase/knowledge.csv"
+
+-- | Filepath to token file
+tokenPath :: FilePath
+tokenPath = "./tmp-secrets/token"
+
+-- | Filepath to assign_to file
+assignToPath :: FilePath
+assignToPath = "./tmp-secrets/assign_to"
 
 -- | The Zendesk API interface that we want to expose.
 -- We don't want anything to leak out, so we expose only the most relevant information,
 -- anything relating to how it internaly works should NOT be exposed.
 data ZendeskLayer m = ZendeskLayer
-    { zlGetTicketInfo          :: TicketId -> m TicketInfo
-    , zlListTickets            :: RequestType -> m [TicketInfo]
-    , zlPostTicketComment      :: TicketId -> Text -> [Text] -> Bool -> m ()
-    , zlGetAgentId             :: m Integer
-    , zlGetAttachment          :: Attachment -> m LByteString
-    , zlGetTicketComments      :: TicketId -> m [Comment]
+    { zlGetTicketInfo     :: TicketId -> m TicketInfo
+    , zlListTickets       :: RequestType -> m [TicketInfo]
+    , zlPostTicketComment :: TicketId -> Text -> [Text] -> Bool -> m ()
+    , zlGetAgentId        :: m Integer
+    , zlGetAttachment     :: Attachment -> m LByteString
+    , zlGetTicketComments :: TicketId -> m [Comment]
     }
 
 -- | Attachment of the ticket
@@ -174,5 +244,4 @@ parseComments = withObject "comments" $ \o -> o .: "comments"
 -- | Parse the apiRequest of getAgentId
 parseAgentId :: Value -> Parser Integer
 parseAgentId = withObject "user" $ \o -> (o .: "user") >>= (.: "id")
-
 
