@@ -103,7 +103,7 @@ assignToPath = "./tmp-secrets/assign_to"
 data ZendeskLayer m = ZendeskLayer
     { zlGetTicketInfo     :: TicketId -> m TicketInfo
     , zlListTickets       :: RequestType -> m [TicketInfo]
-    , zlPostTicketComment :: TicketId -> Text -> [Text] -> Bool -> m ()
+    , zlPostTicketComment :: ZendeskResponse -> m ()
     , zlGetAgentId        :: m Integer
     , zlGetAttachment     :: Attachment -> m LByteString
     , zlGetTicketComments :: TicketId -> m [Comment]
@@ -126,9 +126,10 @@ data RequestType
 
 -- | The response for ZenDesk.
 data ZendeskResponse = ZendeskResponse
-    { zrComment  :: Text
-    , zrTags     :: [Text] -- TODO(ks): This should be wrapped
-    , zrIsPublic :: Bool
+    { zrTicketId :: !TicketId
+    , zrComment  :: !Text
+    , zrTags     :: ![Text] -- TODO(ks): This should be wrapped
+    , zrIsPublic :: !Bool
     }
 
 -- | Comments

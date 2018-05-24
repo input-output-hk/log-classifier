@@ -16,10 +16,10 @@ import           Network.HTTP.Simple (Request, addRequestHeader, getResponseBody
                                       parseRequest_, setRequestBasicAuth, setRequestBodyJSON,
                                       setRequestMethod, setRequestPath)
 
-import           Zendesk.Types (Attachment (..), Comment (..), RequestType (..), Ticket (..),
-                                TicketId, TicketInfo (..), TicketList (..), TicketTag (..),
-                                ZendeskLayer (..), parseAgentId, parseComments, parseTickets,
-                                renderTicketStatus, Config (..))
+import           Zendesk.Types (Attachment (..), Comment (..), Config (..), RequestType (..),
+                                Ticket (..), TicketId, TicketInfo (..), TicketList (..),
+                                TicketTag (..), ZendeskLayer (..), ZendeskResponse (..),
+                                parseAgentId, parseComments, parseTickets, renderTicketStatus)
 
 
 -- | The default configuration.
@@ -90,19 +90,17 @@ listTickets request = do
 -- | Send API request to post comment
 postTicketComment
     :: (MonadIO m, MonadReader Config m)
-    => TicketId
-    -> Text
-    -> [Text]
-    -> Bool
+    => ZendeskResponse
     -> m ()
-postTicketComment tid body tags public = do
+postTicketComment ZendeskResponse{..} = do
     cfg <- ask
-    let req1 = apiRequest cfg ("tickets/" <> show tid <> ".json")
+
+    let req1 = apiRequest cfg ("tickets/" <> show zrTicketId <> ".json")
     let req2 = addJsonBody
                    (Ticket
-                       (Comment ("**Log classifier**\n\n" <> body) [] public (cfgAgentId cfg))
+                       (Comment ("**Log classifier**\n\n" <> zrComment) [] zrIsPublic (cfgAgentId cfg))
                        (cfgAssignTo cfg)
-                       (renderTicketStatus AnalyzedByScriptV1_0:tags)
+                       (renderTicketStatus AnalyzedByScriptV1_0:zrTags)
                    )
                    req1
     void $ liftIO $ apiCall (pure . encodeToLazyText) req2

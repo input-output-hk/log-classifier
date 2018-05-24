@@ -24,9 +24,9 @@ library
                        Regex
                        Util
                        Zendesk
+  other-modules:       Paths_log_classifier
                        Zendesk.Types
                        Zendesk.Functions
-  other-modules:       Paths_log_classifier
   ghc-options:         -Wall
   build-depends:       aeson
                      , array
@@ -62,6 +62,7 @@ library
                       UndecidableInstances
                       MonadFailDesugaring
                       TupleSections
+                      StrictData
 
 executable log-classifier-exe
   hs-source-dirs:      app

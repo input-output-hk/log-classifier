@@ -13,15 +13,20 @@ module Lib
 
 import           Universum
 
-import           Data.Text (stripEnd, isInfixOf)
 import           Data.Attoparsec.Text.Lazy (eitherResult, parse)
+import           Data.Text (isInfixOf, stripEnd)
 
-import           LogAnalysis.Types
-import           LogAnalysis.Classifier
-import           LogAnalysis.KnowledgeCSVParser
-import           Util
-import           CLI
-import           Zendesk
+import           CLI (CLI (..), getCliArgs)
+import           LogAnalysis.Classifier (extractErrorCodes, extractIssuesFromLogs,
+                                         prettyFormatAnalysis, prettyFormatLogReadError,
+                                         prettyFormatNoIssues)
+import           LogAnalysis.KnowledgeCSVParser (parseKnowLedgeBase)
+import           LogAnalysis.Types (ErrorCode (..), Knowledge, renderErrorCode, setupAnalysis)
+import           Util (extractLogsFromZip)
+import           Zendesk (App, Attachment (..), Comment (..), Config (..), RequestType (..),
+                          TicketId, TicketInfo (..), TicketTag (..), ZendeskLayer (..),
+                          ZendeskResponse (..), asksZendeskLayer, assignToPath, defaultConfig,
+                          knowledgebasePath, renderTicketStatus, runApp, tokenPath)
 
 ------------------------------------------------------------
 -- Functions
@@ -47,11 +52,11 @@ runZendeskMain = do
     let cfg = cfg' { cfgAgentId = agentId }
     -- At this point, the configuration is set up and there is no point in using a pure IO.
     case args of
-        CollectEmails               -> runApp collectEmails cfg
-        (ProcessTicket ticketId)    -> runApp (processTicket ticketId) cfg
-        ProcessTickets              -> runApp processTickets cfg
-        FetchTickets                -> runApp fetchTickets cfg
-        ShowStatistics              -> runApp showStatistics cfg
+        CollectEmails            -> runApp collectEmails cfg
+        (ProcessTicket ticketId) -> runApp (processTicket ticketId) cfg
+        ProcessTickets           -> runApp processTickets cfg
+        FetchTickets             -> runApp fetchTickets cfg
+        ShowStatistics           -> runApp showStatistics cfg
 
 
 collectEmails :: App ()
@@ -196,17 +201,12 @@ processTicketAndId ticketInfo@TicketInfo{..} = do
 
 -- | Inspect attachment then post comment to the ticket
 inspectAttachmentAndPostComment :: TicketInfo -> Attachment -> App ()
-inspectAttachmentAndPostComment ticketInfo@TicketInfo{..} attachment = do
+inspectAttachmentAndPostComment ticketInfo attachment = do
     liftIO $ putTextLn $ "Analyzing ticket: " <> show ticketInfo
     zendeskResponse <- inspectAttachment ticketInfo attachment
 
-    let comment         = zrComment zendeskResponse
-    let tags            = zrTags zendeskResponse
-    let isPublicComment = zrIsPublic zendeskResponse
-
     postTicketComment <- asksZendeskLayer zlPostTicketComment
-
-    postTicketComment ticketId comment tags isPublicComment
+    postTicketComment zendeskResponse
 
 -- | Given number of file of inspect, knowledgebase and attachment,
 -- analyze the logs and return the results.
@@ -215,7 +215,8 @@ inspectAttachmentAndPostComment ticketInfo@TicketInfo{..} attachment = do
 --
 -- __(comment, tags, bool of whether is should be public comment)__
 inspectAttachment :: TicketInfo -> Attachment -> App ZendeskResponse
-inspectAttachment ticketInfo att = do
+inspectAttachment ticketInfo@TicketInfo{..} att = do
+
     Config{..} <- ask
 
     getAttachment <- asksZendeskLayer zlGetAttachment
@@ -229,7 +230,8 @@ inspectAttachment ticketInfo att = do
             liftIO . putStrLn . renderErrorCode $ SentLogCorrupted
 
             pure ZendeskResponse
-                { zrComment     = prettyFormatLogReadError ticketInfo
+                { zrTicketId    = ticketId
+                , zrComment     = prettyFormatLogReadError ticketInfo
                 , zrTags        = [renderErrorCode SentLogCorrupted]
                 , zrIsPublic    = cfgIsCommentPublic
                 }
@@ -247,7 +249,8 @@ inspectAttachment ticketInfo att = do
                     liftIO . putTextLn $ fErrorCode
 
                     pure ZendeskResponse
-                        { zrComment     = commentRes
+                        { zrTicketId    = ticketId
+                        , zrComment     = commentRes
                         , zrTags        = errorCodes
                         , zrIsPublic    = cfgIsCommentPublic
                         }
@@ -257,7 +260,8 @@ inspectAttachment ticketInfo att = do
                     liftIO . putStrLn . renderTicketStatus $ NoKnownIssue
 
                     pure ZendeskResponse
-                        { zrComment     = prettyFormatNoIssues ticketInfo
+                        { zrTicketId    = ticketId
+                        , zrComment     = prettyFormatNoIssues ticketInfo
                         , zrTags        = [renderTicketStatus NoKnownIssue]
                         , zrIsPublic    = cfgIsCommentPublic
                         }
