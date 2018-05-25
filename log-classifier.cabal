@@ -22,10 +22,11 @@ library
                        LogAnalysis.KnowledgeCSVParser
                        LogAnalysis.Types
                        Regex
-                       Types
                        Util
                        Zendesk
   other-modules:       Paths_log_classifier
+                       Zendesk.Types
+                       Zendesk.Functions
   ghc-options:         -Wall
   build-depends:       aeson
                      , array
@@ -36,7 +37,6 @@ library
                      , http-conduit
                      , mtl
                      , optparse-applicative
-                     , safe-exceptions
                      , reflection
                      , regex-tdfa
                      , text
@@ -62,6 +62,7 @@ library
                       UndecidableInstances
                       MonadFailDesugaring
                       TupleSections
+                      StrictData
 
 executable log-classifier-exe
   hs-source-dirs:      app

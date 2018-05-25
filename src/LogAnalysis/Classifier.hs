@@ -18,7 +18,7 @@ import           Data.Text (isInfixOf)
 import           Data.Text.Encoding.Error (ignore)
 
 import           LogAnalysis.Types (Analysis, Knowledge (..), renderErrorCode)
-import           Types (TicketInfo (..))
+import           Zendesk.Types (TicketInfo (..))
 
 -- | Number of error texts it should show
 numberOfErrorText :: Int

@@ -1,20 +1,32 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RecordWildCards            #-}
 
-module Types
-    ( ZendeskResponse (..)
-    , Comment(..)
-    , CommentOuter(..)
-    , Attachment(..)
-    , Ticket(..)
-    , TicketList(..)
+module Zendesk.Types
+    ( ZendeskLayer (..)
+    , ZendeskResponse (..)
+    , Comment (..)
+    , CommentOuter (..)
+    , Attachment (..)
+    , RequestType (..)
+    , Ticket (..)
+    , TicketList (..)
     , TicketId
     , TicketURL
-    , TicketInfo(..)
-    , TicketTag(..)
+    , TicketInfo (..)
+    , TicketTag (..)
     , parseAgentId
     , parseComments
     , parseTickets
     , renderTicketStatus
+    -- * General configuration
+    , Config (..)
+    , knowledgebasePath
+    , tokenPath
+    , assignToPath
+    , asksZendeskLayer
+    , App
+    , runApp
     ) where
 
 import           Universum
@@ -22,7 +34,80 @@ import           Universum
 import           Data.Aeson (FromJSON, ToJSON, Value, object, parseJSON, toJSON, withObject, (.:),
                              (.=))
 import           Data.Aeson.Types (Parser)
+import           LogAnalysis.Types (Knowledge)
 
+------------------------------------------------------------
+-- Configuration
+------------------------------------------------------------
+
+newtype App a = App (ReaderT Config IO a)
+    deriving ( Applicative
+             , Functor
+             , Monad
+             , MonadReader Config
+             , MonadIO
+             )
+
+runApp :: App a -> Config -> IO a
+runApp (App a) = runReaderT a
+
+-- | The basic configuration.
+data Config = Config
+    { cfgAgentId            :: !Integer
+    -- ^ Zendesk agent id
+    , cfgZendesk            :: !Text
+    -- ^ URL to Zendesk
+    , cfgToken              :: !Text
+    -- ^ Zendesk token
+    , cfgEmail              :: !Text
+    -- ^ Email address of the user the classifier will process on
+    , cfgAssignTo           :: !Integer
+    -- ^ User that will be assigned to after the classifier has done the analysis
+    , cfgKnowledgebase      :: ![Knowledge]
+    -- ^ Knowledgebase
+    , cfgNumOfLogsToAnalyze :: !Int
+    -- ^ Number of files classifier will analyze
+    , cfgIsCommentPublic    :: !Bool
+    -- ^ If the comment is public or not, for a test run we use an internal comment.
+    , cfgZendeskLayer       :: !(ZendeskLayer App)
+    -- ^ The Zendesk API layer. We will ideally move this into a
+    -- separate configuration containing all the layer (yes, there a couple of them).
+    } -- deriving (Eq, Show)
+
+
+-- | Utility function for getting a function of the @ZendeskLayer@.
+-- There are plenty of other alternatives, but this is the simplest
+-- and most direct one.
+asksZendeskLayer :: forall m a. (MonadReader Config m) => (ZendeskLayer App -> a) -> m a
+asksZendeskLayer getter = do
+    Config{..} <- ask
+    pure $ getter cfgZendeskLayer
+
+
+-- TODO(ks): Move these three below to CLI!
+-- | Path to knowledgebase
+knowledgebasePath :: FilePath
+knowledgebasePath = "./knowledgebase/knowledge.csv"
+
+-- | Filepath to token file
+tokenPath :: FilePath
+tokenPath = "./tmp-secrets/token"
+
+-- | Filepath to assign_to file
+assignToPath :: FilePath
+assignToPath = "./tmp-secrets/assign_to"
+
+-- | The Zendesk API interface that we want to expose.
+-- We don't want anything to leak out, so we expose only the most relevant information,
+-- anything relating to how it internaly works should NOT be exposed.
+data ZendeskLayer m = ZendeskLayer
+    { zlGetTicketInfo     :: TicketId -> m TicketInfo
+    , zlListTickets       :: RequestType -> m [TicketInfo]
+    , zlPostTicketComment :: ZendeskResponse -> m ()
+    , zlGetAgentId        :: m Integer
+    , zlGetAttachment     :: Attachment -> m LByteString
+    , zlGetTicketComments :: TicketId -> m [Comment]
+    }
 
 -- | Attachment of the ticket
 data Attachment = Attachment
@@ -34,11 +119,17 @@ data Attachment = Attachment
     -- ^ Attachment size
     }
 
+-- | Request type of the ticket
+data RequestType
+    = Requested
+    | Assigned
+
 -- | The response for ZenDesk.
 data ZendeskResponse = ZendeskResponse
-    { zrComment     :: Text
-    , zrTags        :: [Text] -- TODO(ks): This should be wrapped
-    , zrIsPublic    :: Bool
+    { zrTicketId :: !TicketId
+    , zrComment  :: !Text
+    , zrTags     :: ![Text] -- TODO(ks): This should be wrapped
+    , zrIsPublic :: !Bool
     }
 
 -- | Comments
@@ -72,7 +163,7 @@ data Ticket = Ticket
 data TicketList = TicketList
     { tlTickets :: ![TicketInfo]
     -- ^ Information of tickets
-    , nextPage          :: Maybe Text
+    , nextPage  :: Maybe Text
     -- ^ Next page
     }
 
@@ -80,10 +171,10 @@ type TicketId = Int
 type TicketURL = Text -- TODO(ks): We should wrap all these...
 
 data TicketInfo = TicketInfo
-    { ticketId      :: !TicketId    -- ^ Id of an ticket
-    , ticketUrl     :: !TicketURL   -- ^ The ticket URL
-    , ticketTags    :: ![Text]      -- ^ Tags associated with ticket
-    , ticketStatus  :: !Text        -- ^ The status of the ticket
+    { ticketId     :: !TicketId    -- ^ Id of an ticket
+    , ticketUrl    :: !TicketURL   -- ^ The ticket URL
+    , ticketTags   :: ![Text]      -- ^ Tags associated with ticket
+    , ticketStatus :: !Text        -- ^ The status of the ticket
     } deriving (Eq, Show)
 
 instance Ord TicketInfo where
@@ -154,3 +245,4 @@ parseComments = withObject "comments" $ \o -> o .: "comments"
 -- | Parse the apiRequest of getAgentId
 parseAgentId :: Value -> Parser Integer
 parseAgentId = withObject "user" $ \o -> (o .: "user") >>= (.: "id")
+

@@ -7,15 +7,16 @@ import           Universum
 
 import           Options.Applicative (Parser, ParserInfo, argument, auto, command, execParser, fullDesc, header,
                                       help, helper, hsubparser, info, infoOption, long, metavar,
-                                      progDesc, strOption, (<**>))
+                                      progDesc, (<**>))
 import           Paths_log_classifier (version)
 
+-- | TODO(ks): Ideally we should drop this and
+-- use direct function calls.
 data CLI
     = CollectEmails     -- ^ Collect email addresses
     | ProcessTicket Int -- ^ Process ticket of an given ticket id
     | ProcessTickets    -- ^ Process all the tickets in Zendesk
     | FetchTickets      -- ^ Fetch all the tickets in Zendesk
-    | RawRequest String -- ^ Raw request to the given url
     | ShowStatistics    -- ^ Show statistics
     deriving (Show)
 
@@ -24,12 +25,6 @@ cmdProcessTicket :: Parser CLI
 cmdProcessTicket = ProcessTicket <$> argument auto
                        (metavar "TICKET_ID"
                        <> help "Ticket id to analyze")
-
--- | Parser for RawRequest
-cmdRawRequest :: Parser CLI
-cmdRawRequest = RawRequest <$> strOption
-                    (metavar "URL"
-                    <> help "Url to request")
 
 -- | Parser for CLI commands
 cli :: Parser CLI
@@ -42,8 +37,6 @@ cli = hsubparser $ mconcat
         (progDesc "Fetch all the tickets that need to be analyzes."))
     , command "process-ticket" (info cmdProcessTicket
         (progDesc "Process Zendesk ticket of an given ticket id"))
-    , command "raw-request" (info cmdRawRequest
-        (progDesc "Raw request to the given url"))
     , command "show-stats" (info (pure ShowStatistics)
         (progDesc "Print list of ticket Ids that agent has been assigned"))
     ]
