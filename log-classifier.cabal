@@ -114,6 +114,8 @@ test-suite log-classifier-test
                      , text
                      , universum
                      , zip-archive
+                     , QuickCheck
+                     , hspec
 
   default-language:    Haskell2010
   default-extensions: TypeOperators
