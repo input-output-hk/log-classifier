@@ -3,6 +3,7 @@
 
 module Zendesk.Functions
     ( basicZendeskLayer
+    , emptyZendeskLayer
     , defaultConfig
     ) where
 
@@ -46,6 +47,17 @@ basicZendeskLayer = ZendeskLayer
     , zlGetAgentId              = getAgentId
     , zlGetAttachment           = getAttachment
     , zlGetTicketComments       = getTicketComments
+    }
+
+-- | The non-implemented Zendesk layer.
+emptyZendeskLayer :: (MonadIO m, MonadReader Config m) => ZendeskLayer m
+emptyZendeskLayer = ZendeskLayer
+    { zlGetTicketInfo           = error "Not implemented zlGetTicketInfo        !"
+    , zlListTickets             = error "Not implemented zlListTickets          !"
+    , zlPostTicketComment       = error "Not implemented zlPostTicketComment    !"
+    , zlGetAgentId              = error "Not implemented zlGetAgentId           !"
+    , zlGetAttachment           = error "Not implemented zlGetAttachment        !"
+    , zlGetTicketComments       = error "Not implemented zlGetTicketComments    !"
     }
 
 

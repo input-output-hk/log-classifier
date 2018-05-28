@@ -9,6 +9,8 @@ module Lib
     , processTickets
     , fetchTickets
     , showStatistics
+
+    , processBatchTickets
     ) where
 
 import           Universum
@@ -83,14 +85,18 @@ processTicket ticketId = do
 processTickets :: App ()
 processTickets = do
     cfg <- ask
-    sortedTicketIds <- processBatchTickets cfg
+    let email = cfgEmail cfg
+
+    sortedTicketIds <- processBatchTickets email
     mapM_ processTicketAndId sortedTicketIds
     putTextLn "All the tickets has been processed."
 
 fetchTickets :: App ()
 fetchTickets = do
     cfg <- ask
-    sortedTicketIds <- processBatchTickets cfg
+    let email = cfgEmail cfg
+
+    sortedTicketIds <- processBatchTickets email
     mapM_ (putTextLn . show) sortedTicketIds
     putTextLn "All the tickets has been processed."
 
@@ -106,13 +112,13 @@ showStatistics = do
     liftIO $ printTicketCountMessage tickets (cfgEmail cfg)
 
 
-processBatchTickets :: Config -> App [TicketInfo]
-processBatchTickets cfg = do
+processBatchTickets :: Text -> App [TicketInfo]
+processBatchTickets email = do
 
     -- We first fetch the function from the configuration
     listTickets <- asksZendeskLayer zlListTickets
 
-    putTextLn $  "Classifier is going to process tickets assign to: " <> cfgEmail cfg
+    putTextLn $  "Classifier is going to process tickets assign to: " <> email
     liftIO printWarning
     tickets <- listTickets Assigned
 

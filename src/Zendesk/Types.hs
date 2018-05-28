@@ -12,7 +12,7 @@ module Zendesk.Types
     , Ticket (..)
     , TicketList (..)
     , TicketId
-    , TicketURL
+    , TicketURL (..)
     , TicketInfo (..)
     , TicketTag (..)
     , parseAgentId
@@ -34,7 +34,9 @@ import           Universum
 import           Data.Aeson (FromJSON, ToJSON, Value, object, parseJSON, toJSON, withObject, (.:),
                              (.=))
 import           Data.Aeson.Types (Parser)
+import           Data.Text (pack)
 import           LogAnalysis.Types (Knowledge)
+import           Test.QuickCheck (Arbitrary (..), elements, listOf1)
 
 ------------------------------------------------------------
 -- Configuration
@@ -72,7 +74,7 @@ data Config = Config
     , cfgZendeskLayer       :: !(ZendeskLayer App)
     -- ^ The Zendesk API layer. We will ideally move this into a
     -- separate configuration containing all the layer (yes, there a couple of them).
-    } -- deriving (Eq, Show)
+    }
 
 
 -- | Utility function for getting a function of the @ZendeskLayer@.
@@ -108,6 +110,7 @@ data ZendeskLayer m = ZendeskLayer
     , zlGetAttachment     :: Attachment -> m LByteString
     , zlGetTicketComments :: TicketId -> m [Comment]
     }
+
 
 -- | Attachment of the ticket
 data Attachment = Attachment
@@ -168,7 +171,10 @@ data TicketList = TicketList
     }
 
 type TicketId = Int
-type TicketURL = Text -- TODO(ks): We should wrap all these...
+
+newtype TicketURL = TicketURL
+    { getTicketURL :: Text
+    } deriving (Eq, Show)
 
 data TicketInfo = TicketInfo
     { ticketId     :: !TicketId    -- ^ Id of an ticket
@@ -176,6 +182,29 @@ data TicketInfo = TicketInfo
     , ticketTags   :: ![Text]      -- ^ Tags associated with ticket
     , ticketStatus :: !Text        -- ^ The status of the ticket
     } deriving (Eq, Show)
+
+
+-- TODO(ks): Newtype!
+instance Arbitrary TicketURL where
+    arbitrary = do
+        protocol    <- elements ["http://"]
+        name        <- listOf1 $ elements ['a'..'z']
+        domain      <- elements [".com",".com.br",".net"]
+        pure . TicketURL . pack $ protocol ++ name ++ domain
+
+instance Arbitrary TicketInfo where
+    arbitrary = do
+        ticketId     <- arbitrary
+        ticketUrl    <- arbitrary
+        ticketTags   <- pure []
+        ticketStatus <- pure "open"
+
+        pure TicketInfo
+            { ticketId      = ticketId
+            , ticketUrl     = ticketUrl
+            , ticketTags    = ticketTags
+            , ticketStatus  = ticketStatus
+            }
 
 instance Ord TicketInfo where
     compare t1 t2 = compare (ticketId t1) (ticketId t2)
@@ -225,7 +254,7 @@ instance ToJSON Attachment where
 instance FromJSON TicketInfo where
     parseJSON = withObject "ticket" $ \o -> do
         ticketId        <- o .: "id"
-        ticketUrl       <- o .: "url"
+        ticketUrl       <- TicketURL <$> o .: "url"
         ticketTags      <- o .: "tags"
         ticketStatus    <- o .: "status"
 
