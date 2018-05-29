@@ -4,6 +4,7 @@
 module Zendesk.Functions
     ( basicZendeskLayer
     , emptyZendeskLayer
+    , basicIOLayer
     , defaultConfig
     ) where
 
@@ -17,10 +18,11 @@ import           Network.HTTP.Simple (Request, addRequestHeader, getResponseBody
                                       parseRequest_, setRequestBasicAuth, setRequestBodyJSON,
                                       setRequestMethod, setRequestPath)
 
-import           Zendesk.Types (Attachment (..), Comment (..), Config (..), RequestType (..),
-                                Ticket (..), TicketId, TicketInfo (..), TicketList (..),
-                                TicketTag (..), ZendeskLayer (..), ZendeskResponse (..),
-                                parseAgentId, parseComments, parseTickets, renderTicketStatus)
+import           Zendesk.Types (Attachment (..), Comment (..), Config (..), IOLayer (..),
+                                RequestType (..), Ticket (..), TicketId, TicketInfo (..),
+                                TicketList (..), TicketTag (..), ZendeskLayer (..),
+                                ZendeskResponse (..), parseAgentId, parseComments, parseTickets,
+                                renderTicketStatus)
 
 
 -- | The default configuration.
@@ -36,6 +38,7 @@ defaultConfig =
         , cfgNumOfLogsToAnalyze = 5
         , cfgIsCommentPublic    = True -- TODO(ks): For now, we need this in CLI.
         , cfgZendeskLayer       = basicZendeskLayer
+        , cfgIOLayer            = basicIOLayer
         }
 
 -- | The basic Zendesk layer.
@@ -49,15 +52,22 @@ basicZendeskLayer = ZendeskLayer
     , zlGetTicketComments       = getTicketComments
     }
 
+basicIOLayer :: (MonadIO m, MonadReader Config m) => IOLayer m
+basicIOLayer = IOLayer
+    { iolPrintText              = putTextLn
+    , iolReadFile               = \_ -> error "Not implemented readFile!"
+    -- ^ TODO(ks): We need to implement this!
+    }
+
 -- | The non-implemented Zendesk layer.
 emptyZendeskLayer :: (MonadIO m, MonadReader Config m) => ZendeskLayer m
 emptyZendeskLayer = ZendeskLayer
-    { zlGetTicketInfo           = error "Not implemented zlGetTicketInfo        !"
-    , zlListTickets             = error "Not implemented zlListTickets          !"
-    , zlPostTicketComment       = error "Not implemented zlPostTicketComment    !"
-    , zlGetAgentId              = error "Not implemented zlGetAgentId           !"
-    , zlGetAttachment           = error "Not implemented zlGetAttachment        !"
-    , zlGetTicketComments       = error "Not implemented zlGetTicketComments    !"
+    { zlGetTicketInfo           = \_     -> error "Not implemented zlGetTicketInfo!"
+    , zlListTickets             = \_     -> error "Not implemented zlListTickets!"
+    , zlPostTicketComment       = \_     -> error "Not implemented zlPostTicketComment!"
+    , zlGetAgentId              = pure 1
+    , zlGetAttachment           = \_     -> error "Not implemented zlGetAttachment!"
+    , zlGetTicketComments       = \_     -> error "Not implemented zlGetTicketComments!"
     }
 
 

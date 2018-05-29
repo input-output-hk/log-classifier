@@ -10,7 +10,7 @@ module Lib
     , fetchTickets
     , showStatistics
 
-    , processBatchTickets
+    , listAndSortTickets
     ) where
 
 import           Universum
@@ -25,10 +25,11 @@ import           LogAnalysis.Classifier (extractErrorCodes, extractIssuesFromLog
 import           LogAnalysis.KnowledgeCSVParser (parseKnowLedgeBase)
 import           LogAnalysis.Types (ErrorCode (..), Knowledge, renderErrorCode, setupAnalysis)
 import           Util (extractLogsFromZip)
-import           Zendesk (App, Attachment (..), Comment (..), Config (..), RequestType (..),
-                          TicketId, TicketInfo (..), TicketTag (..), ZendeskLayer (..),
-                          ZendeskResponse (..), asksZendeskLayer, assignToPath, defaultConfig,
-                          knowledgebasePath, renderTicketStatus, runApp, tokenPath)
+import           Zendesk (App, Attachment (..), Comment (..), Config (..), IOLayer (..),
+                          RequestType (..), TicketId, TicketInfo (..), TicketTag (..),
+                          ZendeskLayer (..), ZendeskResponse (..), asksIOLayer, asksZendeskLayer,
+                          assignToPath, defaultConfig, knowledgebasePath, renderTicketStatus,
+                          runApp, tokenPath)
 
 ------------------------------------------------------------
 -- Functions
@@ -75,28 +76,36 @@ collectEmails = do
 processTicket :: TicketId -> App ()
 processTicket ticketId = do
     -- We first fetch the function from the configuration
-    getTicketInfo <- asksZendeskLayer zlGetTicketInfo
+    getTicketInfo       <- asksZendeskLayer zlGetTicketInfo
     putTextLn "Processing single ticket"
-    ticketInfo <- getTicketInfo ticketId
-    processTicketAndId ticketInfo
+    ticketInfo          <- getTicketInfo ticketId
+    attachments         <- getTicketAttachments ticketInfo
+
+    zendeskResponse     <- mapM (inspectAttachment ticketInfo) attachments
+
+    postTicketComment   <- asksZendeskLayer zlPostTicketComment
+    _                   <- mapM postTicketComment zendeskResponse
+
+
     putTextLn "Process finished, please see the following url"
     putTextLn $ "https://iohk.zendesk.com/agent/tickets/" <> show ticketId
 
 processTickets :: App ()
 processTickets = do
-    cfg <- ask
-    let email = cfgEmail cfg
+    sortedTicketIds     <- listAndSortTickets
 
-    sortedTicketIds <- processBatchTickets email
-    mapM_ processTicketAndId sortedTicketIds
+    zendeskResponses    <- forM sortedTicketIds $ \ticketInfo -> do
+        attachments         <- getTicketAttachments ticketInfo
+        mapM (inspectAttachment ticketInfo) attachments
+
+    postTicketComment   <- asksZendeskLayer zlPostTicketComment
+    mapM_ postTicketComment (concat zendeskResponses)
+
     putTextLn "All the tickets has been processed."
 
 fetchTickets :: App ()
 fetchTickets = do
-    cfg <- ask
-    let email = cfgEmail cfg
-
-    sortedTicketIds <- processBatchTickets email
+    sortedTicketIds <- listAndSortTickets
     mapM_ (putTextLn . show) sortedTicketIds
     putTextLn "All the tickets has been processed."
 
@@ -107,33 +116,32 @@ showStatistics = do
     listTickets <- asksZendeskLayer zlListTickets
 
     putTextLn $ "Classifier is going to gather ticket information assigned to: " <> cfgEmail cfg
-    liftIO printWarning
-    tickets <- listTickets Assigned
+
+    tickets     <- listTickets Assigned
     liftIO $ printTicketCountMessage tickets (cfgEmail cfg)
 
 
-processBatchTickets :: Text -> App [TicketInfo]
-processBatchTickets email = do
+listAndSortTickets :: App [TicketInfo]
+listAndSortTickets = do
+
+    Config{..}  <- ask
 
     -- We first fetch the function from the configuration
     listTickets <- asksZendeskLayer zlListTickets
+    printText   <- asksIOLayer iolPrintText
 
-    putTextLn $  "Classifier is going to process tickets assign to: " <> email
-    liftIO printWarning
-    tickets <- listTickets Assigned
+    printText $ "Classifier is going to process tickets assign to: " <> cfgEmail
+
+    tickets     <- listTickets Assigned
 
     let filteredTicketIds = filterAnalyzedTickets tickets
     let sortedTicketIds   = sortBy compare filteredTicketIds
 
-    putTextLn $ "There are " <> show (length sortedTicketIds) <> " unanalyzed tickets."
-    putTextLn "Processing tickets, this may take hours to finish."
+    printText $ "There are " <> show (length sortedTicketIds) <> " unanalyzed tickets."
+    printText "Processing tickets, this may take hours to finish."
 
     pure sortedTicketIds
 
-
--- | Warning
-printWarning :: IO ()
-printWarning = putTextLn "Note that this process may take a while. Please do not kill the process"
 
 -- | Print how many tickets are assinged, analyzed, and unanalyzed
 printTicketCountMessage :: [TicketInfo] -> Text -> IO ()
@@ -184,35 +192,35 @@ extractEmailAddress ticketId = do
     liftIO $ putTextLn emailAddress
 
 -- | Process specifig ticket id (can be used for testing) only inspects the one's with logs
-processTicketAndId :: TicketInfo -> App ()
-processTicketAndId ticketInfo@TicketInfo{..} = do
+getTicketAttachments :: TicketInfo -> App [Attachment]
+getTicketAttachments TicketInfo{..} = do
 
-    getTicketComments <- asksZendeskLayer zlGetTicketComments
+    -- Get the function from the configuration
+    getTicketComments   <- asksZendeskLayer zlGetTicketComments
 
-    comments <- getTicketComments ticketId
+    comments            <- getTicketComments ticketId
 
     -- Filter tickets without logs
-    -- Could analyze the comments but I don't see it useful..
     let commentsWithAttachments :: [Comment]
-        commentsWithAttachments = filter (\x -> length (cAttachments x) > 0) comments
+        commentsWithAttachments = filter commentHasAttachment comments
 
     -- Filter out ticket without logs
     let attachments :: [Attachment]
         attachments = concatMap cAttachments commentsWithAttachments
 
+    -- Filter out non-logs
     let justLogs :: [Attachment]
-        justLogs = filter (\x -> "application/zip" == aContentType x) attachments
+        justLogs = filter isAttachmentZip attachments
 
-    mapM_ (inspectAttachmentAndPostComment ticketInfo) justLogs
+    pure justLogs
+  where
+    commentHasAttachment :: Comment -> Bool
+    commentHasAttachment comment = length (cAttachments comment) > 0
 
--- | Inspect attachment then post comment to the ticket
-inspectAttachmentAndPostComment :: TicketInfo -> Attachment -> App ()
-inspectAttachmentAndPostComment ticketInfo attachment = do
-    liftIO $ putTextLn $ "Analyzing ticket: " <> show ticketInfo
-    zendeskResponse <- inspectAttachment ticketInfo attachment
+    -- Readability
+    isAttachmentZip :: Attachment -> Bool
+    isAttachmentZip attachment = "application/zip" == aContentType attachment
 
-    postTicketComment <- asksZendeskLayer zlPostTicketComment
-    postTicketComment zendeskResponse
 
 -- | Given number of file of inspect, knowledgebase and attachment,
 -- analyze the logs and return the results.

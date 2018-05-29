@@ -3,7 +3,8 @@
 {-# LANGUAGE RecordWildCards            #-}
 
 module Zendesk.Types
-    ( ZendeskLayer (..)
+    ( IOLayer (..)
+    , ZendeskLayer (..)
     , ZendeskResponse (..)
     , Comment (..)
     , CommentOuter (..)
@@ -25,6 +26,7 @@ module Zendesk.Types
     , tokenPath
     , assignToPath
     , asksZendeskLayer
+    , asksIOLayer
     , App
     , runApp
     ) where
@@ -74,6 +76,8 @@ data Config = Config
     , cfgZendeskLayer       :: !(ZendeskLayer App)
     -- ^ The Zendesk API layer. We will ideally move this into a
     -- separate configuration containing all the layer (yes, there a couple of them).
+    , cfgIOLayer            :: !(IOLayer App)
+    -- ^ The IO layer.
     }
 
 
@@ -84,6 +88,15 @@ asksZendeskLayer :: forall m a. (MonadReader Config m) => (ZendeskLayer App -> a
 asksZendeskLayer getter = do
     Config{..} <- ask
     pure $ getter cfgZendeskLayer
+
+
+-- | Utility function for getting a function of the @ZendeskLayer@.
+-- There are plenty of other alternatives, but this is the simplest
+-- and most direct one.
+asksIOLayer :: forall m a. (MonadReader Config m) => (IOLayer App -> a) -> m a
+asksIOLayer getter = do
+    Config{..} <- ask
+    pure $ getter cfgIOLayer
 
 
 -- TODO(ks): Move these three below to CLI!
@@ -103,14 +116,21 @@ assignToPath = "./tmp-secrets/assign_to"
 -- We don't want anything to leak out, so we expose only the most relevant information,
 -- anything relating to how it internaly works should NOT be exposed.
 data ZendeskLayer m = ZendeskLayer
-    { zlGetTicketInfo     :: TicketId -> m TicketInfo
-    , zlListTickets       :: RequestType -> m [TicketInfo]
-    , zlPostTicketComment :: ZendeskResponse -> m ()
-    , zlGetAgentId        :: m Integer
-    , zlGetAttachment     :: Attachment -> m LByteString
-    , zlGetTicketComments :: TicketId -> m [Comment]
+    { zlGetTicketInfo           :: TicketId -> m TicketInfo
+    , zlListTickets             :: RequestType -> m [TicketInfo]
+    , zlPostTicketComment       :: ZendeskResponse -> m ()
+    , zlGetAgentId              :: m Integer
+    , zlGetAttachment           :: Attachment -> m LByteString
+    , zlGetTicketComments       :: TicketId -> m [Comment]
     }
 
+
+-- | The IOLayer interface that we can expose.
+-- We want to do this since we want to be able to mock out any function tied to @IO@.
+data IOLayer m = IOLayer
+    { iolPrintText              :: Text -> m ()
+    , iolReadFile               :: FilePath -> m String
+    }
 
 -- | Attachment of the ticket
 data Attachment = Attachment
