@@ -38,7 +38,8 @@ import           Data.Aeson (FromJSON, ToJSON, Value, object, parseJSON, toJSON,
 import           Data.Aeson.Types (Parser)
 import           Data.Text (pack)
 import           LogAnalysis.Types (Knowledge)
-import           Test.QuickCheck (Arbitrary (..), elements, listOf1)
+
+import           Test.QuickCheck (Arbitrary (..), Gen, elements, listOf1)
 
 ------------------------------------------------------------
 -- Configuration
@@ -140,7 +141,18 @@ data Attachment = Attachment
     -- ^ ContentType of the attachment
     , aSize        :: !Int
     -- ^ Attachment size
-    }
+    } deriving (Eq, Show)
+
+-- TODO(ks): Fix this with custom newtypes.
+instance Arbitrary Text where
+    arbitrary = fromString <$> (arbitrary :: Gen String)
+
+instance Arbitrary Attachment where
+    arbitrary = Attachment
+        <$> arbitrary
+        <*> pure "application/zip" -- TODO(ks): More random...
+        <*> arbitrary
+
 
 -- | Request type of the ticket
 data RequestType
@@ -165,7 +177,16 @@ data Comment = Comment
     -- ^ Flag of whether comment should be public
     , cAuthor      :: !Integer
     -- ^ Auther of comment
-    }
+    } deriving (Eq, Show)
+
+
+instance Arbitrary Comment where
+    arbitrary = Comment
+        <$> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+
 
 -- | Outer comment ??
 newtype CommentOuter = CommentOuter {

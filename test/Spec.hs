@@ -10,6 +10,8 @@ import           Test.QuickCheck.Monadic
 import           Zendesk
 import           Lib
 
+-- TODO(ks): What we are really missing is a realistic @Gen ZendeskLayer m@.
+
 main :: IO ()
 main = hspec spec
 
@@ -17,6 +19,7 @@ main = hspec spec
 spec :: Spec
 spec =
     describe "Zendesk" $ do
+        listAndSortTicketsSpec
         processTicketSpec
 
 
@@ -36,10 +39,9 @@ withStubbedIOAndZendeskLayer stubbedZendeskLayer =
             -- ^ Do nothing with the output
             }
 
-
-processTicketSpec :: Spec
-processTicketSpec = do
-    describe "listAndSortTickets" $ modifyMaxSuccess (const 1000) $ do
+listAndSortTicketsSpec :: Spec
+listAndSortTicketsSpec =
+    describe "listAndSortTickets" $ modifyMaxSuccess (const 200) $ do
         it "doesn't return tickets since there are none" $ do
             forAll arbitrary $ \(ticketInfo :: TicketInfo) -> do
 
@@ -88,6 +90,67 @@ processTicketSpec = do
                         -- Check the order is sorted.
                         assert $ sortBy compare tickets == tickets
 
+
+processTicketSpec :: Spec
+processTicketSpec =
+    describe "processTicket" $ modifyMaxSuccess (const 200) $ do
+        it "processes ticket, no comments" $ do
+            forAll arbitrary $ \(ticketInfo :: TicketInfo) ->
+                forAll (listOf1 arbitrary) $ \(listTickets) -> do
+
+                    monadicIO $ do
+
+                        let stubbedZendeskLayer :: ZendeskLayer App
+                            stubbedZendeskLayer =
+                                emptyZendeskLayer
+                                    { zlListTickets         = \_     -> pure listTickets
+                                    , zlGetTicketInfo       = \_     -> pure ticketInfo
+                                    , zlPostTicketComment   = \_     -> pure ()
+                                    , zlGetTicketComments   = \_     -> pure []
+                                    }
+
+                        let stubbedConfig :: Config
+                            stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
+
+                        let appExecution :: IO [ZendeskResponse]
+                            appExecution = runApp (processTicket . ticketId $ ticketInfo) stubbedConfig
+
+                        zendeskComments <- run appExecution
+
+                        -- Check we have some comments.
+                        assert $ length zendeskComments == 0
+
+        it "processes ticket, with comments" $ do
+            forAll arbitrary $ \(ticketInfo :: TicketInfo) ->
+                forAll (listOf1 arbitrary) $ \(listTickets) -> do
+                forAll (listOf1 arbitrary) $ \(comments) -> do
+
+
+                    monadicIO $ do
+
+                        -- A simple precondition.
+                        pre $ any (\comment -> length (cAttachments comment) > 0) comments
+
+                        let stubbedZendeskLayer :: ZendeskLayer App
+                            stubbedZendeskLayer =
+                                emptyZendeskLayer
+                                    { zlListTickets         = \_     -> pure listTickets
+                                    , zlGetTicketInfo       = \_     -> pure ticketInfo
+                                    , zlPostTicketComment   = \_     -> pure ()
+                                    , zlGetTicketComments   = \_     -> pure comments
+                                    , zlGetAttachment       = \_     -> pure mempty
+                                    }
+
+                        let stubbedConfig :: Config
+                            stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
+
+                        let appExecution :: IO [ZendeskResponse]
+                            appExecution = runApp (processTicket . ticketId $ ticketInfo) stubbedConfig
+
+                        zendeskResponses <- run appExecution
+
+                        -- Check we have some comments.
+                        assert $ length zendeskResponses > 0
 
 processTicketsSpec :: Spec
 processTicketsSpec =
