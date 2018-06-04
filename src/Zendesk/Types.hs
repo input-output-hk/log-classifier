@@ -3,7 +3,8 @@
 {-# LANGUAGE RecordWildCards            #-}
 
 module Zendesk.Types
-    ( ZendeskLayer (..)
+    ( IOLayer (..)
+    , ZendeskLayer (..)
     , ZendeskResponse (..)
     , Comment (..)
     , CommentOuter (..)
@@ -12,7 +13,7 @@ module Zendesk.Types
     , Ticket (..)
     , TicketList (..)
     , TicketId
-    , TicketURL
+    , TicketURL (..)
     , TicketInfo (..)
     , TicketTag (..)
     , parseAgentId
@@ -25,6 +26,7 @@ module Zendesk.Types
     , tokenPath
     , assignToPath
     , asksZendeskLayer
+    , asksIOLayer
     , App
     , runApp
     ) where
@@ -34,7 +36,10 @@ import           Universum
 import           Data.Aeson (FromJSON, ToJSON, Value, object, parseJSON, toJSON, withObject, (.:),
                              (.=))
 import           Data.Aeson.Types (Parser)
+import           Data.Text (pack)
 import           LogAnalysis.Types (Knowledge)
+
+import           Test.QuickCheck (Arbitrary (..), Gen, elements, listOf1)
 
 ------------------------------------------------------------
 -- Configuration
@@ -72,7 +77,9 @@ data Config = Config
     , cfgZendeskLayer       :: !(ZendeskLayer App)
     -- ^ The Zendesk API layer. We will ideally move this into a
     -- separate configuration containing all the layer (yes, there a couple of them).
-    } -- deriving (Eq, Show)
+    , cfgIOLayer            :: !(IOLayer App)
+    -- ^ The IO layer.
+    }
 
 
 -- | Utility function for getting a function of the @ZendeskLayer@.
@@ -82,6 +89,15 @@ asksZendeskLayer :: forall m a. (MonadReader Config m) => (ZendeskLayer App -> a
 asksZendeskLayer getter = do
     Config{..} <- ask
     pure $ getter cfgZendeskLayer
+
+
+-- | Utility function for getting a function of the @ZendeskLayer@.
+-- There are plenty of other alternatives, but this is the simplest
+-- and most direct one.
+asksIOLayer :: forall m a. (MonadReader Config m) => (IOLayer App -> a) -> m a
+asksIOLayer getter = do
+    Config{..} <- ask
+    pure $ getter cfgIOLayer
 
 
 -- TODO(ks): Move these three below to CLI!
@@ -101,12 +117,20 @@ assignToPath = "./tmp-secrets/assign_to"
 -- We don't want anything to leak out, so we expose only the most relevant information,
 -- anything relating to how it internaly works should NOT be exposed.
 data ZendeskLayer m = ZendeskLayer
-    { zlGetTicketInfo     :: TicketId -> m TicketInfo
-    , zlListTickets       :: RequestType -> m [TicketInfo]
-    , zlPostTicketComment :: ZendeskResponse -> m ()
-    , zlGetAgentId        :: m Integer
-    , zlGetAttachment     :: Attachment -> m LByteString
-    , zlGetTicketComments :: TicketId -> m [Comment]
+    { zlGetTicketInfo           :: TicketId -> m TicketInfo
+    , zlListTickets             :: RequestType -> m [TicketInfo]
+    , zlPostTicketComment       :: ZendeskResponse -> m ()
+    , zlGetAgentId              :: m Integer
+    , zlGetAttachment           :: Attachment -> m LByteString
+    , zlGetTicketComments       :: TicketId -> m [Comment]
+    }
+
+
+-- | The IOLayer interface that we can expose.
+-- We want to do this since we want to be able to mock out any function tied to @IO@.
+data IOLayer m = IOLayer
+    { iolPrintText              :: Text -> m ()
+    , iolReadFile               :: FilePath -> m String
     }
 
 -- | Attachment of the ticket
@@ -117,7 +141,18 @@ data Attachment = Attachment
     -- ^ ContentType of the attachment
     , aSize        :: !Int
     -- ^ Attachment size
-    }
+    } deriving (Eq, Show)
+
+-- TODO(ks): Fix this with custom newtypes.
+instance Arbitrary Text where
+    arbitrary = fromString <$> (arbitrary :: Gen String)
+
+instance Arbitrary Attachment where
+    arbitrary = Attachment
+        <$> arbitrary
+        <*> pure "application/zip" -- TODO(ks): More random...
+        <*> arbitrary
+
 
 -- | Request type of the ticket
 data RequestType
@@ -142,7 +177,16 @@ data Comment = Comment
     -- ^ Flag of whether comment should be public
     , cAuthor      :: !Integer
     -- ^ Auther of comment
-    }
+    } deriving (Eq, Show)
+
+
+instance Arbitrary Comment where
+    arbitrary = Comment
+        <$> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+
 
 -- | Outer comment ??
 newtype CommentOuter = CommentOuter {
@@ -168,7 +212,10 @@ data TicketList = TicketList
     }
 
 type TicketId = Int
-type TicketURL = Text -- TODO(ks): We should wrap all these...
+
+newtype TicketURL = TicketURL
+    { getTicketURL :: Text
+    } deriving (Eq, Show)
 
 data TicketInfo = TicketInfo
     { ticketId     :: !TicketId    -- ^ Id of an ticket
@@ -176,6 +223,29 @@ data TicketInfo = TicketInfo
     , ticketTags   :: ![Text]      -- ^ Tags associated with ticket
     , ticketStatus :: !Text        -- ^ The status of the ticket
     } deriving (Eq, Show)
+
+
+-- TODO(ks): Newtype!
+instance Arbitrary TicketURL where
+    arbitrary = do
+        protocol    <- elements ["http://"]
+        name        <- listOf1 $ elements ['a'..'z']
+        domain      <- elements [".com",".com.br",".net"]
+        pure . TicketURL . pack $ protocol ++ name ++ domain
+
+instance Arbitrary TicketInfo where
+    arbitrary = do
+        ticketId     <- arbitrary
+        ticketUrl    <- arbitrary
+        ticketTags   <- pure []
+        ticketStatus <- pure "open"
+
+        pure TicketInfo
+            { ticketId      = ticketId
+            , ticketUrl     = ticketUrl
+            , ticketTags    = ticketTags
+            , ticketStatus  = ticketStatus
+            }
 
 instance Ord TicketInfo where
     compare t1 t2 = compare (ticketId t1) (ticketId t2)
@@ -225,7 +295,7 @@ instance ToJSON Attachment where
 instance FromJSON TicketInfo where
     parseJSON = withObject "ticket" $ \o -> do
         ticketId        <- o .: "id"
-        ticketUrl       <- o .: "url"
+        ticketUrl       <- TicketURL <$> o .: "url"
         ticketTags      <- o .: "tags"
         ticketStatus    <- o .: "status"
 
