@@ -2,10 +2,10 @@ module Main where
 
 import           Universum
 
-import           Test.Hspec
-import           Test.Hspec.QuickCheck
-import           Test.QuickCheck
-import           Test.QuickCheck.Monadic
+import           Test.Hspec (Spec, hspec, describe, it, pending)
+import           Test.Hspec.QuickCheck (modifyMaxSuccess)
+import           Test.QuickCheck (arbitrary, forAll, listOf1)
+import           Test.QuickCheck.Monadic (monadicIO, pre, run, assert)
 
 import           Zendesk
 import           Lib

@@ -57,7 +57,7 @@ runZendeskMain = do
     case args of
         CollectEmails            -> runApp collectEmails cfg
         (ProcessTicket ticketId) -> void $ runApp (processTicket ticketId) cfg
-        ProcessTickets           -> runApp processTickets cfg
+        ProcessTickets           -> void $ runApp processTickets cfg
         FetchTickets             -> runApp fetchTickets cfg
         ShowStatistics           -> runApp showStatistics cfg
 
@@ -101,12 +101,7 @@ processTickets :: App ()
 processTickets = do
     sortedTicketIds     <- listAndSortTickets
 
-    zendeskResponses    <- forM sortedTicketIds $ \ticketInfo -> do
-        attachments         <- getTicketAttachments ticketInfo
-        mapM (inspectAttachment ticketInfo) attachments
-
-    postTicketComment   <- asksZendeskLayer zlPostTicketComment
-    mapM_ postTicketComment (concat zendeskResponses)
+    _                   <- mapM (processTicket . ticketId) sortedTicketIds
 
     putTextLn "All the tickets has been processed."
 
