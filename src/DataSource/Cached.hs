@@ -9,8 +9,10 @@ import           Data.Text (split)
 import           Data.Coerce (coerce)
 import qualified Data.List.NonEmpty as NE
 
-import           Database.Selda
+import           Database.Selda hiding (toText)
 import           Database.Selda.Generic
+import           Database.Selda.Backend
+
 import           Database.Selda.SQLite
 
 import           DataSource.Types
@@ -28,8 +30,38 @@ cachedZendeskLayer = ZendeskLayer
     , zlGetTicketComments       = getTicketComments
     }
 
+getTicketInfo = error "!"
 
 -- The instances related to the database only.
+
+instance SqlType TicketId where
+  mkLit (TicketId tId)      = LCustom $ LInt tId
+  sqlType _                 = TInt
+  fromSql (SqlInt x)        = TicketId x
+  fromSql v                 = error . toText $ "fromSql: int column with non-int value: " ++ show v
+  defaultValue              = LCustom $ LInt (-1)
+
+instance SqlType TicketURL where
+  mkLit (TicketURL tURL)    = LCustom $ LText tURL
+  sqlType _                 = TText
+  fromSql (SqlString x)     = TicketURL x
+  fromSql v                 = error . toText $ "fromSql: text column with non-text value: " ++ show v
+  defaultValue              = LCustom $ LText mempty
+
+instance SqlType TicketTags where
+  mkLit (TicketTags tTags)  = LCustom $ LText tTags
+  sqlType _                 = TText
+  fromSql (SqlString x)     = TicketTags x
+  fromSql v                 = error . toText $ "fromSql: text column with non-text value: " ++ show v
+  defaultValue              = LCustom $ LText mempty
+
+
+-- | Yes, not normalized, I know...
+convertTextToTags :: Text -> TicketTags
+convertTextToTags = TicketTags . split (==',')
+
+convertTagsToText :: TicketTags -> [Text]
+convertTagsToText (TicketTags tTags) = join ',' tTags
 
 -- https://selda.link/
 -- https://github.com/valderman/selda#generic-tables-and-queries
@@ -39,6 +71,10 @@ cachedZendeskLayer = ZendeskLayer
 withLocalSqlite :: forall m a. (MonadIO m, MonadMask m) => SeldaT m a -> m a
 withLocalSqlite executable = withSQLite "log_classifier.sqlite" executable
 
+ticketInfo :: GenTable TicketInfo
+ticketInfo = genTable "ticket_info" [ticketId :- primaryGen]
+
+{-
 ticketsInfo :: Table (Int :*: Text :*: Text :*: Text)
 ticketsInfo = table "TICKET_INFO"
       $ primary "ID"
@@ -73,9 +109,8 @@ getTicketInfo ticketId = liftIO $ withLocalSqlite $ do
         , ticketStatus  = TicketStatus status
         }
 
-    -- | Yes, not normalized, I know...
-    convertTextToTags :: Text -> TicketTags
-    convertTextToTags = TicketTags . split (==',')
+
+-}
 
 listTickets = error "!"
 
