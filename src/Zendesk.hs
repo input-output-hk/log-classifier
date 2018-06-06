@@ -192,14 +192,12 @@ showTicketsAttachmentInfo tickets = do
               putText "Ticket #: "
               print (ticketId ticket'')
               comments <- getComments ticket''
-              putText "  Attachments: "
               -- Attachment Name
               mapM_ (\comment -> do
                         mapM_ (\attachment -> do
-                                  putText "  "
-                                  print $ aURL attachment
-                                  putText "  "
-                                  print $ aSize attachment
+                                  putText "  Attachment: "
+                                  (putText . show)  $ aSize attachment
+                                  putTextLn $ " - " <> aURL attachment
                               ) (getAttachments comment)
                     ) comments
               pure ()
