@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
 
-module Zendesk.Functions
+module DataSource.Http
     ( basicZendeskLayer
     , emptyZendeskLayer
     , basicIOLayer
@@ -18,7 +18,7 @@ import           Network.HTTP.Simple (Request, addRequestHeader, getResponseBody
                                       parseRequest_, setRequestBasicAuth, setRequestBodyJSON,
                                       setRequestMethod, setRequestPath)
 
-import           Zendesk.Types (Attachment (..), Comment (..), Config (..), IOLayer (..),
+import           DataSource.Types (Attachment (..), Comment (..), Config (..), IOLayer (..),
                                 RequestType (..), Ticket (..), TicketId, TicketInfo (..),
                                 TicketList (..), TicketTag (..), ZendeskLayer (..),
                                 ZendeskResponse (..), parseAgentId, parseComments, parseTickets,
@@ -75,7 +75,7 @@ emptyZendeskLayer = ZendeskLayer
 getTicketInfo
     :: (MonadIO m, MonadReader Config m)
     => TicketId
-    -> m TicketInfo
+    -> m (Maybe TicketInfo)
 getTicketInfo ticketId = do
     cfg <- ask
 
@@ -95,6 +95,8 @@ listTickets request = do
                   Requested -> "/users/" <> show agentId <> "/tickets/requested.json"
                   Assigned  -> "/users/" <> show agentId <> "/tickets/assigned.json"
     let req = apiRequest cfg url
+
+    -- liftIO $ putStrLn (show req :: Text) -- Something we could use for logging here...
 
     let go :: [TicketInfo] -> Text -> IO [TicketInfo]
         go list' nextPage' = do

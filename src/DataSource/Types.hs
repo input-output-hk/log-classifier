@@ -1,8 +1,9 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE DeriveGeneric              #-}
 
-module Zendesk.Types
+module DataSource.Types
     ( IOLayer (..)
     , ZendeskLayer (..)
     , ZendeskResponse (..)
@@ -12,8 +13,10 @@ module Zendesk.Types
     , RequestType (..)
     , Ticket (..)
     , TicketList (..)
-    , TicketId
+    , TicketId (..)
     , TicketURL (..)
+    , TicketTags (..)
+    , TicketStatus (..)
     , TicketInfo (..)
     , TicketTag (..)
     , parseAgentId
@@ -117,7 +120,7 @@ assignToPath = "./tmp-secrets/assign_to"
 -- We don't want anything to leak out, so we expose only the most relevant information,
 -- anything relating to how it internaly works should NOT be exposed.
 data ZendeskLayer m = ZendeskLayer
-    { zlGetTicketInfo           :: TicketId -> m TicketInfo
+    { zlGetTicketInfo           :: TicketId -> m (Maybe TicketInfo)
     , zlListTickets             :: RequestType -> m [TicketInfo]
     , zlPostTicketComment       :: ZendeskResponse -> m ()
     , zlGetAgentId              :: m Integer
@@ -211,21 +214,39 @@ data TicketList = TicketList
     -- ^ Next page
     }
 
-type TicketId = Int
+-- TODO(ks): We need to verify this still works, we don't have any
+-- regression tests...
+newtype TicketId = TicketId
+    { getTicketId :: Int
+    } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
+
+instance Arbitrary TicketId where
+    arbitrary = TicketId <$> arbitrary
 
 newtype TicketURL = TicketURL
     { getTicketURL :: Text
-    } deriving (Eq, Show)
+    } deriving (Eq, Show, Ord, Generic)
+
+newtype TicketTags = TicketTags
+    { getTicketTags :: [Text] -- TODO(ks): We need to fix the @TicketTag@ / @TicketTags@ story.
+    } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
+
+newtype TicketStatus = TicketStatus
+    { getTicketStatus :: Text
+    } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
+
 
 data TicketInfo = TicketInfo
-    { ticketId     :: !TicketId    -- ^ Id of an ticket
-    , ticketUrl    :: !TicketURL   -- ^ The ticket URL
-    , ticketTags   :: ![Text]      -- ^ Tags associated with ticket
-    , ticketStatus :: !Text        -- ^ The status of the ticket
-    } deriving (Eq, Show)
+    { ticketId     :: !TicketId     -- ^ Id of an ticket
+    , ticketUrl    :: !TicketURL    -- ^ The ticket URL
+    , ticketTags   :: !TicketTags   -- ^ Tags associated with ticket
+    , ticketStatus :: !TicketStatus -- ^ The status of the ticket
+    } deriving (Eq, Show, Generic)
 
 
 -- TODO(ks): Newtype!
+
+
 instance Arbitrary TicketURL where
     arbitrary = do
         protocol    <- elements ["http://"]
@@ -233,12 +254,19 @@ instance Arbitrary TicketURL where
         domain      <- elements [".com",".com.br",".net"]
         pure . TicketURL . pack $ protocol ++ name ++ domain
 
+instance Arbitrary TicketTags where
+    arbitrary = TicketTags <$> arbitrary
+
+-- TODO(ks): Just "open" for now, enumerate with @elements@ later.
+instance Arbitrary TicketStatus where
+    arbitrary = pure $ TicketStatus "open"
+
 instance Arbitrary TicketInfo where
     arbitrary = do
         ticketId     <- arbitrary
         ticketUrl    <- arbitrary
-        ticketTags   <- pure []
-        ticketStatus <- pure "open"
+        ticketTags   <- arbitrary
+        ticketStatus <- arbitrary
 
         pure TicketInfo
             { ticketId      = ticketId

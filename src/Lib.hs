@@ -17,19 +17,21 @@ import           Universum
 
 import           Data.Attoparsec.Text.Lazy (eitherResult, parse)
 import           Data.Text (isInfixOf, stripEnd)
+import           Data.Maybe (fromJust)
 
 import           CLI (CLI (..), getCliArgs)
+import           DataSource (App, Attachment (..), Comment (..), Config (..), IOLayer (..),
+                             RequestType (..), TicketId (..), TicketInfo (..), TicketStatus (..),
+                             TicketTag (..), TicketTags (..), ZendeskLayer (..),
+                             ZendeskResponse (..), asksIOLayer, asksZendeskLayer, assignToPath,
+                             defaultConfig, knowledgebasePath, renderTicketStatus, runApp,
+                             tokenPath)
 import           LogAnalysis.Classifier (extractErrorCodes, extractIssuesFromLogs,
                                          prettyFormatAnalysis, prettyFormatLogReadError,
                                          prettyFormatNoIssues)
 import           LogAnalysis.KnowledgeCSVParser (parseKnowLedgeBase)
 import           LogAnalysis.Types (ErrorCode (..), Knowledge, renderErrorCode, setupAnalysis)
 import           Util (extractLogsFromZip)
-import           Zendesk (App, Attachment (..), Comment (..), Config (..), IOLayer (..),
-                          RequestType (..), TicketId, TicketInfo (..), TicketTag (..),
-                          ZendeskLayer (..), ZendeskResponse (..), asksIOLayer, asksZendeskLayer,
-                          assignToPath, defaultConfig, knowledgebasePath, renderTicketStatus,
-                          runApp, tokenPath)
 
 ------------------------------------------------------------
 -- Functions
@@ -56,7 +58,7 @@ runZendeskMain = do
     -- At this point, the configuration is set up and there is no point in using a pure IO.
     case args of
         CollectEmails            -> runApp collectEmails cfg
-        (ProcessTicket ticketId) -> void $ runApp (processTicket ticketId) cfg
+        (ProcessTicket ticketId) -> void $ runApp (processTicket (TicketId ticketId)) cfg
         ProcessTickets           -> void $ runApp processTickets cfg
         FetchTickets             -> runApp fetchTickets cfg
         ShowStatistics           -> runApp showStatistics cfg
@@ -83,7 +85,13 @@ processTicket ticketId = do
 
     printText "Processing single ticket"
 
-    ticketInfo          <- getTicketInfo ticketId
+    ticketInfoM         <- getTicketInfo ticketId
+
+    -- TODO(ks): Better exception handling.
+    _                   <- whenNothing ticketInfoM $ error "Missing ticket info!"
+
+    let ticketInfo      = fromJust ticketInfoM
+
     attachments         <- getTicketAttachments ticketInfo
 
     zendeskResponse     <- mapM (inspectAttachment ticketInfo) attachments
@@ -122,8 +130,7 @@ showStatistics = do
     putTextLn $ "Classifier is going to gather ticket information assigned to: " <> cfgEmail cfg
 
     tickets     <- listTickets Assigned
-    liftIO $ printTicketCountMessage tickets (cfgEmail cfg)
-
+    pure () -- TODO(ks): Implement anew.
 
 listAndSortTickets :: App [TicketInfo]
 listAndSortTickets = do
@@ -146,32 +153,6 @@ listAndSortTickets = do
 
     pure sortedTicketIds
 
-
--- | Print how many tickets are assinged, analyzed, and unanalyzed
-printTicketCountMessage :: [TicketInfo] -> Text -> IO ()
-printTicketCountMessage tickets email = do
-    let ticketCount = length tickets
-    putTextLn "Done!"
-    putTextLn $ "There are currently " <> show ticketCount
-        <> " tickets in the system assigned to " <> email
-    let filteredTicketCount = length $ filterAnalyzedTickets tickets
-    putTextLn $ show (ticketCount - filteredTicketCount)
-        <> " tickets has been analyzed by the classifier."
-    putTextLn $ show filteredTicketCount <> " tickets are not analyzed."
-    putTextLn "Below are statistics:"
-    let tagGroups = sortTickets tickets
-    mapM_ (\(tag, count) -> putTextLn $ tag <> ": " <> show count) tagGroups
-
--- | Sort the ticket so we can see the statistics
-sortTickets :: [TicketInfo] -> [(Text, Int)]
-sortTickets tickets =
-    let extractedTags = foldr (\TicketInfo{..} acc -> ticketTags <> acc) [] tickets  -- Extract tags from tickets
-        tags2Filter   = ["s3", "s2", "cannot-sync", "closed-by-merge"
-                        , "web_widget", "analyzed-by-script"]
-        filteredTags  = filter (`notElem` tags2Filter) extractedTags  -- Filter tags
-        groupByTags :: [ Text ] -> [(Text, Int)]
-        groupByTags ts = map (\l@(x:_) -> (x, length l)) (group $ sort ts)  -- Group them
-    in  groupByTags filteredTags
 
 -- | Read CSV file and setup knowledge base
 setupKnowledgebaseEnv :: FilePath -> IO [Knowledge]
@@ -301,12 +282,13 @@ filterAnalyzedTickets ticketsInfo =
         isTicketAnalyzed ticketInfo && isTicketOpen ticketInfo && isTicketBlacklisted ticketInfo
 
     isTicketAnalyzed :: TicketInfo -> Bool
-    isTicketAnalyzed TicketInfo{..} = (renderTicketStatus AnalyzedByScriptV1_0) `notElem` ticketTags
+    isTicketAnalyzed TicketInfo{..} = (renderTicketStatus AnalyzedByScriptV1_0) `notElem` (getTicketTags ticketTags)
+    -- ^ This is showing that something is wrong...
 
     isTicketOpen :: TicketInfo -> Bool
-    isTicketOpen TicketInfo{..} = ticketStatus == "open" -- || ticketStatus == "new"
+    isTicketOpen TicketInfo{..} = ticketStatus == TicketStatus "open" -- || ticketStatus == "new"
 
     -- | If we have a ticket we are having issues with...
     isTicketBlacklisted :: TicketInfo -> Bool
-    isTicketBlacklisted TicketInfo{..} = ticketId `notElem` [9377,10815]
+    isTicketBlacklisted TicketInfo{..} = ticketId `notElem` [TicketId 9377,TicketId 10815]
 

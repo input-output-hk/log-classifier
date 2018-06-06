@@ -7,7 +7,7 @@ import           Test.Hspec.QuickCheck (modifyMaxSuccess)
 import           Test.QuickCheck (arbitrary, forAll, listOf1)
 import           Test.QuickCheck.Monadic (monadicIO, pre, run, assert)
 
-import           Zendesk
+import           DataSource
 import           Lib
 
 -- TODO(ks): What we are really missing is a realistic @Gen ZendeskLayer m@.
