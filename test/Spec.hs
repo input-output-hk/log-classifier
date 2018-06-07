@@ -50,8 +50,8 @@ listAndSortTicketsSpec =
                     let stubbedZendeskLayer :: ZendeskLayer App
                         stubbedZendeskLayer =
                             emptyZendeskLayer
-                                { zlListTickets     = \_     -> pure []
-                                , zlGetTicketInfo   = \_     -> pure ticketInfo
+                                { zlListAssignedTickets     = \_     -> pure []
+                                , zlGetTicketInfo           = \_     -> pure $ Just ticketInfo
                                 }
 
                     let stubbedConfig :: Config
@@ -73,8 +73,8 @@ listAndSortTicketsSpec =
                         let stubbedZendeskLayer :: ZendeskLayer App
                             stubbedZendeskLayer =
                                 emptyZendeskLayer
-                                    { zlListTickets     = \_     -> pure listTickets
-                                    , zlGetTicketInfo   = \_     -> pure ticketInfo
+                                    { zlListAssignedTickets     = \_     -> pure listTickets
+                                    , zlGetTicketInfo           = \_     -> pure ticketInfo
                                     }
 
                         let stubbedConfig :: Config
@@ -103,17 +103,17 @@ processTicketSpec =
                         let stubbedZendeskLayer :: ZendeskLayer App
                             stubbedZendeskLayer =
                                 emptyZendeskLayer
-                                    { zlListTickets         = \_     -> pure listTickets
-                                    , zlGetTicketInfo       = \_     -> pure ticketInfo
-                                    , zlPostTicketComment   = \_     -> pure ()
-                                    , zlGetTicketComments   = \_     -> pure []
+                                    { zlListAssignedTickets     = \_     -> pure listTickets
+                                    , zlGetTicketInfo           = \_     -> pure $ Just ticketInfo
+                                    , zlPostTicketComment       = \_     -> pure ()
+                                    , zlGetTicketComments       = \_     -> pure []
                                     }
 
                         let stubbedConfig :: Config
                             stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
 
                         let appExecution :: IO [ZendeskResponse]
-                            appExecution = runApp (processTicket . ticketId $ ticketInfo) stubbedConfig
+                            appExecution = runApp (processTicket . tiId $ ticketInfo) stubbedConfig
 
                         zendeskComments <- run appExecution
 
@@ -134,18 +134,18 @@ processTicketSpec =
                         let stubbedZendeskLayer :: ZendeskLayer App
                             stubbedZendeskLayer =
                                 emptyZendeskLayer
-                                    { zlListTickets         = \_     -> pure listTickets
-                                    , zlGetTicketInfo       = \_     -> pure ticketInfo
-                                    , zlPostTicketComment   = \_     -> pure ()
-                                    , zlGetTicketComments   = \_     -> pure comments
-                                    , zlGetAttachment       = \_     -> pure mempty
+                                    { zlListAssignedTickets     = \_     -> pure listTickets
+                                    , zlGetTicketInfo           = \_     -> pure $ Just ticketInfo
+                                    , zlPostTicketComment       = \_     -> pure ()
+                                    , zlGetTicketComments       = \_     -> pure comments
+                                    , zlGetAttachment           = \_     -> pure mempty
                                     }
 
                         let stubbedConfig :: Config
                             stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
 
                         let appExecution :: IO [ZendeskResponse]
-                            appExecution = runApp (processTicket . ticketId $ ticketInfo) stubbedConfig
+                            appExecution = runApp (processTicket . tiId $ ticketInfo) stubbedConfig
 
                         zendeskResponses <- run appExecution
 

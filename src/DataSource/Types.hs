@@ -8,6 +8,7 @@ module DataSource.Types
     , ZendeskLayer (..)
     , ZendeskResponse (..)
     , Comment (..)
+    , CommentBody (..)
     , CommentOuter (..)
     , Attachment (..)
     , RequestType (..)
@@ -19,7 +20,11 @@ module DataSource.Types
     , TicketStatus (..)
     , TicketInfo (..)
     , TicketTag (..)
-    , parseAgentId
+    , User (..)
+    , UserId (..)
+    , UserURL (..)
+    , UserName (..)
+    , UserEmail (..)
     , parseComments
     , parseTickets
     , renderTicketStatus
@@ -42,7 +47,7 @@ import           Data.Aeson.Types (Parser)
 import           Data.Text (pack)
 import           LogAnalysis.Types (Knowledge)
 
-import           Test.QuickCheck (Arbitrary (..), Gen, elements, listOf1)
+import           Test.QuickCheck (Arbitrary (..), elements, vectorOf, listOf1)
 
 ------------------------------------------------------------
 -- Configuration
@@ -121,9 +126,9 @@ assignToPath = "./tmp-secrets/assign_to"
 -- anything relating to how it internaly works should NOT be exposed.
 data ZendeskLayer m = ZendeskLayer
     { zlGetTicketInfo           :: TicketId -> m (Maybe TicketInfo)
-    , zlListTickets             :: RequestType -> m [TicketInfo]
+    , zlListRequestedTickets    :: UserId -> m [TicketInfo]
+    , zlListAssignedTickets     :: UserId -> m [TicketInfo]
     , zlPostTicketComment       :: ZendeskResponse -> m ()
-    , zlGetAgentId              :: m Integer
     , zlGetAttachment           :: Attachment -> m LByteString
     , zlGetTicketComments       :: TicketId -> m [Comment]
     }
@@ -146,14 +151,10 @@ data Attachment = Attachment
     -- ^ Attachment size
     } deriving (Eq, Show)
 
--- TODO(ks): Fix this with custom newtypes.
-instance Arbitrary Text where
-    arbitrary = fromString <$> (arbitrary :: Gen String)
-
 instance Arbitrary Attachment where
     arbitrary = Attachment
-        <$> arbitrary
-        <*> pure "application/zip" -- TODO(ks): More random...
+        <$> pure "http://attach.com"
+        <*> pure "application/zip"  -- TODO(ks): More random...
         <*> arbitrary
 
 
@@ -170,9 +171,16 @@ data ZendeskResponse = ZendeskResponse
     , zrIsPublic :: !Bool
     }
 
+newtype CommentBody = CommentBody
+    { getCommentBody :: Text
+    } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
+
+instance Arbitrary CommentBody where
+    arbitrary = CommentBody . fromString <$> arbitrary
+
 -- | Comments
 data Comment = Comment
-    { cBody        :: !Text
+    { cBody        :: !CommentBody
     -- ^ Body of comment
     , cAttachments :: ![Attachment]
     -- ^ Attachment
@@ -225,7 +233,7 @@ instance Arbitrary TicketId where
 
 newtype TicketURL = TicketURL
     { getTicketURL :: Text
-    } deriving (Eq, Show, Ord, Generic)
+    } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
 
 newtype TicketTags = TicketTags
     { getTicketTags :: [Text] -- TODO(ks): We need to fix the @TicketTag@ / @TicketTags@ story.
@@ -237,25 +245,68 @@ newtype TicketStatus = TicketStatus
 
 
 data TicketInfo = TicketInfo
-    { ticketId     :: !TicketId     -- ^ Id of an ticket
-    , ticketUrl    :: !TicketURL    -- ^ The ticket URL
-    , ticketTags   :: !TicketTags   -- ^ Tags associated with ticket
-    , ticketStatus :: !TicketStatus -- ^ The status of the ticket
+    { tiId          :: !TicketId     -- ^ Id of an ticket
+    , tiRequesterId :: !UserId       -- ^ Id of the requester
+    , tiAssigneeId  :: !UserId       -- ^ Id of the asignee
+    , tiUrl         :: !TicketURL    -- ^ The ticket URL
+    , tiTags        :: !TicketTags   -- ^ Tags associated with ticket
+    , tiStatus      :: !TicketStatus -- ^ The status of the ticket
     } deriving (Eq, Show, Generic)
 
 
--- TODO(ks): Newtype!
+newtype UserId = UserId
+    { getUserId :: Int
+    } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
 
+instance Arbitrary UserId where
+    arbitrary = UserId <$> arbitrary
+
+newtype UserURL = UserURL
+    { getUserURL :: Text
+    } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
+
+newtype UserName = UserName
+    { getUserName :: Text
+    } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
+
+newtype UserEmail = UserEmail
+    { getUserEmail :: Text
+    } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
+
+
+data User = User
+    { uId       :: !UserId      -- ^ Id of the user
+    , uURL      :: !UserURL     -- ^ URL of the user
+    , uName     :: !UserName    -- ^ Name of the user
+    , uEmail    :: !UserEmail   -- ^ Email of the user
+    } deriving (Eq, Show, Generic)
+
+instance FromJSON User where
+    parseJSON = withObject "user" $ \o -> do
+        userId        <- o .: "id"
+        userUrl       <- o .: "url"
+        userName      <- o .: "name"
+        userEmail     <- o .: "email"
+
+        pure User
+            { uId       = userId
+            , uURL      = userUrl
+            , uName     = userName
+            , uEmail    = userEmail
+            }
 
 instance Arbitrary TicketURL where
     arbitrary = do
-        protocol    <- elements ["http://"]
+        protocol    <- elements ["http://", "https://"]
         name        <- listOf1 $ elements ['a'..'z']
-        domain      <- elements [".com",".com.br",".net"]
+        domain      <- elements [".com",".com.br",".net",".io"]
         pure . TicketURL . pack $ protocol ++ name ++ domain
 
 instance Arbitrary TicketTags where
-    arbitrary = TicketTags <$> arbitrary
+    arbitrary = do
+        numberOfTag <- arbitrary
+        tagsList    <- map fromString <$> vectorOf numberOfTag arbitrary
+        pure . TicketTags $ tagsList
 
 -- TODO(ks): Just "open" for now, enumerate with @elements@ later.
 instance Arbitrary TicketStatus where
@@ -263,20 +314,24 @@ instance Arbitrary TicketStatus where
 
 instance Arbitrary TicketInfo where
     arbitrary = do
-        ticketId     <- arbitrary
-        ticketUrl    <- arbitrary
-        ticketTags   <- arbitrary
-        ticketStatus <- arbitrary
+        ticketId            <- arbitrary
+        ticketRequesterId   <- arbitrary
+        ticketAssigneeId    <- arbitrary
+        ticketUrl           <- arbitrary
+        ticketTags          <- arbitrary
+        ticketStatus        <- arbitrary
 
         pure TicketInfo
-            { ticketId      = ticketId
-            , ticketUrl     = ticketUrl
-            , ticketTags    = ticketTags
-            , ticketStatus  = ticketStatus
+            { tiId          = ticketId
+            , tiRequesterId = ticketRequesterId
+            , tiAssigneeId  = ticketAssigneeId
+            , tiUrl         = ticketUrl
+            , tiTags        = ticketTags
+            , tiStatus      = ticketStatus
             }
 
 instance Ord TicketInfo where
-    compare t1 t2 = compare (ticketId t1) (ticketId t2)
+    compare t1 t2 = compare (tiId t1) (tiId t2)
 
 
 -- | Ticket tag
@@ -322,12 +377,21 @@ instance ToJSON Attachment where
 
 instance FromJSON TicketInfo where
     parseJSON = withObject "ticket" $ \o -> do
-        ticketId        <- o .: "id"
-        ticketUrl       <- TicketURL <$> o .: "url"
-        ticketTags      <- o .: "tags"
-        ticketStatus    <- o .: "status"
+        ticketId            <- o .: "id"
+        ticketRequesterId   <- o .: "requester_id"
+        ticketAssigneeId    <- o .: "assignee_id"
+        ticketUrl           <- o .: "url"
+        ticketTags          <- o .: "tags"
+        ticketStatus        <- o .: "status"
 
-        pure TicketInfo{..}
+        pure TicketInfo
+            { tiId          = ticketId
+            , tiRequesterId = ticketRequesterId
+            , tiAssigneeId  = ticketAssigneeId
+            , tiUrl         = ticketUrl
+            , tiTags        = ticketTags
+            , tiStatus      = ticketStatus
+            }
 
 instance FromJSON TicketList where
     parseJSON = withObject "ticketList" $ \o -> TicketList <$> o .: "tickets" <*> o .: "next_page"
@@ -339,8 +403,3 @@ parseTickets = withObject "tickets" $ \o -> TicketList <$> o .: "tickets" <*> o 
 -- | Parse comments
 parseComments :: Value -> Parser [ Comment ]
 parseComments = withObject "comments" $ \o -> o .: "comments"
-
--- | Parse the apiRequest of getAgentId
-parseAgentId :: Value -> Parser Integer
-parseAgentId = withObject "user" $ \o -> (o .: "user") >>= (.: "id")
-

@@ -58,7 +58,7 @@ extractErrorCodes as = map (\(Knowledge{..}, _) -> renderErrorCode kErrorCode) $
 
 
 printTicketUrl :: TicketInfo -> Text
-printTicketUrl TicketInfo{..} = "https://iohk.zendesk.com/agent/tickets/" <> show ticketId
+printTicketUrl TicketInfo{..} = "https://iohk.zendesk.com/agent/tickets/" <> show tiId
 
 prettyHeader :: Text
 prettyHeader =

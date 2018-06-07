@@ -2,10 +2,10 @@
 module DataSource
     ( module DataSource.Types
     , module DataSource.Http
-    , module DataSource.Cached
+    , module DataSource.DB
     ) where
 
 import DataSource.Types
 import DataSource.Http
-import DataSource.Cached
+import DataSource.DB
 

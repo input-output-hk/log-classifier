@@ -25,7 +25,7 @@ library
                        Util
                        DataSource
   other-modules:       Paths_log_classifier
-                       DataSource.Cached
+                       DataSource.DB
                        DataSource.Types
                        DataSource.Http
   ghc-options:         -Wall
@@ -45,8 +45,8 @@ library
                      , zip-archive
                      , QuickCheck
                      -- Database backend
-                     , selda 
-                     , selda-sqlite
+                     , sqlite-simple 
+                     , generics-sop
 
   default-language:    Haskell2010
   default-extensions: TypeOperators
