@@ -19,7 +19,7 @@ import           Network.HTTP.Simple (Request, addRequestHeader, getResponseBody
                                       setRequestMethod, setRequestPath)
 
 import           CLI (CLI (..), getCliArgs)
-import           Statistics
+import           Statistics (filterTicketsByStatus)
 import           LogAnalysis.Classifier (extractErrorCodes, extractIssuesFromLogs,
                                          prettyFormatAnalysis, prettyFormatLogReadError,
                                          prettyFormatNoIssues)
@@ -142,70 +142,48 @@ runZendeskMain = do
         ShowStatistics -> do
             putTextLn $ "Classifier is going to gather ticket information assigned to: "
                 <> cfgEmail cfg
-            printWarning
             tickets <- runApp (listTickets Assigned) cfg
             printTicketCountMessage tickets (cfgEmail cfg)
-        ShowStats2 -> do
-            putTextLn $ "Testing - Statistics associated with: "
-               <> cfgEmail cfg
-            tickets <- runApp (listTickets Assigned) cfg
-            statsExample
+            putTextLn $ "  --Tickets--"
+            -- How many tickets are there
+            putTextLn $ "  Total: " <> show (length tickets)
             -- How many tickets are open
-            putTextLn $ "There are " <> show (length $ filter ((== "open") . ticketStatus) tickets) <> " open tickets."
+            openTickets <- pure $ filterTicketsByStatus tickets "open"
+            putTextLn $ "  Open: " <> show (length openTickets)
             -- How many tickets are closed
-            putTextLn $ "There are " <> show (length $ filter ((== "closed") . ticketStatus) tickets) <> " closed tickets."
+            closedTickets <- pure $ filterTicketsByStatus tickets "closed"
+            putTextLn $ "  Closed: " <> show (length closedTickets)
             -- How many open tickets have attachments
-            let openTickets = filter (\ticket -> ticketStatus ticket == "closed") tickets --TODO: CHANGE TO OPEN (Only closed shows results as there are no open tickets according to the analyzer)
-            runApp (showTicketsWithAttachments openTickets) cfg
-            putTextLn $ "End of statistics."
+            ticketsWithAttachments <- runApp (filterTicketsWithAttachments closedTickets) cfg
+            putTextLn $ "  Closed with Attachments: " <> show (length ticketsWithAttachments)
+            runApp (mapM_ showTicketAttachments ticketsWithAttachments) cfg
 
-showTicketsWithAttachments :: [TicketInfo] -> App ()
-showTicketsWithAttachments tickets = do
-  liftIO $ putTextLn "Scanning tickets for attachments"
-  let checkTicketForAttachments :: TicketInfo -> App Bool
-      checkTicketForAttachments ticket = do
-        comments <- getTicketComments (ticketId ticket)
-        commentsWithAttachments <- pure $ (filter (\comment -> length (cAttachments comment) > 0) comments)
-        pure $ not (null commentsWithAttachments)
-  ticketsWithAttachments <- filterM (\ticket -> checkTicketForAttachments ticket) tickets
-  liftIO $ putTextLn $ "There are " <> show (length ticketsWithAttachments) <> " open tickets with attachments"
-  showTicketsAttachmentInfo ticketsWithAttachments
+showAttachmentInfo :: Attachment -> App ()
+showAttachmentInfo attachment = do
+    putText "  Attachment: "
+    (putText . show) (aSize attachment)
+    putText " - "
+    putTextLn $ aURL attachment
 
-showTicketsAttachmentInfo :: [TicketInfo] -> App ()
-showTicketsAttachmentInfo tickets = do
+showCommentAttachments :: Comment -> App ()
+showCommentAttachments comment = do
+    mapM_ showAttachmentInfo (cAttachments comment)
 
-  let showTicketAttachments :: TicketInfo -> App ()
-      showTicketAttachments ticket = do
+showTicketAttachments :: TicketInfo -> App ()
+showTicketAttachments ticket = do
+    putText "Ticket #: "
+    (putTextLn . show) (ticketId ticket)
+    comments <- getTicketComments (ticketId ticket)
+    mapM_ showCommentAttachments (comments)
 
-        let getComments :: TicketInfo -> App [Comment]
-            getComments ticket' = do
-              comments <- getTicketComments (ticketId ticket')
-              pure comments
-
-        let getAttachments :: Comment -> [Attachment]
-            getAttachments comment' = do
-              attachments' <- cAttachments comment'
-              pure attachments'
-
-        let showTicketAttachmentInfo :: TicketInfo -> App ()
-            showTicketAttachmentInfo ticket'' = do
-              putText "Ticket #: "
-              print (ticketId ticket'')
-              comments <- getComments ticket''
-              -- Attachment Name
-              mapM_ (\comment -> do
-                        mapM_ (\attachment -> do
-                                  putText "  Attachment: "
-                                  (putText . show)  $ aSize attachment
-                                  putTextLn $ " - " <> aURL attachment
-                              ) (getAttachments comment)
-                    ) comments
-              pure ()
-
-        showTicketAttachmentInfo ticket
-
-  mapM_ showTicketAttachments tickets
-  pure ()
+filterTicketsWithAttachments :: [TicketInfo] -> App [TicketInfo]
+filterTicketsWithAttachments tickets = do
+    let checkTicketForAttachments :: TicketInfo -> App Bool
+        checkTicketForAttachments ticket = do
+          comments <- getTicketComments (ticketId ticket)
+          commentsWithAttachments <- pure $ (filter (\comment -> length (cAttachments comment) > 0) comments)
+          pure $ not (null commentsWithAttachments)
+    filterM (\ticket -> checkTicketForAttachments ticket) tickets
 
 processBatchTickets :: Config -> IO [TicketInfo]
 processBatchTickets cfg = do

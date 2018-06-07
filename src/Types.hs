@@ -23,6 +23,9 @@ import           Data.Aeson (FromJSON, ToJSON, Value, object, parseJSON, toJSON,
                              (.=))
 import           Data.Aeson.Types (Parser)
 
+-- | Statistics - Filter Types
+
+data TicketFilter = Status | HasAttachment
 
 -- | Attachment of the ticket
 data Attachment = Attachment

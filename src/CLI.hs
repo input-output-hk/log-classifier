@@ -17,7 +17,6 @@ data CLI
     | FetchTickets      -- ^ Fetch all the tickets in Zendesk
     | RawRequest String -- ^ Raw request to the given url
     | ShowStatistics    -- ^ Show statistics
-    | ShowStats2        -- ^ Show stats2
     deriving (Show)
 
 -- | Parser for ProcessTicket
@@ -47,8 +46,6 @@ cli = hsubparser $ mconcat
         (progDesc "Raw request to the given url"))
     , command "show-stats" (info (pure ShowStatistics)
         (progDesc "Print list of ticket Ids that agent has been assigned"))
-    , command "stats2" (info (pure ShowStats2)
-        (progDesc "Print more stats"))
     ]
 
 -- | Get CLI arguments from command line
