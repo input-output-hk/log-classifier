@@ -25,6 +25,7 @@ import           LogAnalysis.Classifier (extractErrorCodes, extractIssuesFromLog
 import           LogAnalysis.KnowledgeCSVParser (parseKnowLedgeBase)
 import           LogAnalysis.Types (ErrorCode (..), Knowledge, renderErrorCode, setupAnalysis)
 import           Util (extractLogsFromZip)
+import           Statistics (filterTicketsByStatus)
 import           Zendesk (App, Attachment (..), Comment (..), Config (..), IOLayer (..),
                           RequestType (..), TicketId, TicketInfo (..), TicketTag (..),
                           ZendeskLayer (..), ZendeskResponse (..), asksIOLayer, asksZendeskLayer,
@@ -123,6 +124,19 @@ showStatistics = do
 
     tickets     <- listTickets Assigned
     liftIO $ printTicketCountMessage tickets (cfgEmail cfg)
+    putTextLn $ "  --Tickets--"
+    -- How many tickets are there
+    putTextLn $ "  Total: " <> show (length tickets)
+    -- How many tickets are open
+    openTickets <- pure $ filterTicketsByStatus tickets "open"
+    putTextLn $ "  Open: " <> show (length openTickets)
+    -- How many tickets are closed
+    closedTickets <- pure $ filterTicketsByStatus tickets "closed"
+    putTextLn $ "  Closed: " <> show (length closedTickets)
+    -- How many open tickets have attachments
+    ticketsWithAttachments <- filterTicketsWithAttachments closedTickets
+    putTextLn $ "  Closed with Attachments: " <> show (length ticketsWithAttachments)
+    mapM_ showTicketAttachments ticketsWithAttachments
 
 
 listAndSortTickets :: App [TicketInfo]
@@ -146,6 +160,34 @@ listAndSortTickets = do
 
     pure sortedTicketIds
 
+showAttachmentInfo :: Attachment -> App ()
+showAttachmentInfo attachment = do
+    putText "  Attachment: "
+    (putText . show) (aSize attachment)
+    putText " - "
+    putTextLn $ aURL attachment
+
+showCommentAttachments :: Comment -> App ()
+showCommentAttachments comment = do
+    mapM_ showAttachmentInfo (cAttachments comment)
+
+showTicketAttachments :: TicketInfo -> App ()
+showTicketAttachments ticket = do
+    putText "Ticket #: "
+    (putTextLn . show) (ticketId ticket)
+    getTicketComments <- asksZendeskLayer zlGetTicketComments
+    comments <-  getTicketComments (ticketId ticket)
+    mapM_ showCommentAttachments (comments)
+
+filterTicketsWithAttachments :: [TicketInfo] -> App [TicketInfo]
+filterTicketsWithAttachments tickets = do
+    let checkTicketForAttachments :: TicketInfo -> App Bool
+        checkTicketForAttachments ticket = do
+          getTicketComments <- asksZendeskLayer zlGetTicketComments
+          comments <- getTicketComments (ticketId ticket)
+          commentsWithAttachments <- pure $ (filter (\comment -> length (cAttachments comment) > 0) comments)
+          pure $ not (null commentsWithAttachments)
+    filterM (\ticket -> checkTicketForAttachments ticket) tickets
 
 -- | Print how many tickets are assinged, analyzed, and unanalyzed
 printTicketCountMessage :: [TicketInfo] -> Text -> IO ()
