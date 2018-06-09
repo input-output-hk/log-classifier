@@ -25,7 +25,7 @@ import           LogAnalysis.Classifier (extractErrorCodes, extractIssuesFromLog
 import           LogAnalysis.KnowledgeCSVParser (parseKnowLedgeBase)
 import           LogAnalysis.Types (ErrorCode (..), Knowledge, renderErrorCode, setupAnalysis)
 import           Util (extractLogsFromZip)
-import           Statistics (filterTicketsByStatus)
+import           Statistics (showStatistics)
 import           Zendesk (App, Attachment (..), Comment (..), Config (..), IOLayer (..),
                           RequestType (..), TicketId, TicketInfo (..), TicketTag (..),
                           ZendeskLayer (..), ZendeskResponse (..), asksIOLayer, asksZendeskLayer,
@@ -97,7 +97,6 @@ processTicket ticketId = do
 
     pure zendeskResponse
 
-
 processTickets :: App ()
 processTickets = do
     sortedTicketIds     <- listAndSortTickets
@@ -106,38 +105,11 @@ processTickets = do
 
     putTextLn "All the tickets has been processed."
 
-
 fetchTickets :: App ()
 fetchTickets = do
     sortedTicketIds <- listAndSortTickets
     mapM_ (putTextLn . show) sortedTicketIds
     putTextLn "All the tickets has been processed."
-
-
-showStatistics :: App ()
-showStatistics = do
-    cfg <- ask
-    -- We first fetch the function from the configuration
-    listTickets <- asksZendeskLayer zlListTickets
-
-    putTextLn $ "Classifier is going to gather ticket information assigned to: " <> cfgEmail cfg
-
-    tickets     <- listTickets Assigned
-    liftIO $ printTicketCountMessage tickets (cfgEmail cfg)
-    putTextLn $ "  --Tickets--"
-    -- How many tickets are there
-    putTextLn $ "  Total: " <> show (length tickets)
-    -- How many tickets are open
-    openTickets <- pure $ filterTicketsByStatus tickets "open"
-    putTextLn $ "  Open: " <> show (length openTickets)
-    -- How many tickets are closed
-    closedTickets <- pure $ filterTicketsByStatus tickets "closed"
-    putTextLn $ "  Closed: " <> show (length closedTickets)
-    -- How many open tickets have attachments
-    ticketsWithAttachments <- filterTicketsWithAttachments closedTickets
-    putTextLn $ "  Closed with Attachments: " <> show (length ticketsWithAttachments)
-    mapM_ showTicketAttachments ticketsWithAttachments
-
 
 listAndSortTickets :: App [TicketInfo]
 listAndSortTickets = do
@@ -159,61 +131,6 @@ listAndSortTickets = do
     printText "Processing tickets, this may take hours to finish."
 
     pure sortedTicketIds
-
-showAttachmentInfo :: Attachment -> App ()
-showAttachmentInfo attachment = do
-    putText "  Attachment: "
-    (putText . show) (aSize attachment)
-    putText " - "
-    putTextLn $ aURL attachment
-
-showCommentAttachments :: Comment -> App ()
-showCommentAttachments comment = do
-    mapM_ showAttachmentInfo (cAttachments comment)
-
-showTicketAttachments :: TicketInfo -> App ()
-showTicketAttachments ticket = do
-    putText "Ticket #: "
-    (putTextLn . show) (ticketId ticket)
-    getTicketComments <- asksZendeskLayer zlGetTicketComments
-    comments <-  getTicketComments (ticketId ticket)
-    mapM_ showCommentAttachments (comments)
-
-filterTicketsWithAttachments :: [TicketInfo] -> App [TicketInfo]
-filterTicketsWithAttachments tickets = do
-    let checkTicketForAttachments :: TicketInfo -> App Bool
-        checkTicketForAttachments ticket = do
-          getTicketComments <- asksZendeskLayer zlGetTicketComments
-          comments <- getTicketComments (ticketId ticket)
-          commentsWithAttachments <- pure $ (filter (\comment -> length (cAttachments comment) > 0) comments)
-          pure $ not (null commentsWithAttachments)
-    filterM (\ticket -> checkTicketForAttachments ticket) tickets
-
--- | Print how many tickets are assinged, analyzed, and unanalyzed
-printTicketCountMessage :: [TicketInfo] -> Text -> IO ()
-printTicketCountMessage tickets email = do
-    let ticketCount = length tickets
-    putTextLn "Done!"
-    putTextLn $ "There are currently " <> show ticketCount
-        <> " tickets in the system assigned to " <> email
-    let filteredTicketCount = length $ filterAnalyzedTickets tickets
-    putTextLn $ show (ticketCount - filteredTicketCount)
-        <> " tickets has been analyzed by the classifier."
-    putTextLn $ show filteredTicketCount <> " tickets are not analyzed."
-    putTextLn "Below are statistics:"
-    let tagGroups = sortTickets tickets
-    mapM_ (\(tag, count) -> putTextLn $ tag <> ": " <> show count) tagGroups
-
--- | Sort the ticket so we can see the statistics
-sortTickets :: [TicketInfo] -> [(Text, Int)]
-sortTickets tickets =
-    let extractedTags = foldr (\TicketInfo{..} acc -> ticketTags <> acc) [] tickets  -- Extract tags from tickets
-        tags2Filter   = ["s3", "s2", "cannot-sync", "closed-by-merge"
-                        , "web_widget", "analyzed-by-script"]
-        filteredTags  = filter (`notElem` tags2Filter) extractedTags  -- Filter tags
-        groupByTags :: [ Text ] -> [(Text, Int)]
-        groupByTags ts = map (\l@(x:_) -> (x, length l)) (group $ sort ts)  -- Group them
-    in  groupByTags filteredTags
 
 -- | Read CSV file and setup knowledge base
 setupKnowledgebaseEnv :: FilePath -> IO [Knowledge]
@@ -351,4 +268,3 @@ filterAnalyzedTickets ticketsInfo =
     -- | If we have a ticket we are having issues with...
     isTicketBlacklisted :: TicketInfo -> Bool
     isTicketBlacklisted TicketInfo{..} = ticketId `notElem` [9377,10815]
-
