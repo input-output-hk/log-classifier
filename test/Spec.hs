@@ -2,13 +2,15 @@ module Main where
 
 import           Universum
 
-import           Test.Hspec (Spec, hspec, describe, it, pending)
+import           Test.Hspec (Spec, describe, hspec, it, pending)
 import           Test.Hspec.QuickCheck (modifyMaxSuccess)
-import           Test.QuickCheck (arbitrary, forAll, listOf1)
-import           Test.QuickCheck.Monadic (monadicIO, pre, run, assert)
+import           Test.QuickCheck (Gen, arbitrary, forAll, listOf1)
+import           Test.QuickCheck.Monadic (assert, monadicIO, pre, run)
 
-import           Zendesk
-import           Lib
+import           Lib (processTicket, listAndSortTickets)
+import           Zendesk (App, Comment (..), Config (..), IOLayer (..), TicketInfo (..),
+                          ZendeskLayer (..), ZendeskResponse (..), basicIOLayer, defaultConfig,
+                          emptyZendeskLayer, runApp)
 
 -- TODO(ks): What we are really missing is a realistic @Gen ZendeskLayer m@.
 
@@ -120,10 +122,10 @@ processTicketSpec =
                         -- Check we have some comments.
                         assert $ length zendeskComments == 0
 
-        it "processes ticket, with comments" $ do
+        it "processes ticket, with comments" $
             forAll arbitrary $ \(ticketInfo :: TicketInfo) ->
-                forAll (listOf1 arbitrary) $ \(listTickets) -> do
-                forAll (listOf1 arbitrary) $ \(comments) -> do
+                forAll (listOf1 arbitrary) $ \(listTickets) ->
+                forAll (listOf1 arbitrary) $ \(comments) ->
 
 
                     monadicIO $ do
@@ -150,7 +152,70 @@ processTicketSpec =
                         zendeskResponses <- run appExecution
 
                         -- Check we have some comments.
-                        assert $ length zendeskResponses > 0
+                        assert $ not (null zendeskResponses)
+
+        it "process ticket, with no attachments" $
+            forAll (listOf1 genCommentWithNoAttachment) $ \(commentsWithoutAttachment :: [Comment]) ->
+                forAll arbitrary $ \ticketInfo ->
+                    monadicIO $ do
+
+                    let stubbedZendeskLayer :: ZendeskLayer App
+                        stubbedZendeskLayer =
+                            emptyZendeskLayer
+                                { zlGetTicketComments = \_ -> pure commentsWithoutAttachment
+                                , zlGetTicketInfo     = \_ -> pure ticketInfo
+                                , zlPostTicketComment = \_ -> pure ()
+                                }
+
+                    let stubbedConfig :: Config
+                        stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
+
+                    let appExecution :: IO [ZendeskResponse]
+                        appExecution = runApp (processTicket . ticketId $ ticketInfo) stubbedConfig
+
+                    zendeskResponses <- run appExecution
+
+                    assert $ length zendeskResponses > 0 && isTaggedWithNoLogs zendeskResponses
+
+        it "process ticket, with attachments" $
+            forAll (listOf1 genCommentWithAttachment) $ \(commentsWithAttachment :: [Comment]) ->
+                forAll arbitrary $ \ticketInfo ->
+                    monadicIO $ do
+
+                    let stubbedZendeskLayer :: ZendeskLayer App
+                        stubbedZendeskLayer =
+                            emptyZendeskLayer
+                                { zlGetTicketComments = \_ -> pure commentsWithAttachment
+                                , zlGetTicketInfo     = \_ -> pure ticketInfo
+                                , zlPostTicketComment = \_ -> pure ()
+                                , zlGetAttachment     = \_ -> pure mempty
+                                }
+
+                    let stubbedConfig :: Config
+                        stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
+
+                    let appExecution :: IO [ZendeskResponse]
+                        appExecution = runApp (processTicket . ticketId $ ticketInfo) stubbedConfig
+
+                    zendeskResponses <- run appExecution
+                    assert $ not (null zendeskResponses) && not (isTaggedWithNoLogs zendeskResponses)
+
+isTaggedWithNoLogs :: [ZendeskResponse] -> Bool
+isTaggedWithNoLogs =  all (\response -> "no-log-files" `elem` zrTags response)
+
+genCommentWithNoAttachment :: Gen Comment
+genCommentWithNoAttachment = Comment
+    <$> arbitrary
+    <*> return mempty
+    <*> arbitrary
+    <*> arbitrary
+
+genCommentWithAttachment :: Gen Comment
+genCommentWithAttachment = Comment
+    <$> arbitrary
+    <*> listOf1 arbitrary
+    <*> arbitrary
+    <*> arbitrary
 
 processTicketsSpec :: Spec
 processTicketsSpec =
