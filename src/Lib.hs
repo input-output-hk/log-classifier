@@ -5,6 +5,7 @@
 module Lib
     ( runZendeskMain
     , collectEmails
+    , getZendeskResponses
     , processTicket
     , processTickets
     , fetchTickets
@@ -86,12 +87,7 @@ processTicket tid = do
     getTicketComments   <- asksZendeskLayer zlGetTicketComments
     comments            <- getTicketComments tid
     let attachments = getAttachmentsFromComment comments
-    zendeskResponse     <- if not (null attachments)
-                           then mapM (inspectAttachment ticketInfo) attachments
-                           else if not (null comments)
-                               then pure <$> responseNoLogs ticketInfo
-                               else pure []
-
+    zendeskResponse     <- getZendeskResponses comments attachments ticketInfo
     postTicketComment   <- asksZendeskLayer zlPostTicketComment
     mapM_ postTicketComment zendeskResponse
 
@@ -221,6 +217,12 @@ getAttachmentsFromComment comments = do
     isAttachmentZip :: Attachment -> Bool
     isAttachmentZip attachment = "application/zip" == aContentType attachment
 
+-- | Get zendesk responses
+getZendeskResponses :: [Comment] -> [Attachment] -> TicketInfo -> App [ZendeskResponse]
+getZendeskResponses comments attachments ticketInfo
+    | not (null attachments) = mapM (inspectAttachment ticketInfo) attachments
+    | not (null comments)    = pure <$> responseNoLogs ticketInfo
+    | otherwise              = pure []
 
 -- | Given number of file of inspect, knowledgebase and attachment,
 -- analyze the logs and return the results.
