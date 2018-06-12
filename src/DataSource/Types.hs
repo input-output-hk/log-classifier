@@ -8,9 +8,12 @@ module DataSource.Types
     , ZendeskLayer (..)
     , ZendeskResponse (..)
     , Comment (..)
+    , CommentId (..)
     , CommentBody (..)
     , CommentOuter (..)
     , Attachment (..)
+    , AttachmentId (..)
+    , AttachmentContent (..)
     , RequestType (..)
     , Ticket (..)
     , TicketList (..)
@@ -125,12 +128,12 @@ assignToPath = "./tmp-secrets/assign_to"
 -- We don't want anything to leak out, so we expose only the most relevant information,
 -- anything relating to how it internaly works should NOT be exposed.
 data ZendeskLayer m = ZendeskLayer
-    { zlGetTicketInfo           :: TicketId -> m (Maybe TicketInfo)
-    , zlListRequestedTickets    :: UserId -> m [TicketInfo]
-    , zlListAssignedTickets     :: UserId -> m [TicketInfo]
-    , zlPostTicketComment       :: ZendeskResponse -> m ()
-    , zlGetAttachment           :: Attachment -> m LByteString
-    , zlGetTicketComments       :: TicketId -> m [Comment]
+    { zlGetTicketInfo           :: TicketId         -> m (Maybe TicketInfo)
+    , zlListRequestedTickets    :: UserId           -> m [TicketInfo]
+    , zlListAssignedTickets     :: UserId           -> m [TicketInfo]
+    , zlGetTicketComments       :: TicketId         -> m [Comment]
+    , zlGetAttachment           :: Attachment       -> m (Maybe AttachmentContent)
+    , zlPostTicketComment       :: ZendeskResponse  -> m ()
     }
 
 
@@ -141,9 +144,23 @@ data IOLayer m = IOLayer
     , iolReadFile               :: FilePath -> m String
     }
 
+newtype AttachmentId = AttachmentId
+    { getAttachmentId :: Int
+    } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
+
+instance Arbitrary AttachmentId where
+    arbitrary = AttachmentId <$> arbitrary
+
+-- TODO(ks): Arbitrary log contents?
+newtype AttachmentContent = AttachmentContent
+    { getAttachmentContent :: LByteString
+    } deriving (Eq, Show, Ord, Generic)
+
 -- | Attachment of the ticket
 data Attachment = Attachment
-    { aURL         :: !Text
+    { aId          :: !AttachmentId
+    -- ^ Id of the attachment
+    , aURL         :: !Text
     -- ^ URL of the attachment
     , aContentType :: !Text
     -- ^ ContentType of the attachment
@@ -153,7 +170,8 @@ data Attachment = Attachment
 
 instance Arbitrary Attachment where
     arbitrary = Attachment
-        <$> pure "http://attach.com"
+        <$> arbitrary
+        <*> pure "http://attach.com"
         <*> pure "application/zip"  -- TODO(ks): More random...
         <*> arbitrary
 
@@ -171,6 +189,13 @@ data ZendeskResponse = ZendeskResponse
     , zrIsPublic :: !Bool
     }
 
+newtype CommentId = CommentId
+    { getCommentId :: Int
+    } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
+
+instance Arbitrary CommentId where
+    arbitrary = CommentId <$> arbitrary
+
 newtype CommentBody = CommentBody
     { getCommentBody :: Text
     } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
@@ -178,22 +203,26 @@ newtype CommentBody = CommentBody
 instance Arbitrary CommentBody where
     arbitrary = CommentBody . fromString <$> arbitrary
 
+
 -- | Comments
 data Comment = Comment
-    { cBody        :: !CommentBody
+    { cId          :: !CommentId
+    -- ^ The ID of the comment
+    , cBody        :: !CommentBody
     -- ^ Body of comment
     , cAttachments :: ![Attachment]
     -- ^ Attachment
     , cPublic      :: !Bool
     -- ^ Flag of whether comment should be public
     , cAuthor      :: !Integer
-    -- ^ Auther of comment
+    -- ^ Author of comment
     } deriving (Eq, Show)
 
 
 instance Arbitrary Comment where
     arbitrary = Comment
         <$> arbitrary
+        <*> arbitrary
         <*> arbitrary
         <*> arbitrary
         <*> arbitrary
@@ -350,30 +379,35 @@ renderTicketStatus NoKnownIssue         = "no-known-issues"
 
 -- | JSON Parsing
 instance FromJSON Comment where
-    parseJSON = withObject "comment" $ \o ->
-        Comment <$> o .: "body" <*> o .: "attachments" <*> o .: "public" <*> o .: "author_id"
+    parseJSON = withObject "comment" $ \o -> do
+        commentId           <- o .: "id"
+        commentBody         <- o .: "body"
+        commentAttachments  <- o .: "attachments"
+        commentIsPublic     <- o .: "public"
+        commentAuthorId     <- o .: "author_id"
 
-instance ToJSON Comment where
-    toJSON (Comment b as public author)
-        = object [ "body" .= b, "attachments" .= as,
-        "public" .= public, "author_id" .= author]
-
-instance ToJSON CommentOuter where
-    toJSON (CommentOuter c) = object [ "comment" .= c ]
+        pure Comment
+            { cId          = commentId
+            , cBody        = commentBody
+            , cAttachments = commentAttachments
+            , cPublic      = commentIsPublic
+            , cAuthor      = commentAuthorId
+            }
 
 instance FromJSON Attachment where
-    parseJSON = withObject "attachment" $ \o ->
-        Attachment <$> o .: "content_url" <*> o .: "content_type" <*> o .: "size"
+    parseJSON = withObject "attachment" $ \o -> do
+        attachmentId     <- o .: "id"
+        attachmentUrl    <- o .: "content_url"
+        attachmentType   <- o .: "content_type"
+        attachmentSize   <- o .: "size"
 
-instance ToJSON Ticket where
-    toJSON (Ticket comment assignee tags) =
-        object [ "ticket" .= object
-                   [ "comment" .= comment, "assignee_id" .= assignee, "tags" .= tags]
-               ]
+        pure Attachment
+            { aId           = attachmentId
+            , aURL          = attachmentUrl
+            , aContentType  = attachmentType
+            , aSize         = attachmentSize
+            }
 
-instance ToJSON Attachment where
-    toJSON (Attachment url contenttype size) =
-        object [ "content_url" .= url, "content_type" .= contenttype, "size" .= size]
 
 instance FromJSON TicketInfo where
     parseJSON = withObject "ticket" $ \o -> do
@@ -394,12 +428,50 @@ instance FromJSON TicketInfo where
             }
 
 instance FromJSON TicketList where
-    parseJSON = withObject "ticketList" $ \o -> TicketList <$> o .: "tickets" <*> o .: "next_page"
+    parseJSON = withObject "ticketList" $ \o ->
+        TicketList
+            <$> o .: "tickets"
+            <*> o .: "next_page"
+
+
+instance ToJSON Ticket where
+    toJSON (Ticket comment assignee tags) =
+        object  [ "ticket" .= object
+                    [ "comment"     .= comment
+                    , "assignee_id" .= assignee
+                    , "tags"        .= tags
+                    ]
+                ]
+
+instance ToJSON Attachment where
+    toJSON (Attachment _ url contenttype size) =
+        object  [ "content_url"     .= url
+                , "content_type"    .= contenttype
+                , "size"            .= size
+                ]
+
+instance ToJSON Comment where
+    toJSON (Comment _ b as public author) =
+        object  [ "body"            .= b
+                , "attachments"     .= as
+                , "public"          .= public
+                , "author_id"       .= author
+                ]
+
+instance ToJSON CommentOuter where
+    toJSON (CommentOuter c) =
+        object  [ "comment"         .= c
+                ]
+
 
 -- | Parse tickets
 parseTickets :: Value -> Parser TicketList
-parseTickets = withObject "tickets" $ \o -> TicketList <$> o .: "tickets" <*> o .: "next_page"
+parseTickets = withObject "tickets" $ \o ->
+    TicketList
+        <$> o .: "tickets"
+        <*> o .: "next_page"
 
--- | Parse comments
+-- | TODO(ks): This seems like it's not required.
+-- Parse comments
 parseComments :: Value -> Parser [ Comment ]
 parseComments = withObject "comments" $ \o -> o .: "comments"

@@ -18,9 +18,10 @@ import           Network.HTTP.Simple (Request, addRequestHeader, getResponseBody
                                       parseRequest_, setRequestBasicAuth, setRequestBodyJSON,
                                       setRequestMethod, setRequestPath)
 
-import           DataSource.Types (Attachment (..), Comment (..), CommentBody (..), Config (..),
-                                   IOLayer (..), Ticket (..), TicketId, TicketInfo (..),
-                                   TicketList (..), TicketTag (..), User, UserId, ZendeskLayer (..),
+import           DataSource.Types (Attachment (..), AttachmentContent (..), Comment (..),
+                                   CommentBody (..), CommentId (..), Config (..), IOLayer (..),
+                                   Ticket (..), TicketId, TicketInfo (..), TicketList (..),
+                                   TicketTag (..), User, UserId, ZendeskLayer (..),
                                    ZendeskResponse (..), parseComments, parseTickets,
                                    renderTicketStatus)
 
@@ -141,7 +142,7 @@ postTicketComment ZendeskResponse{..} = do
     let req1 = apiRequest cfg ("tickets/" <> show zrTicketId <> ".json")
     let req2 = addJsonBody
                    (Ticket
-                       (Comment (CommentBody $ "**Log classifier**\n\n" <> zrComment) [] zrIsPublic (cfgAgentId cfg))
+                       (Comment (CommentId 0) (CommentBody $ "**Log classifier**\n\n" <> zrComment) [] zrIsPublic (cfgAgentId cfg))
                        (cfgAssignTo cfg)
                        (renderTicketStatus AnalyzedByScriptV1_0:zrTags)
                    )
@@ -161,8 +162,8 @@ _getUser = do
 getAttachment
     :: (MonadIO m)
     => Attachment
-    -> m LByteString
-getAttachment Attachment{..} = getResponseBody <$> httpLBS req
+    -> m (Maybe AttachmentContent)
+getAttachment Attachment{..} = Just . AttachmentContent . getResponseBody <$> httpLBS req
     where
       req :: Request
       req = parseRequest_ (toString aURL)
@@ -172,9 +173,9 @@ getTicketComments
     :: (MonadIO m, MonadReader Config m)
     => TicketId
     -> m [Comment]
-getTicketComments tid = do
+getTicketComments tId = do
     cfg <- ask
-    let req = apiRequest cfg ("tickets/" <> show tid <> "/comments.json")
+    let req = apiRequest cfg ("tickets/" <> show tId <> "/comments.json")
     liftIO $ apiCall parseComments req
 
 ------------------------------------------------------------

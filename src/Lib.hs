@@ -19,12 +19,12 @@ import           Data.Attoparsec.Text.Lazy (eitherResult, parse)
 import           Data.Text (isInfixOf, stripEnd)
 
 import           CLI (CLI (..), getCliArgs)
-import           DataSource (App, Attachment (..), Comment (..), CommentBody (..), Config (..),
-                             IOLayer (..), TicketId (..), TicketInfo (..), TicketStatus (..),
-                             TicketTag (..), TicketTags (..), UserId (..), ZendeskLayer (..),
-                             ZendeskResponse (..), asksIOLayer, asksZendeskLayer, assignToPath,
-                             defaultConfig, knowledgebasePath, renderTicketStatus, runApp,
-                             tokenPath)
+import           DataSource (App, Attachment (..), AttachmentContent (..), Comment (..),
+                             CommentBody (..), Config (..), IOLayer (..), TicketId (..),
+                             TicketInfo (..), TicketStatus (..), TicketTag (..), TicketTags (..),
+                             UserId (..), ZendeskLayer (..), ZendeskResponse (..), asksIOLayer,
+                             asksZendeskLayer, assignToPath, defaultConfig, knowledgebasePath,
+                             renderTicketStatus, runApp, tokenPath)
 import           LogAnalysis.Classifier (extractErrorCodes, extractIssuesFromLogs,
                                          prettyFormatAnalysis, prettyFormatLogReadError,
                                          prettyFormatNoIssues)
@@ -234,8 +234,10 @@ inspectAttachment ticketInfo@TicketInfo{..} att = do
     getAttachment   <- asksZendeskLayer zlGetAttachment
     printText       <- asksIOLayer iolPrintText
 
-    rawlog <- getAttachment att -- Get attachment
-    let results = extractLogsFromZip cfgNumOfLogsToAnalyze rawlog
+    attachment     <- fromMaybe (error "Missing Attachment content!") <$> getAttachment att
+
+    let rawLog      = getAttachmentContent attachment
+    let results     = extractLogsFromZip cfgNumOfLogsToAnalyze rawLog
 
     case results of
         Left _ -> do
