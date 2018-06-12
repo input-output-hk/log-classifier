@@ -9,7 +9,6 @@ module Lib
     , processTickets
     , fetchTickets
     , showStatistics
-
     , listAndSortTickets
     ) where
 
@@ -75,7 +74,7 @@ collectEmails = do
 
 
 processTicket :: TicketId -> App [ZendeskResponse]
-processTicket ticketId = do
+processTicket tid = do
 
     -- We first fetch the function from the configuration
     getTicketInfo       <- asksZendeskLayer zlGetTicketInfo
@@ -83,16 +82,21 @@ processTicket ticketId = do
 
     printText "Processing single ticket"
 
-    ticketInfo          <- getTicketInfo ticketId
-    attachments         <- getTicketAttachments ticketInfo
-
-    zendeskResponse     <- mapM (inspectAttachment ticketInfo) attachments
+    ticketInfo          <- getTicketInfo tid
+    getTicketComments   <- asksZendeskLayer zlGetTicketComments
+    comments            <- getTicketComments tid
+    let attachments = getAttachmentsFromComment comments
+    zendeskResponse     <- if not (null attachments)
+                           then mapM (inspectAttachment ticketInfo) attachments
+                           else if not (null comments)
+                               then pure <$> responseNoLogs ticketInfo
+                               else pure []
 
     postTicketComment   <- asksZendeskLayer zlPostTicketComment
-    _                   <- mapM postTicketComment zendeskResponse
+    mapM_ postTicketComment zendeskResponse
 
     printText "Process finished, please see the following url"
-    printText $ "https://iohk.zendesk.com/agent/tickets/" <> show ticketId
+    printText $ "https://iohk.zendesk.com/agent/tickets/" <> show tid
 
     pure zendeskResponse
 
@@ -195,20 +199,6 @@ extractEmailAddress ticketId = do
     liftIO $ appendFile "emailAddress.txt" (emailAddress <> "\n")
     liftIO $ putTextLn emailAddress
 
-
--- | Process specifig ticket id (can be used for testing) only inspects the one's with logs
--- TODO(ks): Switch to `(MonadReader Config m)`, pure function?
-getTicketAttachments :: TicketInfo -> App [Attachment]
-getTicketAttachments TicketInfo{..} = do
-
-    -- Get the function from the configuration
-    getTicketComments   <- asksZendeskLayer zlGetTicketComments
-    comments            <- getTicketComments ticketId
-
-    -- However, if we want this to be more composable...
-    pure $ getAttachmentsFromComment comments
-
-
 -- | A pure function for fetching @Attachment@ from @Comment@.
 getAttachmentsFromComment :: [Comment] -> [Attachment]
 getAttachmentsFromComment comments = do
@@ -291,6 +281,16 @@ inspectAttachment ticketInfo@TicketInfo{..} att = do
                         , zrIsPublic    = cfgIsCommentPublic
                         }
 
+responseNoLogs :: TicketInfo -> App ZendeskResponse
+responseNoLogs TicketInfo{..} = do
+    Config {..} <- ask
+    pure ZendeskResponse
+             { zrTicketId = ticketId
+             -- TODO(hs): Need response template
+             , zrComment  = "Log file not attached, please resubmit with logs if you have any issues"
+             , zrTags     = [renderTicketStatus NoLogAttached]
+             , zrIsPublic = cfgIsCommentPublic
+             }
 -- | Filter analyzed tickets
 filterAnalyzedTickets :: [TicketInfo] -> [TicketInfo]
 filterAnalyzedTickets ticketsInfo =

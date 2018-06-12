@@ -258,12 +258,14 @@ data TicketTag
     = AnalyzedByScript      -- ^ Ticket has been analyzed
     | AnalyzedByScriptV1_0  -- ^ Ticket has been analyzed by the version 1.0
     | NoKnownIssue          -- ^ Ticket had no known issue
+    | NoLogAttached         -- ^ Ticket has no log file attached
 
 -- | Defining it's own show instance to use it as tags
 renderTicketStatus :: TicketTag -> Text
 renderTicketStatus AnalyzedByScript     = "analyzed-by-script"
 renderTicketStatus AnalyzedByScriptV1_0 = "analyzed-by-script-v1.0"
 renderTicketStatus NoKnownIssue         = "no-known-issues"
+renderTicketStatus NoLogAttached        = "no-log-files"
 
 -- | JSON Parsing
 instance FromJSON Comment where
