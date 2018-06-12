@@ -154,7 +154,7 @@ processTicketSpec =
                         -- Check we have some comments.
                         assert $ not (null zendeskResponses)
 
-        it "process ticket, with no attachments" $
+        it "processes ticket, with no attachments" $
             forAll (listOf1 genCommentWithNoAttachment) $ \(commentsWithoutAttachment :: [Comment]) ->
                 forAll arbitrary $ \ticketInfo ->
                     monadicIO $ do
@@ -175,17 +175,19 @@ processTicketSpec =
 
                     zendeskResponses <- run appExecution
 
-                    assert $ length zendeskResponses > 0 && isTaggedWithNoLogs zendeskResponses
+                    assert $ not (null zendeskResponses) && isTaggedWithNoLogs zendeskResponses
 
-        it "process ticket, with attachments" $
-            forAll (listOf1 genCommentWithAttachment) $ \(commentsWithAttachment :: [Comment]) ->
+        it "processes ticket, with attachments" $
+            forAll (listOf1 arbitrary) $ \(comments:: [Comment]) ->
                 forAll arbitrary $ \ticketInfo ->
                     monadicIO $ do
+
+                    pre $ any (not . null . cAttachments) comments
 
                     let stubbedZendeskLayer :: ZendeskLayer App
                         stubbedZendeskLayer =
                             emptyZendeskLayer
-                                { zlGetTicketComments = \_ -> pure commentsWithAttachment
+                                { zlGetTicketComments = \_ -> pure comments
                                 , zlGetTicketInfo     = \_ -> pure ticketInfo
                                 , zlPostTicketComment = \_ -> pure ()
                                 , zlGetAttachment     = \_ -> pure mempty
@@ -207,13 +209,6 @@ genCommentWithNoAttachment :: Gen Comment
 genCommentWithNoAttachment = Comment
     <$> arbitrary
     <*> return mempty
-    <*> arbitrary
-    <*> arbitrary
-
-genCommentWithAttachment :: Gen Comment
-genCommentWithAttachment = Comment
-    <$> arbitrary
-    <*> listOf1 arbitrary
     <*> arbitrary
     <*> arbitrary
 
