@@ -299,8 +299,12 @@ filterAnalyzedTickets ticketsInfo =
     filter ticketsFilter ticketsInfo
   where
     ticketsFilter :: TicketInfo -> Bool
-    ticketsFilter ticketInfo =
-        isTicketAnalyzed ticketInfo && isTicketOpen ticketInfo && isTicketBlacklisted ticketInfo
+    ticketsFilter ticketInfo = 
+        all (\predicate -> predicate ticketInfo) [ isTicketAnalyzed
+                                                 , isTicketOpen
+                                                 , isTicketBlacklisted
+                                                 , isGoguenTestnetTicket
+                                                 ]
 
     isTicketAnalyzed :: TicketInfo -> Bool
     isTicketAnalyzed TicketInfo{..} = (renderTicketStatus AnalyzedByScriptV1_0) `notElem` ticketTags
@@ -311,4 +315,7 @@ filterAnalyzedTickets ticketsInfo =
     -- | If we have a ticket we are having issues with...
     isTicketBlacklisted :: TicketInfo -> Bool
     isTicketBlacklisted TicketInfo{..} = ticketId `notElem` [9377,10815]
+
+    isGoguenTestnetTicket :: TicketInfo -> Bool
+    isGoguenTestnetTicket TicketInfo{..} = "goguen_testnets" `notElem` ticketTags
 
