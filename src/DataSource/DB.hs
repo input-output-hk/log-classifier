@@ -10,15 +10,16 @@ module DataSource.DB
     , cachedZendeskLayer
     ) where
 
-import           Universum hiding (All)
+import           Universum
 
 import           Data.Text (split)
 
-import           Database.SQLite.Simple
-import           Database.SQLite.Simple.FromField
-import           Database.SQLite.Simple.Internal
-import           Database.SQLite.Simple.Ok
-import           Database.SQLite.Simple.ToField
+import           Database.SQLite.Simple (FromRow (..), NamedParam (..), SQLData (..), close, field,
+                                         open, queryNamed, query_)
+import           Database.SQLite.Simple.FromField (FromField (..), ResultError (..), returnError)
+import           Database.SQLite.Simple.Internal (Connection, Field (..))
+import           Database.SQLite.Simple.Ok (Ok (..))
+import           Database.SQLite.Simple.ToField (ToField (..))
 
 import           DataSource.Types (Attachment (..), AttachmentContent (..), AttachmentId (..),
                                    Comment (..), CommentBody (..), CommentId (..), Config,
@@ -45,11 +46,11 @@ cachedZendeskLayer = ZendeskLayer
 
 instance FromField TicketId where
     fromField (Field (SQLInteger tId) _)    = Ok . TicketId . fromIntegral $ tId
-    fromField f                             = returnError ConversionFailed f "need a integer, ticket id"
+    fromField f                             = returnError ConversionFailed f "need an integer, ticket id"
 
 instance FromField UserId where
     fromField (Field (SQLInteger uId) _)    = Ok . UserId . fromIntegral $ uId
-    fromField f                             = returnError ConversionFailed f "need a integer, user id"
+    fromField f                             = returnError ConversionFailed f "need an integer, user id"
 
 instance FromField TicketURL where
     fromField (Field (SQLText tURL) _) = Ok . TicketURL $ tURL
@@ -69,7 +70,7 @@ instance FromRow TicketInfo where
 
 instance FromField CommentId where
     fromField (Field (SQLInteger commId) _) = Ok . CommentId . fromIntegral $ commId
-    fromField f                             = returnError ConversionFailed f "need a integer, comment id"
+    fromField f                             = returnError ConversionFailed f "need an integer, comment id"
 
 instance FromField CommentBody where
     fromField (Field (SQLText cBody) _)     = Ok . CommentBody $ cBody
@@ -77,7 +78,7 @@ instance FromField CommentBody where
 
 instance FromField AttachmentId where
     fromField (Field (SQLInteger attId) _)  = Ok . AttachmentId . fromIntegral $ attId
-    fromField f                             = returnError ConversionFailed f "need a integer, attachment id"
+    fromField f                             = returnError ConversionFailed f "need an integer, attachment id"
 
 
 -- TO

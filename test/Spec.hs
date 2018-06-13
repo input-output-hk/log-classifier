@@ -138,7 +138,7 @@ processTicketSpec =
                                     , zlGetTicketInfo           = \_     -> pure $ Just ticketInfo
                                     , zlPostTicketComment       = \_     -> pure ()
                                     , zlGetTicketComments       = \_     -> pure comments
-                                    , zlGetAttachment           = \_     -> pure mempty
+                                    , zlGetAttachment           = \_     -> pure $ Just mempty
                                     }
 
                         let stubbedConfig :: Config

@@ -136,7 +136,6 @@ data ZendeskLayer m = ZendeskLayer
     , zlPostTicketComment       :: ZendeskResponse  -> m ()
     }
 
-
 -- | The IOLayer interface that we can expose.
 -- We want to do this since we want to be able to mock out any function tied to @IO@.
 data IOLayer m = IOLayer
@@ -154,7 +153,7 @@ instance Arbitrary AttachmentId where
 -- TODO(ks): Arbitrary log contents?
 newtype AttachmentContent = AttachmentContent
     { getAttachmentContent :: LByteString
-    } deriving (Eq, Show, Ord, Generic)
+    } deriving (Eq, Show, Ord, Generic, Monoid)
 
 -- | Attachment of the ticket
 data Attachment = Attachment
