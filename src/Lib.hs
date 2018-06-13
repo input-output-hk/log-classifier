@@ -21,7 +21,7 @@ import           Data.Text (isInfixOf, stripEnd)
 import           CLI (CLI (..), getCliArgs)
 import           LogAnalysis.Classifier (extractErrorCodes, extractIssuesFromLogs,
                                          prettyFormatAnalysis, prettyFormatLogReadError,
-                                         prettyFormatNoIssues)
+                                         prettyFormatNoIssues, prettyFormatNoLogs)
 import           LogAnalysis.KnowledgeCSVParser (parseKnowLedgeBase)
 import           LogAnalysis.Types (ErrorCode (..), Knowledge, renderErrorCode, setupAnalysis)
 import           Util (extractLogsFromZip)
@@ -288,11 +288,11 @@ responseNoLogs TicketInfo{..} = do
     Config {..} <- ask
     pure ZendeskResponse
              { zrTicketId = ticketId
-             -- TODO(hs): Need response template
-             , zrComment  = "Log file not attached, please resubmit with logs if you have any issues"
+             , zrComment  = prettyFormatNoLogs
              , zrTags     = [renderTicketStatus NoLogAttached]
              , zrIsPublic = cfgIsCommentPublic
              }
+
 -- | Filter analyzed tickets
 filterAnalyzedTickets :: [TicketInfo] -> [TicketInfo]
 filterAnalyzedTickets ticketsInfo =
