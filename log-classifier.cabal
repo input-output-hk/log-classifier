@@ -28,6 +28,7 @@ library
   other-modules:       Paths_log_classifier
                        Zendesk.Types
                        Zendesk.Functions
+                       Common
   ghc-options:         -Wall
   build-depends:       aeson
                      , array

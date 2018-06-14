@@ -7,7 +7,7 @@ import           Test.Hspec.QuickCheck (modifyMaxSuccess)
 import           Test.QuickCheck (arbitrary, forAll, listOf1)
 import           Test.QuickCheck.Monadic (monadicIO, pre, run, assert)
 
-import           Zendesk
+import           DataSource
 import           Lib
 
 -- TODO(ks): What we are really missing is a realistic @Gen ZendeskLayer m@.
@@ -21,6 +21,8 @@ spec =
     describe "Zendesk" $ do
         listAndSortTicketsSpec
         processTicketSpec
+        processTicketsSpec
+        filterTicketsByStatusSpec
 
 
 -- | A utility function for testing which stubs IO and returns
@@ -38,7 +40,6 @@ withStubbedIOAndZendeskLayer stubbedZendeskLayer =
             { iolPrintText      = \_     -> pure ()
             -- ^ Do nothing with the output
             }
-
 listAndSortTicketsSpec :: Spec
 listAndSortTicketsSpec =
     describe "listAndSortTickets" $ modifyMaxSuccess (const 200) $ do
@@ -50,8 +51,8 @@ listAndSortTicketsSpec =
                     let stubbedZendeskLayer :: ZendeskLayer App
                         stubbedZendeskLayer =
                             emptyZendeskLayer
-                                { zlListTickets     = \_     -> pure []
-                                , zlGetTicketInfo   = \_     -> pure ticketInfo
+                                { zlListAssignedTickets     = \_     -> pure []
+                                , zlGetTicketInfo           = \_     -> pure $ Just ticketInfo
                                 }
 
                     let stubbedConfig :: Config
@@ -73,8 +74,8 @@ listAndSortTicketsSpec =
                         let stubbedZendeskLayer :: ZendeskLayer App
                             stubbedZendeskLayer =
                                 emptyZendeskLayer
-                                    { zlListTickets     = \_     -> pure listTickets
-                                    , zlGetTicketInfo   = \_     -> pure ticketInfo
+                                    { zlListAssignedTickets     = \_     -> pure listTickets
+                                    , zlGetTicketInfo           = \_     -> pure ticketInfo
                                     }
 
                         let stubbedConfig :: Config
@@ -90,7 +91,6 @@ listAndSortTicketsSpec =
                         -- Check the order is sorted.
                         assert $ sortBy compare tickets == tickets
 
-
 processTicketSpec :: Spec
 processTicketSpec =
     describe "processTicket" $ modifyMaxSuccess (const 200) $ do
@@ -103,17 +103,17 @@ processTicketSpec =
                         let stubbedZendeskLayer :: ZendeskLayer App
                             stubbedZendeskLayer =
                                 emptyZendeskLayer
-                                    { zlListTickets         = \_     -> pure listTickets
-                                    , zlGetTicketInfo       = \_     -> pure ticketInfo
-                                    , zlPostTicketComment   = \_     -> pure ()
-                                    , zlGetTicketComments   = \_     -> pure []
+                                    { zlListAssignedTickets     = \_     -> pure listTickets
+                                    , zlGetTicketInfo           = \_     -> pure $ Just ticketInfo
+                                    , zlPostTicketComment       = \_     -> pure ()
+                                    , zlGetTicketComments       = \_     -> pure []
                                     }
 
                         let stubbedConfig :: Config
                             stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
 
                         let appExecution :: IO [ZendeskResponse]
-                            appExecution = runApp (processTicket . ticketId $ ticketInfo) stubbedConfig
+                            appExecution = runApp (processTicket . tiId $ ticketInfo) stubbedConfig
 
                         zendeskComments <- run appExecution
 
@@ -134,18 +134,18 @@ processTicketSpec =
                         let stubbedZendeskLayer :: ZendeskLayer App
                             stubbedZendeskLayer =
                                 emptyZendeskLayer
-                                    { zlListTickets         = \_     -> pure listTickets
-                                    , zlGetTicketInfo       = \_     -> pure ticketInfo
-                                    , zlPostTicketComment   = \_     -> pure ()
-                                    , zlGetTicketComments   = \_     -> pure comments
-                                    , zlGetAttachment       = \_     -> pure mempty
+                                    { zlListAssignedTickets     = \_     -> pure listTickets
+                                    , zlGetTicketInfo           = \_     -> pure $ Just ticketInfo
+                                    , zlPostTicketComment       = \_     -> pure ()
+                                    , zlGetTicketComments       = \_     -> pure comments
+                                    , zlGetAttachment           = \_     -> pure $ Just mempty
                                     }
 
                         let stubbedConfig :: Config
                             stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
 
                         let appExecution :: IO [ZendeskResponse]
-                            appExecution = runApp (processTicket . ticketId $ ticketInfo) stubbedConfig
+                            appExecution = runApp (processTicket . tiId $ ticketInfo) stubbedConfig
 
                         zendeskResponses <- run appExecution
 
@@ -155,5 +155,11 @@ processTicketSpec =
 processTicketsSpec :: Spec
 processTicketsSpec =
     describe "processTickets" $ do
+        it "doesn't process tickets" $ do
+            pending
+
+filterTicketsByStatusSpec :: Spec
+filterTicketsByStatusSpec =
+    describe "filterTicketsByStatusSpec" $ do
         it "doesn't process tickets" $ do
             pending

@@ -9,8 +9,8 @@ module Lib
     , processTickets
     , fetchTickets
     , showStatistics
-
     , listAndSortTickets
+    , getAssignedTickets
     ) where
 
 import           Universum
@@ -31,6 +31,7 @@ import           Zendesk (App, Attachment (..), Comment (..), Config (..), IOLay
                           ZendeskLayer (..), ZendeskResponse (..), asksIOLayer, asksZendeskLayer,
                           assignToPath, defaultConfig, knowledgebasePath, renderTicketStatus,
                           runApp, tokenPath)
+import           Common (filterAnalyzedTickets)
 
 ------------------------------------------------------------
 -- Functions
@@ -60,7 +61,7 @@ runZendeskMain = do
         (ProcessTicket ticketId) -> void $ runApp (processTicket ticketId) cfg
         ProcessTickets           -> void $ runApp processTickets cfg
         FetchTickets             -> runApp fetchTickets cfg
-        ShowStatistics           -> runApp showStatistics cfg
+        ShowStatistics           -> runApp (getAssignedTickets >>= showStatistics) cfg
 
 
 collectEmails :: App ()
@@ -154,6 +155,11 @@ extractEmailAddress ticketId = do
     liftIO $ appendFile "emailAddress.txt" (emailAddress <> "\n")
     liftIO $ putTextLn emailAddress
 
+-- | Get assigned tickets
+getAssignedTickets :: App [TicketInfo]
+getAssignedTickets = do
+    listTickets <- asksZendeskLayer zlListTickets
+    listTickets Assigned
 
 -- | Process specifig ticket id (can be used for testing) only inspects the one's with logs
 -- TODO(ks): Switch to `(MonadReader Config m)`, pure function?
@@ -249,22 +255,3 @@ inspectAttachment ticketInfo@TicketInfo{..} att = do
                         , zrTags        = [renderTicketStatus NoKnownIssue]
                         , zrIsPublic    = cfgIsCommentPublic
                         }
-
--- | Filter analyzed tickets
-filterAnalyzedTickets :: [TicketInfo] -> [TicketInfo]
-filterAnalyzedTickets ticketsInfo =
-    filter ticketsFilter ticketsInfo
-  where
-    ticketsFilter :: TicketInfo -> Bool
-    ticketsFilter ticketInfo =
-        isTicketAnalyzed ticketInfo && isTicketOpen ticketInfo && isTicketBlacklisted ticketInfo
-
-    isTicketAnalyzed :: TicketInfo -> Bool
-    isTicketAnalyzed TicketInfo{..} = (renderTicketStatus AnalyzedByScriptV1_0) `notElem` ticketTags
-
-    isTicketOpen :: TicketInfo -> Bool
-    isTicketOpen TicketInfo{..} = ticketStatus == "open" -- || ticketStatus == "new"
-
-    -- | If we have a ticket we are having issues with...
-    isTicketBlacklisted :: TicketInfo -> Bool
-    isTicketBlacklisted TicketInfo{..} = ticketId `notElem` [9377,10815]
