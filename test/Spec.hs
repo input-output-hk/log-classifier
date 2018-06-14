@@ -175,7 +175,7 @@ processTicketSpec =
 
                     zendeskResponses <- run appExecution
 
-                    assert $ not (null zendeskResponses) && isTaggedWithNoLogs zendeskResponses
+                    assert $ not (null zendeskResponses) && areResponsesTaggedWithNoLogs zendeskResponses
 
         it "processes ticket, with attachments" $
             forAll (listOf1 arbitrary) $ \(comments:: [Comment]) ->
@@ -200,10 +200,12 @@ processTicketSpec =
                         appExecution = runApp (processTicket . ticketId $ ticketInfo) stubbedConfig
 
                     zendeskResponses <- run appExecution
-                    assert $ not (null zendeskResponses) && not (isTaggedWithNoLogs zendeskResponses)
+                    
+                    assert $ not (null zendeskResponses) && not (areResponsesTaggedWithNoLogs zendeskResponses)
 
-isTaggedWithNoLogs :: [ZendeskResponse] -> Bool
-isTaggedWithNoLogs =  all (\response -> "no-log-files" `elem` zrTags response)
+areResponsesTaggedWithNoLogs :: [ZendeskResponse] -> Bool
+areResponsesTaggedWithNoLogs zendeskResponses =
+    all (\response -> "no-log-files" `elem` zrTags response) zendeskResponses
 
 genCommentWithNoAttachment :: Gen Comment
 genCommentWithNoAttachment = Comment

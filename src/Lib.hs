@@ -1,4 +1,3 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
 
@@ -75,7 +74,7 @@ collectEmails = do
 
 
 processTicket :: TicketId -> App [ZendeskResponse]
-processTicket tid = do
+processTicket tId = do
 
     -- We first fetch the function from the configuration
     getTicketInfo       <- asksZendeskLayer zlGetTicketInfo
@@ -83,16 +82,16 @@ processTicket tid = do
 
     printText "Processing single ticket"
 
-    ticketInfo          <- getTicketInfo tid
+    ticketInfo          <- getTicketInfo tId
     getTicketComments   <- asksZendeskLayer zlGetTicketComments
-    comments            <- getTicketComments tid
+    comments            <- getTicketComments tId
     let attachments = getAttachmentsFromComment comments
     zendeskResponse     <- getZendeskResponses comments attachments ticketInfo
     postTicketComment   <- asksZendeskLayer zlPostTicketComment
     mapM_ postTicketComment zendeskResponse
 
     printText "Process finished, please see the following url"
-    printText $ "https://iohk.zendesk.com/agent/tickets/" <> show tid
+    printText $ "https://iohk.zendesk.com/agent/tickets/" <> show tId
 
     pure zendeskResponse
 
@@ -300,11 +299,10 @@ filterAnalyzedTickets ticketsInfo =
   where
     ticketsFilter :: TicketInfo -> Bool
     ticketsFilter ticketInfo = 
-        all (\predicate -> predicate ticketInfo) [ isTicketAnalyzed
-                                                 , isTicketOpen
-                                                 , isTicketBlacklisted
-                                                 , isGoguenTestnetTicket
-                                                 ]
+           isTicketAnalyzed ticketInfo 
+        && isTicketOpen ticketInfo 
+        && isTicketBlacklisted ticketInfo
+        && isTicketInGoguenTestnet ticketInfo
 
     isTicketAnalyzed :: TicketInfo -> Bool
     isTicketAnalyzed TicketInfo{..} = (renderTicketStatus AnalyzedByScriptV1_0) `notElem` ticketTags
@@ -316,6 +314,6 @@ filterAnalyzedTickets ticketsInfo =
     isTicketBlacklisted :: TicketInfo -> Bool
     isTicketBlacklisted TicketInfo{..} = ticketId `notElem` [9377,10815]
 
-    isGoguenTestnetTicket :: TicketInfo -> Bool
-    isGoguenTestnetTicket TicketInfo{..} = "goguen_testnets" `notElem` ticketTags
+    isTicketInGoguenTestnet :: TicketInfo -> Bool
+    isTicketInGoguenTestnet TicketInfo{..} = "goguen_testnets" `notElem` ticketTags
 
