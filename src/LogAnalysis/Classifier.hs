@@ -18,7 +18,7 @@ import           Data.Text (isInfixOf)
 import           Data.Text.Encoding.Error (ignore)
 
 import           LogAnalysis.Types (Analysis, Knowledge (..), renderErrorCode)
-import           Zendesk.Types (TicketInfo (..))
+import           DataSource.Types (TicketInfo (..))
 
 -- | Number of error texts it should show
 numberOfErrorText :: Int
@@ -58,7 +58,7 @@ extractErrorCodes as = map (\(Knowledge{..}, _) -> renderErrorCode kErrorCode) $
 
 
 printTicketUrl :: TicketInfo -> Text
-printTicketUrl TicketInfo{..} = "https://iohk.zendesk.com/agent/tickets/" <> show ticketId
+printTicketUrl TicketInfo{..} = "https://iohk.zendesk.com/agent/tickets/" <> show tiId
 
 prettyHeader :: Text
 prettyHeader =
