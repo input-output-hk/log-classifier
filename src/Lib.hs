@@ -211,10 +211,11 @@ getZendeskResponses comments attachments ticketInfo
 -- | Inspect only the latest attchment
 inspectAttachments :: TicketInfo -> [Attachment] -> App (Maybe ZendeskResponse)
 inspectAttachments ticketInfo attachments = do
+
     let lastAttachment :: Maybe Attachment
         lastAttachment = safeHead . reverse . sort $ attachments
 
-    inspectAttachment ticketInfo =<< lastAttachment 
+    sequence $ liftM2 inspectAttachment (Just ticketInfo) lastAttachment
 
 -- | Given number of file of inspect, knowledgebase and attachment,
 -- analyze the logs and return the results.
