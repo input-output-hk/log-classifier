@@ -208,40 +208,36 @@ getZendeskResponses comments attachments ticketInfo
     | not (null comments)    = Just <$> responseNoLogs ticketInfo
     | otherwise              = return Nothing
 
--- | Inspect only the latest attchment
+-- | Inspect only the latest attachment. We could propagate this
+-- @Maybe@ upwards or use an @Either@ which will go hand in hand
+-- with the idea that we need to improve our exception handling.
 inspectAttachments :: TicketInfo -> [Attachment] -> App (Maybe ZendeskResponse)
-inspectAttachments ticketInfo attachments = do
+inspectAttachments ticketInfo attachments = runMaybeT $ do
 
-    let lastAttachment :: Maybe Attachment
-        lastAttachment = safeHead . reverse . sort $ attachments
+    config          <- ask
+    getAttachment   <- asksZendeskLayer zlGetAttachment
 
-    sequence $ liftM2 inspectAttachment (Just ticketInfo) lastAttachment
+    let lastAttach :: Maybe Attachment
+        lastAttach = safeHead . reverse . sort $ attachments
+
+    lastAttachment  <- MaybeT . pure $ lastAttach
+    att             <- MaybeT $ getAttachment lastAttachment
+
+    pure $ inspectAttachment config ticketInfo att
+
 
 -- | Given number of file of inspect, knowledgebase and attachment,
 -- analyze the logs and return the results.
---
--- The results are following:
---
--- __(comment, tags, bool of whether is should be public comment)__
-inspectAttachment :: TicketInfo -> Attachment -> App ZendeskResponse
-inspectAttachment ticketInfo@TicketInfo{..} att = do
+inspectAttachment :: Config -> TicketInfo -> AttachmentContent -> ZendeskResponse
+inspectAttachment Config{..} ticketInfo@TicketInfo{..} attContent = do
 
-    Config{..}      <- ask
-
-    getAttachment   <- asksZendeskLayer zlGetAttachment
-    printText       <- asksIOLayer iolPrintText
-
-    attachment     <- fromMaybe (error "Missing Attachment content!") <$> getAttachment att
-
-    let rawLog      = getAttachmentContent attachment
+    let rawLog      = getAttachmentContent attContent
     let results     = extractLogsFromZip cfgNumOfLogsToAnalyze rawLog
 
     case results of
         Left _ -> do
 
-            printText . renderErrorCode $ SentLogCorrupted
-
-            pure ZendeskResponse
+            ZendeskResponse
                 { zrTicketId    = tiId
                 , zrComment     = prettyFormatLogReadError ticketInfo
                 , zrTags        = [renderErrorCode SentLogCorrupted]
@@ -256,11 +252,7 @@ inspectAttachment ticketInfo@TicketInfo{..} att = do
                     let errorCodes = extractErrorCodes analysisResult
                     let commentRes = prettyFormatAnalysis analysisResult ticketInfo
 
-                    let fErrorCode = foldr (\errorCode acc -> errorCode <> ";" <> acc) "" errorCodes
-
-                    printText fErrorCode
-
-                    pure ZendeskResponse
+                    ZendeskResponse
                         { zrTicketId    = tiId
                         , zrComment     = commentRes
                         , zrTags        = errorCodes
@@ -269,9 +261,7 @@ inspectAttachment ticketInfo@TicketInfo{..} att = do
 
                 Left _ -> do
 
-                    printText . renderTicketStatus $ NoKnownIssue
-
-                    pure ZendeskResponse
+                    ZendeskResponse
                         { zrTicketId    = tiId
                         , zrComment     = prettyFormatNoIssues ticketInfo
                         , zrTags        = [renderTicketStatus NoKnownIssue]
