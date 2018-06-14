@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
 
-module Zendesk.Functions
+module DataSource.Http
     ( basicZendeskLayer
     , emptyZendeskLayer
     , basicIOLayer
@@ -11,18 +11,19 @@ module Zendesk.Functions
 import           Universum
 
 import           Control.Monad.Reader (ask)
-import           Data.Aeson (FromJSON, ToJSON, Value, encode)
+import           Data.Aeson (FromJSON, ToJSON, Value, encode, parseJSON)
 import           Data.Aeson.Text (encodeToLazyText)
 import           Data.Aeson.Types (Parser, parseEither)
 import           Network.HTTP.Simple (Request, addRequestHeader, getResponseBody, httpJSON, httpLBS,
                                       parseRequest_, setRequestBasicAuth, setRequestBodyJSON,
                                       setRequestMethod, setRequestPath)
 
-import           Zendesk.Types (Attachment (..), Comment (..), Config (..), IOLayer (..),
-                                RequestType (..), Ticket (..), TicketId, TicketInfo (..),
-                                TicketList (..), TicketTag (..), ZendeskLayer (..),
-                                ZendeskResponse (..), parseAgentId, parseComments, parseTickets, parseTicket,
-                                renderTicketStatus)
+import           DataSource.Types (Attachment (..), AttachmentContent (..), Comment (..),
+                                   CommentBody (..), CommentId (..), Config (..), IOLayer (..),
+                                   Ticket (..), TicketId, TicketInfo (..), TicketList (..),
+                                   TicketTag (..), User, UserId, ZendeskLayer (..),
+                                   ZendeskResponse (..), parseComments, parseTickets, parseTicket,
+                                   renderTicketStatus)
 
 
 -- | The default configuration.
@@ -45,9 +46,9 @@ defaultConfig =
 basicZendeskLayer :: (MonadIO m, MonadReader Config m) => ZendeskLayer m
 basicZendeskLayer = ZendeskLayer
     { zlGetTicketInfo           = getTicketInfo
-    , zlListTickets             = listTickets
+    , zlListRequestedTickets    = listRequestedTickets
+    , zlListAssignedTickets     = listAssignedTickets
     , zlPostTicketComment       = postTicketComment
-    , zlGetAgentId              = getAgentId
     , zlGetAttachment           = getAttachment
     , zlGetTicketComments       = getTicketComments
     }
@@ -60,12 +61,12 @@ basicIOLayer = IOLayer
     }
 
 -- | The non-implemented Zendesk layer.
-emptyZendeskLayer :: (MonadIO m, MonadReader Config m) => ZendeskLayer m
+emptyZendeskLayer :: forall m. ZendeskLayer m
 emptyZendeskLayer = ZendeskLayer
     { zlGetTicketInfo           = \_     -> error "Not implemented zlGetTicketInfo!"
-    , zlListTickets             = \_     -> error "Not implemented zlListTickets!"
+    , zlListRequestedTickets    = \_     -> error "Not implemented zlListRequestedTickets!"
+    , zlListAssignedTickets     = \_     -> error "Not implemented zlListAssignedTickets!"
     , zlPostTicketComment       = \_     -> error "Not implemented zlPostTicketComment!"
-    , zlGetAgentId              = pure 1
     , zlGetAttachment           = \_     -> error "Not implemented zlGetAttachment!"
     , zlGetTicketComments       = \_     -> error "Not implemented zlGetTicketComments!"
     }
@@ -75,26 +76,47 @@ emptyZendeskLayer = ZendeskLayer
 getTicketInfo
     :: (MonadIO m, MonadReader Config m)
     => TicketId
-    -> m TicketInfo
+    -> m (Maybe TicketInfo)
 getTicketInfo ticketId = do
     cfg <- ask
 
     let req = apiRequest cfg ("tickets/" <> show ticketId <> ".json")
-    liftIO $ apiCall parseTicket req
+    liftIO $ Just <$> apiCall parseTicket req
 
--- | Return list of ticketIds that has been requested by config user (not used)
-listTickets
-    :: (MonadIO m, MonadReader Config m)
-    => RequestType
+
+-- | Return list of ticketIds that has been requested by config user.
+listRequestedTickets
+    :: forall m. (MonadIO m, MonadReader Config m)
+    => UserId
     -> m [TicketInfo]
-listTickets request = do
+listRequestedTickets userId = do
     cfg <- ask
 
-    let agentId = cfgAgentId cfg
-    let url = case request of
-                  Requested -> "/users/" <> show agentId <> "/tickets/requested.json"
-                  Assigned  -> "/users/" <> show agentId <> "/tickets/assigned.json"
-    let req = apiRequest cfg url
+    let url     = "/users/" <> show userId <> "/tickets/requested.json"
+    let req     = apiRequest cfg url
+
+    iterateTicketPages req
+
+-- | Return list of ticketIds that has been assigned by config user.
+listAssignedTickets
+    :: forall m. (MonadIO m, MonadReader Config m)
+    => UserId
+    -> m [TicketInfo]
+listAssignedTickets userId = do
+    cfg <- ask
+
+    let url     = "/users/" <> show userId <> "/tickets/assigned.json"
+    let req     = apiRequest cfg url
+
+    iterateTicketPages req
+
+-- | Iterate all the ticket pages and combine into a result.
+iterateTicketPages
+    :: forall m. (MonadIO m, MonadReader Config m)
+    => Request -> m [TicketInfo]
+iterateTicketPages req = do
+
+    cfg <- ask
 
     let go :: [TicketInfo] -> Text -> IO [TicketInfo]
         go list' nextPage' = do
@@ -120,28 +142,28 @@ postTicketComment ZendeskResponse{..} = do
     let req1 = apiRequest cfg ("tickets/" <> show zrTicketId <> ".json")
     let req2 = addJsonBody
                    (Ticket
-                       (Comment Nothing ("**Log classifier**\n\n" <> zrComment) [] zrIsPublic (cfgAgentId cfg))
+                       (Comment (CommentId 0) (CommentBody $ "**Log classifier**\n\n" <> zrComment) [] zrIsPublic (cfgAgentId cfg))
                        (cfgAssignTo cfg)
                        (renderTicketStatus AnalyzedByScriptV1_0:zrTags)
                    )
                    req1
     void $ liftIO $ apiCall (pure . encodeToLazyText) req2
 
--- | Get agent id that has been set on Config
-getAgentId
+-- | Get user information.
+_getUser
     :: (MonadIO m, MonadReader Config m)
-    => m Integer
-getAgentId = do
+    => m User
+_getUser = do
     cfg <- ask
     let req = apiRequest cfg "users/me.json"
-    liftIO $ apiCall parseAgentId req
+    liftIO $ apiCall parseJSON req
 
 -- | Given attachmentUrl, return attachment in bytestring
 getAttachment
-    :: (MonadIO m, MonadReader Config m) -- TODO(ks): We have to fix this
+    :: (MonadIO m)
     => Attachment
-    -> m LByteString
-getAttachment Attachment{..} = getResponseBody <$> httpLBS req
+    -> m (Maybe AttachmentContent)
+getAttachment Attachment{..} = Just . AttachmentContent . getResponseBody <$> httpLBS req
     where
       req :: Request
       req = parseRequest_ (toString aURL)
@@ -151,9 +173,9 @@ getTicketComments
     :: (MonadIO m, MonadReader Config m)
     => TicketId
     -> m [Comment]
-getTicketComments tid = do
+getTicketComments tId = do
     cfg <- ask
-    let req = apiRequest cfg ("tickets/" <> show tid <> "/comments.json")
+    let req = apiRequest cfg ("tickets/" <> show tId <> "/comments.json")
     liftIO $ apiCall parseComments req
 
 ------------------------------------------------------------

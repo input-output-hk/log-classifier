@@ -7,10 +7,10 @@ import           Test.Hspec.QuickCheck (modifyMaxSuccess)
 import           Test.QuickCheck (Gen, arbitrary, forAll, listOf1)
 import           Test.QuickCheck.Monadic (assert, monadicIO, pre, run)
 
-import           Lib (processTicket, listAndSortTickets)
-import           Zendesk (App, Comment (..), Config (..), IOLayer (..), TicketInfo (..),
-                          ZendeskLayer (..), ZendeskResponse (..), basicIOLayer, defaultConfig,
-                          emptyZendeskLayer, runApp)
+import           DataSource (App, Comment (..), Config (..), IOLayer (..), TicketInfo (..),
+                             ZendeskLayer (..), ZendeskResponse (..), basicIOLayer, defaultConfig,
+                             emptyZendeskLayer, runApp)
+import           Lib (listAndSortTickets, processTicket)
 
 -- TODO(ks): What we are really missing is a realistic @Gen ZendeskLayer m@.
 
@@ -52,8 +52,8 @@ listAndSortTicketsSpec =
                     let stubbedZendeskLayer :: ZendeskLayer App
                         stubbedZendeskLayer =
                             emptyZendeskLayer
-                                { zlListTickets     = \_     -> pure []
-                                , zlGetTicketInfo   = \_     -> pure ticketInfo
+                                { zlListAssignedTickets     = \_     -> pure []
+                                , zlGetTicketInfo           = \_     -> pure $ Just ticketInfo
                                 }
 
                     let stubbedConfig :: Config
@@ -75,8 +75,8 @@ listAndSortTicketsSpec =
                         let stubbedZendeskLayer :: ZendeskLayer App
                             stubbedZendeskLayer =
                                 emptyZendeskLayer
-                                    { zlListTickets     = \_     -> pure listTickets
-                                    , zlGetTicketInfo   = \_     -> pure ticketInfo
+                                    { zlListAssignedTickets     = \_     -> pure listTickets
+                                    , zlGetTicketInfo           = \_     -> pure ticketInfo
                                     }
 
                         let stubbedConfig :: Config
@@ -105,17 +105,17 @@ processTicketSpec =
                         let stubbedZendeskLayer :: ZendeskLayer App
                             stubbedZendeskLayer =
                                 emptyZendeskLayer
-                                    { zlListTickets         = \_     -> pure listTickets
-                                    , zlGetTicketInfo       = \_     -> pure ticketInfo
-                                    , zlPostTicketComment   = \_     -> pure ()
-                                    , zlGetTicketComments   = \_     -> pure []
+                                    { zlListAssignedTickets     = \_     -> pure listTickets
+                                    , zlGetTicketInfo           = \_     -> pure $ Just ticketInfo
+                                    , zlPostTicketComment       = \_     -> pure ()
+                                    , zlGetTicketComments       = \_     -> pure []
                                     }
 
                         let stubbedConfig :: Config
                             stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
 
                         let appExecution :: IO (Maybe ZendeskResponse)
-                            appExecution = runApp (processTicket . ticketId $ ticketInfo) stubbedConfig
+                            appExecution = runApp (processTicket . tiId $ ticketInfo) stubbedConfig
 
                         zendeskComments <- run appExecution
 
@@ -132,18 +132,18 @@ processTicketSpec =
                         let stubbedZendeskLayer :: ZendeskLayer App
                             stubbedZendeskLayer =
                                 emptyZendeskLayer
-                                    { zlListTickets         = \_     -> pure listTickets
-                                    , zlGetTicketInfo       = \_     -> pure ticketInfo
-                                    , zlPostTicketComment   = \_     -> pure ()
-                                    , zlGetTicketComments   = \_     -> pure comments
-                                    , zlGetAttachment       = \_     -> pure mempty
+                                    { zlListAssignedTickets     = \_     -> pure listTickets
+                                    , zlGetTicketInfo           = \_     -> pure $ Just ticketInfo
+                                    , zlPostTicketComment       = \_     -> pure ()
+                                    , zlGetTicketComments       = \_     -> pure comments
+                                    , zlGetAttachment           = \_     -> pure $ Just mempty
                                     }
 
                         let stubbedConfig :: Config
                             stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
 
                         let appExecution :: IO (Maybe ZendeskResponse)
-                            appExecution = runApp (processTicket . ticketId $ ticketInfo) stubbedConfig
+                            appExecution = runApp (processTicket . tiId $ ticketInfo) stubbedConfig
 
                         zendeskResponse <- run appExecution
 
@@ -152,14 +152,14 @@ processTicketSpec =
 
         it "processes ticket, with no attachments" $
             forAll (listOf1 genCommentWithNoAttachment) $ \(commentsWithoutAttachment :: [Comment]) ->
-                forAll arbitrary $ \ticketInfo ->
+                forAll arbitrary $ \(ticketInfo :: TicketInfo) ->
                     monadicIO $ do
 
                     let stubbedZendeskLayer :: ZendeskLayer App
                         stubbedZendeskLayer =
                             emptyZendeskLayer
                                 { zlGetTicketComments = \_ -> pure commentsWithoutAttachment
-                                , zlGetTicketInfo     = \_ -> pure ticketInfo
+                                , zlGetTicketInfo     = \_ -> pure $ Just ticketInfo
                                 , zlPostTicketComment = \_ -> pure ()
                                 }
 
@@ -167,7 +167,7 @@ processTicketSpec =
                         stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
 
                     let appExecution :: IO (Maybe ZendeskResponse)
-                        appExecution = runApp (processTicket . ticketId $ ticketInfo) stubbedConfig
+                        appExecution = runApp (processTicket . tiId $ ticketInfo) stubbedConfig
 
                     zendeskResponse <- run appExecution
 
@@ -175,8 +175,8 @@ processTicketSpec =
                     assert $ isResponseTaggedWithNoLogs zendeskResponse
 
         it "processes ticket, with attachments" $
-            forAll (listOf1 arbitrary) $ \(comments:: [Comment]) ->
-                forAll arbitrary $ \ticketInfo ->
+            forAll (listOf1 arbitrary) $ \(comments :: [Comment]) ->
+                forAll arbitrary $ \(ticketInfo :: TicketInfo) ->
                     monadicIO $ do
 
                     pre $ any (not . null . cAttachments) comments
@@ -185,19 +185,19 @@ processTicketSpec =
                         stubbedZendeskLayer =
                             emptyZendeskLayer
                                 { zlGetTicketComments = \_ -> pure comments
-                                , zlGetTicketInfo     = \_ -> pure ticketInfo
+                                , zlGetTicketInfo     = \_ -> pure $ Just ticketInfo
                                 , zlPostTicketComment = \_ -> pure ()
-                                , zlGetAttachment     = \_ -> pure mempty
+                                , zlGetAttachment     = \_ -> pure $ Just mempty
                                 }
 
                     let stubbedConfig :: Config
                         stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
 
                     let appExecution :: IO (Maybe ZendeskResponse)
-                        appExecution = runApp (processTicket . ticketId $ ticketInfo) stubbedConfig
+                        appExecution = runApp (processTicket . tiId $ ticketInfo) stubbedConfig
 
                     zendeskResponse <- run appExecution
-                    
+
                     assert $ isJust zendeskResponse
                     assert $ not (isResponseTaggedWithNoLogs zendeskResponse)
 
