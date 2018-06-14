@@ -96,9 +96,9 @@ listAndSortTicketsSpec =
 processTicketSpec :: Spec
 processTicketSpec =
     describe "processTicket" $ modifyMaxSuccess (const 200) $ do
-        it "processes ticket, no comments" $ do
+        it "processes ticket, no comments" $
             forAll arbitrary $ \(ticketInfo :: TicketInfo) ->
-                forAll (listOf1 arbitrary) $ \(listTickets) -> do
+                forAll (listOf1 arbitrary) $ \(listTickets) ->
 
                     monadicIO $ do
 
@@ -114,24 +114,20 @@ processTicketSpec =
                         let stubbedConfig :: Config
                             stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
 
-                        let appExecution :: IO [ZendeskResponse]
+                        let appExecution :: IO (Maybe ZendeskResponse)
                             appExecution = runApp (processTicket . ticketId $ ticketInfo) stubbedConfig
 
                         zendeskComments <- run appExecution
 
                         -- Check we have some comments.
-                        assert $ length zendeskComments == 0
+                        assert $ isNothing zendeskComments
 
         it "processes ticket, with comments" $
             forAll arbitrary $ \(ticketInfo :: TicketInfo) ->
                 forAll (listOf1 arbitrary) $ \(listTickets) ->
                 forAll (listOf1 arbitrary) $ \(comments) ->
 
-
                     monadicIO $ do
-
-                        -- A simple precondition.
-                        pre $ any (\comment -> length (cAttachments comment) > 0) comments
 
                         let stubbedZendeskLayer :: ZendeskLayer App
                             stubbedZendeskLayer =
@@ -146,13 +142,13 @@ processTicketSpec =
                         let stubbedConfig :: Config
                             stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
 
-                        let appExecution :: IO [ZendeskResponse]
+                        let appExecution :: IO (Maybe ZendeskResponse)
                             appExecution = runApp (processTicket . ticketId $ ticketInfo) stubbedConfig
 
-                        zendeskResponses <- run appExecution
+                        zendeskResponse <- run appExecution
 
                         -- Check we have some comments.
-                        assert $ not (null zendeskResponses)
+                        assert $ isJust zendeskResponse
 
         it "processes ticket, with no attachments" $
             forAll (listOf1 genCommentWithNoAttachment) $ \(commentsWithoutAttachment :: [Comment]) ->
@@ -170,12 +166,13 @@ processTicketSpec =
                     let stubbedConfig :: Config
                         stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
 
-                    let appExecution :: IO [ZendeskResponse]
+                    let appExecution :: IO (Maybe ZendeskResponse)
                         appExecution = runApp (processTicket . ticketId $ ticketInfo) stubbedConfig
 
-                    zendeskResponses <- run appExecution
+                    zendeskResponse <- run appExecution
 
-                    assert $ not (null zendeskResponses) && areResponsesTaggedWithNoLogs zendeskResponses
+                    assert $ isJust zendeskResponse
+                    assert $ isResponseTaggedWithNoLogs zendeskResponse
 
         it "processes ticket, with attachments" $
             forAll (listOf1 arbitrary) $ \(comments:: [Comment]) ->
@@ -196,16 +193,17 @@ processTicketSpec =
                     let stubbedConfig :: Config
                         stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
 
-                    let appExecution :: IO [ZendeskResponse]
+                    let appExecution :: IO (Maybe ZendeskResponse)
                         appExecution = runApp (processTicket . ticketId $ ticketInfo) stubbedConfig
 
-                    zendeskResponses <- run appExecution
+                    zendeskResponse <- run appExecution
                     
-                    assert $ not (null zendeskResponses) && not (areResponsesTaggedWithNoLogs zendeskResponses)
+                    assert $ isJust zendeskResponse
+                    assert $ not (isResponseTaggedWithNoLogs zendeskResponse)
 
-areResponsesTaggedWithNoLogs :: [ZendeskResponse] -> Bool
-areResponsesTaggedWithNoLogs zendeskResponses =
-    all (\response -> "no-log-files" `elem` zrTags response) zendeskResponses
+isResponseTaggedWithNoLogs :: Maybe ZendeskResponse -> Bool
+isResponseTaggedWithNoLogs (Just response) = "no-log-files" `elem` zrTags response
+isResponseTaggedWithNoLogs Nothing         = False
 
 genCommentWithNoAttachment :: Gen Comment
 genCommentWithNoAttachment = Comment

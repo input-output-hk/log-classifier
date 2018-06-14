@@ -73,7 +73,7 @@ collectEmails = do
     mapM_ extractEmailAddress ticketIds
 
 
-processTicket :: TicketId -> App [ZendeskResponse]
+processTicket :: TicketId -> App (Maybe ZendeskResponse)
 processTicket tId = do
 
     -- We first fetch the function from the configuration
@@ -88,7 +88,7 @@ processTicket tId = do
     let attachments = getAttachmentsFromComment comments
     zendeskResponse     <- getZendeskResponses comments attachments ticketInfo
     postTicketComment   <- asksZendeskLayer zlPostTicketComment
-    mapM_ postTicketComment zendeskResponse
+    whenJust zendeskResponse postTicketComment
 
     printText "Process finished, please see the following url"
     printText $ "https://iohk.zendesk.com/agent/tickets/" <> show tId
@@ -217,11 +217,16 @@ getAttachmentsFromComment comments = do
     isAttachmentZip attachment = "application/zip" == aContentType attachment
 
 -- | Get zendesk responses
-getZendeskResponses :: [Comment] -> [Attachment] -> TicketInfo -> App [ZendeskResponse]
+-- | Returns with maybe because it could return no response
+getZendeskResponses :: [Comment] -> [Attachment] -> TicketInfo -> App (Maybe ZendeskResponse)
 getZendeskResponses comments attachments ticketInfo
-    | not (null attachments) = mapM (inspectAttachment ticketInfo) attachments
-    | not (null comments)    = pure <$> responseNoLogs ticketInfo
-    | otherwise              = pure []
+    | not (null attachments) = do
+                               zendeskResponses <- mapM (inspectAttachment ticketInfo) attachments
+                               -- Last element should be the latest attachment
+                               let latestResponse = last <$> nonEmpty zendeskResponses
+                               return latestResponse
+    | not (null comments)    = Just <$> responseNoLogs ticketInfo
+    | otherwise              = return Nothing
 
 -- | Given number of file of inspect, knowledgebase and attachment,
 -- analyze the logs and return the results.
