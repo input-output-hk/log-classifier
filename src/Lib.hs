@@ -23,7 +23,6 @@ import           LogAnalysis.Classifier (extractErrorCodes, extractIssuesFromLog
                                          prettyFormatNoIssues, prettyFormatNoLogs)
 import           LogAnalysis.KnowledgeCSVParser (parseKnowLedgeBase)
 import           LogAnalysis.Types (ErrorCode (..), Knowledge, renderErrorCode, setupAnalysis)
-import           Prelude (last)
 import           Util (extractLogsFromZip)
 import           Zendesk (App, Attachment (..), Comment (..), Config (..), IOLayer (..),
                           RequestType (..), TicketId, TicketInfo (..), TicketTag (..),
@@ -84,9 +83,9 @@ processTicket tId = do
 
     ticketInfo          <- getTicketInfo tId
     getTicketComments   <- asksZendeskLayer zlGetTicketComments
-    comments            <- getTicketComments tId
-    let attachments = getAttachmentsFromComment comments
-    zendeskResponse     <- getZendeskResponses comments attachments ticketInfo
+    sortedComments      <- sortBy compare <$> getTicketComments tId
+    let attachments = getAttachmentsFromComment sortedComments
+    zendeskResponse     <- getZendeskResponses sortedComments attachments ticketInfo
     postTicketComment   <- asksZendeskLayer zlPostTicketComment
     whenJust zendeskResponse postTicketComment
 
@@ -220,15 +219,18 @@ getAttachmentsFromComment comments = do
 -- | Returns with maybe because it could return no response
 getZendeskResponses :: [Comment] -> [Attachment] -> TicketInfo -> App (Maybe ZendeskResponse)
 getZendeskResponses comments attachments ticketInfo
-    | not (null attachments) = Just <$> inspectAttachments ticketInfo attachments
+    | not (null attachments) = inspectAttachments ticketInfo attachments
     | not (null comments)    = Just <$> responseNoLogs ticketInfo
     | otherwise              = return Nothing
 
 -- | Inspect only the latest attchment
-inspectAttachments :: TicketInfo -> [Attachment] -> App ZendeskResponse
+inspectAttachments :: TicketInfo -> [Attachment] -> App (Maybe ZendeskResponse)
 inspectAttachments ticketInfo attachments = do
-    let latestAttachment = Prelude.last attachments
-    inspectAttachment ticketInfo latestAttachment
+    -- Inspecting the last element since it'll be the latest attachment
+    let latestAttachment = last <$> nonEmpty attachments
+    case latestAttachment of
+        Just att -> return <$> inspectAttachment ticketInfo att
+        Nothing  -> return Nothing
 
 -- | Given number of file of inspect, knowledgebase and attachment,
 -- analyze the logs and return the results.

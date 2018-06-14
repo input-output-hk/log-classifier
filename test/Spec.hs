@@ -208,6 +208,7 @@ isResponseTaggedWithNoLogs Nothing         = False
 genCommentWithNoAttachment :: Gen Comment
 genCommentWithNoAttachment = Comment
     <$> arbitrary
+    <*> arbitrary
     <*> return mempty
     <*> arbitrary
     <*> arbitrary

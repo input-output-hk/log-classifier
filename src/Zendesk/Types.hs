@@ -18,6 +18,7 @@ module Zendesk.Types
     , TicketTag (..)
     , parseAgentId
     , parseComments
+    , parseTicket
     , parseTickets
     , renderTicketStatus
     -- * General configuration
@@ -169,7 +170,9 @@ data ZendeskResponse = ZendeskResponse
 
 -- | Comments
 data Comment = Comment
-    { cBody        :: !Text
+    { cId          :: Maybe Integer
+    -- ^ Comment Id
+    , cBody        :: !Text
     -- ^ Body of comment
     , cAttachments :: ![Attachment]
     -- ^ Attachment
@@ -179,10 +182,13 @@ data Comment = Comment
     -- ^ Auther of comment
     } deriving (Eq, Show)
 
+instance Ord Comment where
+    compare c1 c2 = compare (cId c1) (cId c2)
 
 instance Arbitrary Comment where
     arbitrary = Comment
         <$> arbitrary
+        <*> arbitrary
         <*> arbitrary
         <*> arbitrary
         <*> arbitrary
@@ -269,11 +275,23 @@ renderTicketStatus NoLogAttached        = "no-log-files"
 
 -- | JSON Parsing
 instance FromJSON Comment where
-    parseJSON = withObject "comment" $ \o ->
-        Comment <$> o .: "body" <*> o .: "attachments" <*> o .: "public" <*> o .: "author_id"
+    parseJSON = withObject "comment" $ \o -> do
+        cId          <- o .: "id"
+        cBody        <- o .: "body"
+        cAttachments <- o .: "attachments"
+        cPublic      <- o .: "public"
+        cAuthor      <- o .: "author_id"
+        
+        pure Comment
+            { cId          = cId 
+            , cBody        = cBody
+            , cAttachments = cAttachments
+            , cPublic      = cPublic
+            , cAuthor      = cAuthor
+            }
 
 instance ToJSON Comment where
-    toJSON (Comment b as public author)
+    toJSON (Comment _ b as public author)
         = object [ "body" .= b, "attachments" .= as,
         "public" .= public, "author_id" .= author]
 
@@ -305,6 +323,9 @@ instance FromJSON TicketInfo where
 
 instance FromJSON TicketList where
     parseJSON = withObject "ticketList" $ \o -> TicketList <$> o .: "tickets" <*> o .: "next_page"
+
+parseTicket :: Value -> Parser TicketInfo
+parseTicket = withObject "ticket" $ \o -> o .: "ticket"
 
 -- | Parse tickets
 parseTickets :: Value -> Parser TicketList

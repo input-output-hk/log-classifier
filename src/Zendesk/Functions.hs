@@ -11,7 +11,7 @@ module Zendesk.Functions
 import           Universum
 
 import           Control.Monad.Reader (ask)
-import           Data.Aeson (FromJSON, ToJSON, Value, encode, parseJSON)
+import           Data.Aeson (FromJSON, ToJSON, Value, encode)
 import           Data.Aeson.Text (encodeToLazyText)
 import           Data.Aeson.Types (Parser, parseEither)
 import           Network.HTTP.Simple (Request, addRequestHeader, getResponseBody, httpJSON, httpLBS,
@@ -21,7 +21,7 @@ import           Network.HTTP.Simple (Request, addRequestHeader, getResponseBody
 import           Zendesk.Types (Attachment (..), Comment (..), Config (..), IOLayer (..),
                                 RequestType (..), Ticket (..), TicketId, TicketInfo (..),
                                 TicketList (..), TicketTag (..), ZendeskLayer (..),
-                                ZendeskResponse (..), parseAgentId, parseComments, parseTickets,
+                                ZendeskResponse (..), parseAgentId, parseComments, parseTickets, parseTicket,
                                 renderTicketStatus)
 
 
@@ -36,7 +36,7 @@ defaultConfig =
         , cfgAssignTo           = 0
         , cfgKnowledgebase      = []
         , cfgNumOfLogsToAnalyze = 5
-        , cfgIsCommentPublic    = True -- TODO(ks): For now, we need this in CLI.
+        , cfgIsCommentPublic    = False -- TODO(ks): For now, we need this in CLI.
         , cfgZendeskLayer       = basicZendeskLayer
         , cfgIOLayer            = basicIOLayer
         }
@@ -80,7 +80,7 @@ getTicketInfo ticketId = do
     cfg <- ask
 
     let req = apiRequest cfg ("tickets/" <> show ticketId <> ".json")
-    liftIO $ apiCall parseJSON req
+    liftIO $ apiCall parseTicket req
 
 -- | Return list of ticketIds that has been requested by config user (not used)
 listTickets
@@ -120,7 +120,7 @@ postTicketComment ZendeskResponse{..} = do
     let req1 = apiRequest cfg ("tickets/" <> show zrTicketId <> ".json")
     let req2 = addJsonBody
                    (Ticket
-                       (Comment ("**Log classifier**\n\n" <> zrComment) [] zrIsPublic (cfgAgentId cfg))
+                       (Comment Nothing ("**Log classifier**\n\n" <> zrComment) [] zrIsPublic (cfgAgentId cfg))
                        (cfgAssignTo cfg)
                        (renderTicketStatus AnalyzedByScriptV1_0:zrTags)
                    )
