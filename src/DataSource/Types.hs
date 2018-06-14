@@ -168,6 +168,9 @@ data Attachment = Attachment
     -- ^ Attachment size
     } deriving (Eq, Show)
 
+instance Ord Attachment where
+    compare a1 a2 = compare (aId a1) (aId a2)
+
 instance Arbitrary Attachment where
     arbitrary = Attachment
         <$> arbitrary

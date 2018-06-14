@@ -86,12 +86,12 @@ processTicket tId = do
 
     printText "Processing single ticket"
 
-    mTicketInfo          <- getTicketInfo tId
+    mTicketInfo         <- getTicketInfo tId
     getTicketComments   <- asksZendeskLayer zlGetTicketComments
-    sortedComments      <- sortBy compare <$> getTicketComments tId
-    let attachments = getAttachmentsFromComment sortedComments
+    comments      <- getTicketComments tId
+    let attachments = getAttachmentsFromComment comments
     let ticketInfo  = fromMaybe (error "No ticket info") mTicketInfo
-    zendeskResponse     <- getZendeskResponses sortedComments attachments ticketInfo
+    zendeskResponse     <- getZendeskResponses comments attachments ticketInfo
     postTicketComment   <- asksZendeskLayer zlPostTicketComment
     whenJust zendeskResponse postTicketComment
 
@@ -211,11 +211,10 @@ getZendeskResponses comments attachments ticketInfo
 -- | Inspect only the latest attchment
 inspectAttachments :: TicketInfo -> [Attachment] -> App (Maybe ZendeskResponse)
 inspectAttachments ticketInfo attachments = do
-    -- Inspecting the last element since it'll be the latest attachment
-    let latestAttachment = last <$> nonEmpty attachments
-    case latestAttachment of
-        Just att -> return <$> inspectAttachment ticketInfo att
-        Nothing  -> return Nothing
+    let lastAttachment :: Maybe Attachment
+        lastAttachment = safeHead . reverse . sort $ attachments
+
+    inspectAttachment ticketInfo =<< lastAttachment 
 
 -- | Given number of file of inspect, knowledgebase and attachment,
 -- analyze the logs and return the results.
