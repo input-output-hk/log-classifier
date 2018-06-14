@@ -1,5 +1,5 @@
-{-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards   #-}
 
 module Lib
     ( runZendeskMain
@@ -23,13 +23,13 @@ import           LogAnalysis.Classifier (extractErrorCodes, extractIssuesFromLog
                                          prettyFormatNoIssues, prettyFormatNoLogs)
 import           LogAnalysis.KnowledgeCSVParser (parseKnowLedgeBase)
 import           LogAnalysis.Types (ErrorCode (..), Knowledge, renderErrorCode, setupAnalysis)
+import           Prelude (last)
 import           Util (extractLogsFromZip)
 import           Zendesk (App, Attachment (..), Comment (..), Config (..), IOLayer (..),
                           RequestType (..), TicketId, TicketInfo (..), TicketTag (..),
                           ZendeskLayer (..), ZendeskResponse (..), asksIOLayer, asksZendeskLayer,
                           assignToPath, defaultConfig, knowledgebasePath, renderTicketStatus,
                           runApp, tokenPath)
-
 ------------------------------------------------------------
 -- Functions
 ------------------------------------------------------------
@@ -220,13 +220,15 @@ getAttachmentsFromComment comments = do
 -- | Returns with maybe because it could return no response
 getZendeskResponses :: [Comment] -> [Attachment] -> TicketInfo -> App (Maybe ZendeskResponse)
 getZendeskResponses comments attachments ticketInfo
-    | not (null attachments) = do
-                               zendeskResponses <- mapM (inspectAttachment ticketInfo) attachments
-                               -- Last element should be the latest attachment
-                               let latestResponse = last <$> nonEmpty zendeskResponses
-                               return latestResponse
+    | not (null attachments) = Just <$> inspectAttachments ticketInfo attachments
     | not (null comments)    = Just <$> responseNoLogs ticketInfo
     | otherwise              = return Nothing
+
+-- | Inspect only the latest attchment
+inspectAttachments :: TicketInfo -> [Attachment] -> App ZendeskResponse
+inspectAttachments ticketInfo attachments = do
+    let latestAttachment = Prelude.last attachments
+    inspectAttachment ticketInfo latestAttachment
 
 -- | Given number of file of inspect, knowledgebase and attachment,
 -- analyze the logs and return the results.
@@ -303,9 +305,9 @@ filterAnalyzedTickets ticketsInfo =
     filter ticketsFilter ticketsInfo
   where
     ticketsFilter :: TicketInfo -> Bool
-    ticketsFilter ticketInfo = 
-           isTicketAnalyzed ticketInfo 
-        && isTicketOpen ticketInfo 
+    ticketsFilter ticketInfo =
+           isTicketAnalyzed ticketInfo
+        && isTicketOpen ticketInfo
         && isTicketBlacklisted ticketInfo
         && isTicketInGoguenTestnet ticketInfo
 
