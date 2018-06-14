@@ -19,17 +19,18 @@ import           Data.Attoparsec.Text.Lazy (eitherResult, parse)
 import           Data.Text (isInfixOf, stripEnd)
 
 import           CLI (CLI (..), getCliArgs)
+import           DataSource (App, Attachment (..), AttachmentContent (..), Comment (..),
+                             CommentBody (..), Config (..), IOLayer (..), TicketId (..),
+                             TicketInfo (..), TicketStatus (..), TicketTag (..), TicketTags (..),
+                             UserId (..), ZendeskLayer (..), ZendeskResponse (..), asksIOLayer,
+                             asksZendeskLayer, assignToPath, defaultConfig, knowledgebasePath,
+                             renderTicketStatus, runApp, tokenPath)
 import           LogAnalysis.Classifier (extractErrorCodes, extractIssuesFromLogs,
                                          prettyFormatAnalysis, prettyFormatLogReadError,
                                          prettyFormatNoIssues)
 import           LogAnalysis.KnowledgeCSVParser (parseKnowLedgeBase)
 import           LogAnalysis.Types (ErrorCode (..), Knowledge, renderErrorCode, setupAnalysis)
 import           Util (extractLogsFromZip)
-import           Zendesk (App, Attachment (..), Comment (..), Config (..), IOLayer (..),
-                          RequestType (..), TicketId, TicketInfo (..), TicketTag (..),
-                          ZendeskLayer (..), ZendeskResponse (..), asksIOLayer, asksZendeskLayer,
-                          assignToPath, defaultConfig, knowledgebasePath, renderTicketStatus,
-                          runApp, tokenPath)
 
 ------------------------------------------------------------
 -- Functions
@@ -45,18 +46,18 @@ runZendeskMain = do
     assignTo <- case readEither assignFile of
         Right agentid -> return agentid
         Left  err     -> error err
-    let cfg' = defaultConfig
+
+    let cfg = defaultConfig
                    { cfgToken = stripEnd token
                    , cfgAssignTo = assignTo
+                   , cfgAgentId = assignTo
                    , cfgKnowledgebase = knowledges
                    }
-    let getAgentId = zlGetAgentId . cfgZendeskLayer $ cfg'
-    agentId <- runApp getAgentId cfg'
-    let cfg = cfg' { cfgAgentId = agentId }
+
     -- At this point, the configuration is set up and there is no point in using a pure IO.
     case args of
         CollectEmails            -> runApp collectEmails cfg
-        (ProcessTicket ticketId) -> void $ runApp (processTicket ticketId) cfg
+        (ProcessTicket ticketId) -> void $ runApp (processTicket (TicketId ticketId)) cfg
         ProcessTickets           -> void $ runApp processTickets cfg
         FetchTickets             -> runApp fetchTickets cfg
         ShowStatistics           -> runApp showStatistics cfg
@@ -65,12 +66,16 @@ runZendeskMain = do
 collectEmails :: App ()
 collectEmails = do
     cfg <- ask
+
+    let email   = cfgEmail cfg
+    let userId  = UserId . fromIntegral $ cfgAgentId cfg
+
     -- We first fetch the function from the configuration
-    listTickets <- asksZendeskLayer zlListTickets
-    putTextLn $  "Classifier is going to extract emails requested by: " <> cfgEmail cfg
-    tickets <- listTickets Requested
+    listTickets <- asksZendeskLayer zlListAssignedTickets
+    putTextLn $  "Classifier is going to extract emails requested by: " <> email
+    tickets <- listTickets userId
     putTextLn $ "There are " <> show (length tickets) <> " tickets requested by this user."
-    let ticketIds = foldr (\TicketInfo{..} acc -> ticketId : acc) [] tickets
+    let ticketIds = foldr (\TicketInfo{..} acc -> tiId : acc) [] tickets
     mapM_ extractEmailAddress ticketIds
 
 
@@ -83,7 +88,11 @@ processTicket ticketId = do
 
     printText "Processing single ticket"
 
-    ticketInfo          <- getTicketInfo ticketId
+    ticketInfoM         <- getTicketInfo ticketId
+
+    -- TODO(ks): Better exception handling.
+    let ticketInfo      = fromMaybe (error "Missing ticket info!") ticketInfoM
+
     attachments         <- getTicketAttachments ticketInfo
 
     zendeskResponse     <- mapM (inspectAttachment ticketInfo) attachments
@@ -100,8 +109,7 @@ processTicket ticketId = do
 processTickets :: App ()
 processTickets = do
     sortedTicketIds     <- listAndSortTickets
-
-    _                   <- mapM (processTicket . ticketId) sortedTicketIds
+    _                   <- mapM (processTicket . tiId) sortedTicketIds
 
     putTextLn "All the tickets has been processed."
 
@@ -116,27 +124,33 @@ fetchTickets = do
 showStatistics :: App ()
 showStatistics = do
     cfg <- ask
+
+    let email   = cfgEmail cfg
+    let userId  = UserId . fromIntegral $ cfgAgentId cfg
+
     -- We first fetch the function from the configuration
-    listTickets <- asksZendeskLayer zlListTickets
+    listTickets <- asksZendeskLayer zlListAssignedTickets
 
-    putTextLn $ "Classifier is going to gather ticket information assigned to: " <> cfgEmail cfg
+    putTextLn $ "Classifier is going to gather ticket information assigned to: " <> email
 
-    tickets     <- listTickets Assigned
-    liftIO $ printTicketCountMessage tickets (cfgEmail cfg)
-
+    tickets     <- listTickets userId
+    pure () -- TODO(ks): Implement anew.
 
 listAndSortTickets :: App [TicketInfo]
 listAndSortTickets = do
 
     Config{..}  <- ask
 
+    let email   = cfgEmail
+    let userId  = UserId . fromIntegral $ cfgAgentId
+
     -- We first fetch the function from the configuration
-    listTickets <- asksZendeskLayer zlListTickets
+    listTickets <- asksZendeskLayer zlListAssignedTickets
     printText   <- asksIOLayer iolPrintText
 
-    printText $ "Classifier is going to process tickets assign to: " <> cfgEmail
+    printText $ "Classifier is going to process tickets assign to: " <> email
 
-    tickets     <- listTickets Assigned
+    tickets     <- listTickets userId
 
     let filteredTicketIds = filterAnalyzedTickets tickets
     let sortedTicketIds   = sortBy compare filteredTicketIds
@@ -146,32 +160,6 @@ listAndSortTickets = do
 
     pure sortedTicketIds
 
-
--- | Print how many tickets are assinged, analyzed, and unanalyzed
-printTicketCountMessage :: [TicketInfo] -> Text -> IO ()
-printTicketCountMessage tickets email = do
-    let ticketCount = length tickets
-    putTextLn "Done!"
-    putTextLn $ "There are currently " <> show ticketCount
-        <> " tickets in the system assigned to " <> email
-    let filteredTicketCount = length $ filterAnalyzedTickets tickets
-    putTextLn $ show (ticketCount - filteredTicketCount)
-        <> " tickets has been analyzed by the classifier."
-    putTextLn $ show filteredTicketCount <> " tickets are not analyzed."
-    putTextLn "Below are statistics:"
-    let tagGroups = sortTickets tickets
-    mapM_ (\(tag, count) -> putTextLn $ tag <> ": " <> show count) tagGroups
-
--- | Sort the ticket so we can see the statistics
-sortTickets :: [TicketInfo] -> [(Text, Int)]
-sortTickets tickets =
-    let extractedTags = foldr (\TicketInfo{..} acc -> ticketTags <> acc) [] tickets  -- Extract tags from tickets
-        tags2Filter   = ["s3", "s2", "cannot-sync", "closed-by-merge"
-                        , "web_widget", "analyzed-by-script"]
-        filteredTags  = filter (`notElem` tags2Filter) extractedTags  -- Filter tags
-        groupByTags :: [ Text ] -> [(Text, Int)]
-        groupByTags ts = map (\l@(x:_) -> (x, length l)) (group $ sort ts)  -- Group them
-    in  groupByTags filteredTags
 
 -- | Read CSV file and setup knowledge base
 setupKnowledgebaseEnv :: FilePath -> IO [Knowledge]
@@ -189,7 +177,7 @@ extractEmailAddress ticketId = do
     getTicketComments <- asksZendeskLayer zlGetTicketComments
 
     comments <- getTicketComments ticketId
-    let commentWithEmail = cBody $ fromMaybe (error "No comment") (safeHead comments)
+    let (CommentBody commentWithEmail) = cBody $ fromMaybe (error "No comment") (safeHead comments)
     let emailAddress = fromMaybe (error "No email") (safeHead $ lines commentWithEmail)
     liftIO $ guard ("@" `isInfixOf` emailAddress)
     liftIO $ appendFile "emailAddress.txt" (emailAddress <> "\n")
@@ -203,7 +191,7 @@ getTicketAttachments TicketInfo{..} = do
 
     -- Get the function from the configuration
     getTicketComments   <- asksZendeskLayer zlGetTicketComments
-    comments            <- getTicketComments ticketId
+    comments            <- getTicketComments tiId
 
     -- However, if we want this to be more composable...
     pure $ getAttachmentsFromComment comments
@@ -246,8 +234,10 @@ inspectAttachment ticketInfo@TicketInfo{..} att = do
     getAttachment   <- asksZendeskLayer zlGetAttachment
     printText       <- asksIOLayer iolPrintText
 
-    rawlog <- getAttachment att -- Get attachment
-    let results = extractLogsFromZip cfgNumOfLogsToAnalyze rawlog
+    attachment     <- fromMaybe (error "Missing Attachment content!") <$> getAttachment att
+
+    let rawLog      = getAttachmentContent attachment
+    let results     = extractLogsFromZip cfgNumOfLogsToAnalyze rawLog
 
     case results of
         Left _ -> do
@@ -255,7 +245,7 @@ inspectAttachment ticketInfo@TicketInfo{..} att = do
             printText . renderErrorCode $ SentLogCorrupted
 
             pure ZendeskResponse
-                { zrTicketId    = ticketId
+                { zrTicketId    = tiId
                 , zrComment     = prettyFormatLogReadError ticketInfo
                 , zrTags        = [renderErrorCode SentLogCorrupted]
                 , zrIsPublic    = cfgIsCommentPublic
@@ -274,7 +264,7 @@ inspectAttachment ticketInfo@TicketInfo{..} att = do
                     printText fErrorCode
 
                     pure ZendeskResponse
-                        { zrTicketId    = ticketId
+                        { zrTicketId    = tiId
                         , zrComment     = commentRes
                         , zrTags        = errorCodes
                         , zrIsPublic    = cfgIsCommentPublic
@@ -285,7 +275,7 @@ inspectAttachment ticketInfo@TicketInfo{..} att = do
                     printText . renderTicketStatus $ NoKnownIssue
 
                     pure ZendeskResponse
-                        { zrTicketId    = ticketId
+                        { zrTicketId    = tiId
                         , zrComment     = prettyFormatNoIssues ticketInfo
                         , zrTags        = [renderTicketStatus NoKnownIssue]
                         , zrIsPublic    = cfgIsCommentPublic
@@ -301,12 +291,13 @@ filterAnalyzedTickets ticketsInfo =
         isTicketAnalyzed ticketInfo && isTicketOpen ticketInfo && isTicketBlacklisted ticketInfo
 
     isTicketAnalyzed :: TicketInfo -> Bool
-    isTicketAnalyzed TicketInfo{..} = (renderTicketStatus AnalyzedByScriptV1_0) `notElem` ticketTags
+    isTicketAnalyzed TicketInfo{..} = (renderTicketStatus AnalyzedByScriptV1_0) `notElem` (getTicketTags tiTags)
+    -- ^ This is showing that something is wrong...
 
     isTicketOpen :: TicketInfo -> Bool
-    isTicketOpen TicketInfo{..} = ticketStatus == "open" -- || ticketStatus == "new"
+    isTicketOpen TicketInfo{..} = tiStatus == TicketStatus "open" -- || ticketStatus == "new"
 
     -- | If we have a ticket we are having issues with...
     isTicketBlacklisted :: TicketInfo -> Bool
-    isTicketBlacklisted TicketInfo{..} = ticketId `notElem` [9377,10815]
+    isTicketBlacklisted TicketInfo{..} = tiId `notElem` [TicketId 9377,TicketId 10815]
 

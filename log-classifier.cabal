@@ -23,10 +23,11 @@ library
                        LogAnalysis.Types
                        Regex
                        Util
-                       Zendesk
+                       DataSource
   other-modules:       Paths_log_classifier
-                       Zendesk.Types
-                       Zendesk.Functions
+                       DataSource.DB
+                       DataSource.Types
+                       DataSource.Http
   ghc-options:         -Wall
   build-depends:       aeson
                      , array
@@ -43,6 +44,9 @@ library
                      , universum
                      , zip-archive
                      , QuickCheck
+                     -- Database backend
+                     , sqlite-simple 
+                     , generics-sop
 
   default-language:    Haskell2010
   default-extensions: TypeOperators
