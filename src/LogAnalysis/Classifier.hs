@@ -6,8 +6,9 @@ module LogAnalysis.Classifier
        ( extractErrorCodes
        , extractIssuesFromLogs
        , prettyFormatAnalysis
-       , prettyFormatNoIssues
        , prettyFormatLogReadError
+       , prettyFormatNoIssues
+       , prettyFormatNoLogs
        ) where
 
 import           Universum
@@ -104,3 +105,41 @@ prettyFormatLogReadError ticketInfo =
     "We tried to analyze the log that you submitted and it appears that your log cannot be processed. Please try sending the log file once again. Please go to https://daedaluswallet.io/faq/ and see Issue 200 for instructions. Please reply to this email with when you respond." <>
     prettyFooter ticketInfo
 
+prettyFormatNoLogs :: Text
+prettyFormatNoLogs =
+    "Dear user," <> "\n\n" <>
+    "Thank you for contacting the IOHK Technical Support Desk. We apologize for the delay in responding to you." <> "\n\n" <> 
+    "Most of the tickets we get are related to technical issues. If you have a Technical problem with Daedalus wallet please read on. If your request is NOT related to getting technical support you can IGNORE this email." <> "\n\n" <>
+    "We have recently (May 29th) had a major update to the Daedalus software. You can see more details here https://daedaluswallet.io/release-notes/. If you are experiencing any technical difficulties please make sure you have upgraded to the latest version before submitting a request for support or submitting new logs (more on logs below)." <> "\n\n" <>
+    "We scan our tickets to check for known issues before responding in person. If you have a technical issue but did not submit a log file we suggest that you reply to this message and attach your log file. Log files are required for helping with the majority of technical issues." <> "\n\n" <>
+    
+    "Please provide more information so that we can diagnose your issue:" <> "\n\n" <>
+    
+    "1. What is the Manufacturer and the Model number of your computer?" <> "\n" <>
+    "2. What is the Type and Version of the Operation System (OS) are you using?" <> "\n" <>
+    "3. Describe the issue you are experiencing in detail and attach screenshots if needed. Please tell us what you were doing when the error occurred." <> "\n" <>
+    "4. When did this issue occur (Date)?" <> "\n" <>
+    "5. Do you have any ideas how this happened?" <> "\n" <>
+    "Please compress and attach your pub folder, it contains technical logs. There is NO sensitive data in your logs:" <> "\n\n" <>
+
+    "Windows" <> "\n\n" <>
+    
+    "1. Go to" <> "\n" <>
+    "C:\\Users'username\\AppData\\Roaming\\Daedalus\\Logs" <> "\n" <>
+    "You can access them by typing %appdata% into Windows Explorer search bar." <> "\n" <>
+    "2. Compress the pub folder into a Zip file." <> "\n" <>
+    "3. Attach the compressed pub folder to your reply." <> "\n\n" <>
+    
+    "Mac" <> "\n\n" <>
+    
+    "1. Open Finder" <> "\n" <>
+    "2. Go to the Menu Bar and select the 'Go' menu" <> "\n" <>
+    "3. Select 'Go to Folder...'" <> "\n" <>
+    "4. Enter the following path (this is only correct if you did not change the standard installation):" <> "\n" <>
+    "~/Library/Application Support/Daedalus/Logs" <> "\n" <>
+    "5. Right-click the pub folder and select Compress 'pub' in the shortcut menu." <> "\n" <>
+    "6. Attach the compressed pub folder to your reply." <> "\n\n" <>
+
+    "Thanks," <> "\n" <>
+    "The IOHK Technical Support Desk Team"
+    

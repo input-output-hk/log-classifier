@@ -20,9 +20,9 @@ import           Network.HTTP.Simple (Request, addRequestHeader, getResponseBody
 
 import           DataSource.Types (Attachment (..), AttachmentContent (..), Comment (..),
                                    CommentBody (..), CommentId (..), Config (..), IOLayer (..),
-                                   Ticket (..), TicketId, TicketInfo (..), TicketList (..),
-                                   TicketTag (..), User, UserId, ZendeskLayer (..),
-                                   ZendeskResponse (..), parseComments, parseTickets,
+                                   Ticket (..), TicketId(..), TicketInfo (..), TicketList (..),
+                                   TicketTag (..), User, UserId(..), ZendeskLayer (..),
+                                   ZendeskResponse (..), parseComments, parseTickets, parseTicket,
                                    renderTicketStatus)
 
 
@@ -80,8 +80,8 @@ getTicketInfo
 getTicketInfo ticketId = do
     cfg <- ask
 
-    let req = apiRequest cfg ("tickets/" <> show ticketId <> ".json")
-    liftIO $ apiCall parseJSON req
+    let req = apiRequest cfg ("tickets/" <> show (getTicketId ticketId) <> ".json")
+    liftIO $ Just <$> apiCall parseTicket req
 
 
 -- | Return list of ticketIds that has been requested by config user.
@@ -92,7 +92,7 @@ listRequestedTickets
 listRequestedTickets userId = do
     cfg <- ask
 
-    let url     = "/users/" <> show userId <> "/tickets/requested.json"
+    let url     = "/users/" <> show (getUserId userId) <> "/tickets/requested.json"
     let req     = apiRequest cfg url
 
     iterateTicketPages req
@@ -105,7 +105,7 @@ listAssignedTickets
 listAssignedTickets userId = do
     cfg <- ask
 
-    let url     = "/users/" <> show userId <> "/tickets/assigned.json"
+    let url     = "/users/" <> show (getUserId userId) <> "/tickets/assigned.json"
     let req     = apiRequest cfg url
 
     iterateTicketPages req
@@ -175,7 +175,7 @@ getTicketComments
     -> m [Comment]
 getTicketComments tId = do
     cfg <- ask
-    let req = apiRequest cfg ("tickets/" <> show tId <> "/comments.json")
+    let req = apiRequest cfg ("tickets/" <> show (getTicketId tId) <> "/comments.json")
     liftIO $ apiCall parseComments req
 
 ------------------------------------------------------------
