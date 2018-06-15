@@ -281,7 +281,7 @@ newtype TicketStatus = TicketStatus
 data TicketInfo = TicketInfo
     { tiId          :: !TicketId     -- ^ Id of an ticket
     , tiRequesterId :: !UserId       -- ^ Id of the requester
-    , tiAssigneeId  :: !UserId       -- ^ Id of the asignee
+    , tiAssigneeId  :: Maybe UserId  -- ^ Id of the asignee
     , tiUrl         :: !TicketURL    -- ^ The ticket URL
     , tiTags        :: !TicketTags   -- ^ Tags associated with ticket
     , tiStatus      :: !TicketStatus -- ^ The status of the ticket
