@@ -10,6 +10,7 @@ module Lib
     , fetchTickets
     , showStatistics
     , listAndSortTickets
+    , filterAnalyzedTickets
     ) where
 
 import           Universum

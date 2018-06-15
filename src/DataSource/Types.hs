@@ -383,7 +383,7 @@ instance Arbitrary TicketTags where
 
 -- TODO(ks): Just "open" for now, enumerate with @elements@ later.
 instance Arbitrary TicketStatus where
-    arbitrary = pure $ TicketStatus "open"
+    arbitrary = TicketStatus <$> elements ["new", "on-hold", "open","solved", "pending"]
 
 instance Arbitrary TicketInfo where
     arbitrary = do
