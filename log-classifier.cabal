@@ -26,7 +26,6 @@ library
                        Util
                        DataSource
   other-modules:       Paths_log_classifier
-                       Common
                        DataSource.DB
                        DataSource.Types
                        DataSource.Http

@@ -8,9 +8,7 @@ module Lib
     , processTicket
     , processTickets
     , fetchTickets
-    , showStatistics
     , listAndSortTickets
-    , getAssignedTickets
     ) where
 
 import           Universum
@@ -32,7 +30,6 @@ import           LogAnalysis.KnowledgeCSVParser (parseKnowLedgeBase)
 import           LogAnalysis.Types (ErrorCode (..), Knowledge, renderErrorCode, setupAnalysis)
 import           Util (extractLogsFromZip)
 import           Statistics (showStatistics)
-import           Common (filterAnalyzedTickets)
 
 ------------------------------------------------------------
 -- Functions
@@ -62,7 +59,7 @@ runZendeskMain = do
         (ProcessTicket ticketId) -> void $ runApp (processTicket (TicketId ticketId)) cfg
         ProcessTickets           -> void $ runApp processTickets cfg
         FetchTickets             -> runApp fetchTickets cfg
-        ShowStatistics           -> runApp (getAssignedTickets >>= showStatistics) cfg
+        ShowStatistics           -> runApp (showStatistics getTickets) cfg
 
 
 collectEmails :: App ()
@@ -107,6 +104,7 @@ processTicket ticketId = do
 
     pure zendeskResponse
 
+
 processTickets :: App ()
 processTickets = do
     sortedTicketIds     <- listAndSortTickets
@@ -114,31 +112,30 @@ processTickets = do
 
     putTextLn "All the tickets has been processed."
 
+getTickets :: App [TicketInfo]
+getTickets = do
+    Config{..}  <- ask
+
+    let email   = cfgEmail
+    let userId  = UserId . fromIntegral $ cfgAgentId
+
+    -- We first fetch the function from the configuration
+    listTickets <- asksZendeskLayer zlListAssignedTickets
+    printText   <- asksIOLayer iolPrintText
+
+    printText $ "Classifier is going to process tickets assign to: " <> email
+    tickets     <- listTickets userId
+
+    printText $ "There are " <> show (length tickets) <> " tickets."
+
+    pure tickets
+
 fetchTickets :: App ()
 fetchTickets = do
     sortedTicketIds <- listAndSortTickets
     mapM_ (putTextLn . show) sortedTicketIds
     putTextLn "All the tickets has been processed."
 
-<<<<<<< HEAD
-=======
-
-showStatistics :: App ()
-showStatistics = do
-    cfg <- ask
-
-    let email   = cfgEmail cfg
-    let userId  = UserId . fromIntegral $ cfgAgentId cfg
-
-    -- We first fetch the function from the configuration
-    listTickets <- asksZendeskLayer zlListAssignedTickets
-
-    putTextLn $ "Classifier is going to gather ticket information assigned to: " <> email
-
-    tickets     <- listTickets userId
-    pure () -- TODO(ks): Implement anew.
-
->>>>>>> 378bfea005d7bd8d961b9891b16df3600e7bd402
 listAndSortTickets :: App [TicketInfo]
 listAndSortTickets = do
 
@@ -154,7 +151,6 @@ listAndSortTickets = do
     printText $ "Classifier is going to process tickets assign to: " <> email
 
     tickets     <- listTickets userId
-
     let filteredTicketIds = filterAnalyzedTickets tickets
     let sortedTicketIds   = sortBy compare filteredTicketIds
 
@@ -163,10 +159,7 @@ listAndSortTickets = do
 
     pure sortedTicketIds
 
-<<<<<<< HEAD
-=======
 
->>>>>>> 378bfea005d7bd8d961b9891b16df3600e7bd402
 -- | Read CSV file and setup knowledge base
 setupKnowledgebaseEnv :: FilePath -> IO [Knowledge]
 setupKnowledgebaseEnv path = do
@@ -189,11 +182,6 @@ extractEmailAddress ticketId = do
     liftIO $ appendFile "emailAddress.txt" (emailAddress <> "\n")
     liftIO $ putTextLn emailAddress
 
--- | Get assigned tickets
-getAssignedTickets :: App [TicketInfo]
-getAssignedTickets = do
-    listTickets <- asksZendeskLayer zlListTickets
-    listTickets Assigned
 
 -- | Process specifig ticket id (can be used for testing) only inspects the one's with logs
 -- TODO(ks): Switch to `(MonadReader Config m)`, pure function?
@@ -291,8 +279,6 @@ inspectAttachment ticketInfo@TicketInfo{..} att = do
                         , zrTags        = [renderTicketStatus NoKnownIssue]
                         , zrIsPublic    = cfgIsCommentPublic
                         }
-<<<<<<< HEAD
-=======
 
 -- | Filter analyzed tickets
 filterAnalyzedTickets :: [TicketInfo] -> [TicketInfo]
@@ -314,4 +300,4 @@ filterAnalyzedTickets ticketsInfo =
     isTicketBlacklisted :: TicketInfo -> Bool
     isTicketBlacklisted TicketInfo{..} = tiId `notElem` [TicketId 9377,TicketId 10815]
 
->>>>>>> 378bfea005d7bd8d961b9891b16df3600e7bd402
+

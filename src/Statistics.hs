@@ -2,24 +2,21 @@ module Statistics
     (showStatistics) where
 
 import           Universum
-import           Zendesk (App, Attachment (..), Comment (..), Config (..),
-                          TicketInfo (..),
-                          ZendeskLayer (..), asksZendeskLayer)
-import           Common (filterTicketsByStatus,
-                         filterTicketsWithAttachments, filterAnalyzedTickets,
-                         sortTickets)
+import           DataSource (App, Attachment (..), Comment (..),
+                             Config (..),
+                             TicketInfo (..),
+                             UserId (..), ZendeskLayer (..),
+                             asksZendeskLayer
+                             )
 -----------------------------------------------------------
 -- Functions
 ------------------------------------------------------------
 
 -- | Show ticket statistics
-showStatistics :: [TicketInfo] -> App ()
+showStatistics :: App [TicketInfo] -> App ()
 showStatistics tickets = do
-    cfg <- ask
-    putTextLn $ "Classifier has gathered ticket information assigned to: " <> cfgEmail cfg
-    showTicketCategoryCount tickets
-    liftIO $ printTicketCountMessage tickets (cfgEmail cfg)
-    showTicketWithAttachments tickets
+    tickets >>= showTicketCategoryCount
+    tickets >>= showTicketWithAttachments
 
 -- | Show all Tickets with Attachments
 showTicketWithAttachments :: [TicketInfo] -> App ()
@@ -58,21 +55,23 @@ showCommentAttachments comment = do
 showTicketAttachments :: TicketInfo -> App ()
 showTicketAttachments ticket = do
     putText "Ticket #: "
-    (putTextLn . show) (ticketId ticket)
+    (putTextLn . show) (tiId ticket)
     getTicketComments <- asksZendeskLayer zlGetTicketComments
-    comments <-  getTicketComments (ticketId ticket)
+    comments <-  getTicketComments (tiId ticket)
     mapM_ showCommentAttachments (comments)
 
--- | Print how many tickets are assinged, analyzed, and unanalyzed
-printTicketCountMessage :: [TicketInfo] -> Text -> IO ()
-printTicketCountMessage tickets email = do
-    let ticketCount = length tickets
-    putTextLn $ "There are currently " <> show ticketCount
-        <> " tickets in the system assigned to " <> email
-    let filteredTicketCount = length $ filterAnalyzedTickets tickets
-    putTextLn $ show (ticketCount - filteredTicketCount)
-        <> " tickets has been analyzed by the classifier."
-    putTextLn $ show filteredTicketCount <> " tickets are not analyzed."
-    putTextLn "Below are statistics:"
-    let tagGroups = sortTickets tickets
-    mapM_ (\(tag, count) -> putTextLn $ tag <> ": " <> show count) tagGroups
+filterTicketsByStatus :: [TicketInfo] -> Text -> [TicketInfo]
+filterTicketsByStatus tickets status =  do
+    tickets
+    --filter ((== status) . ticketStatus) tickets
+
+-- | Remove tickets without Attachments
+filterTicketsWithAttachments :: [TicketInfo] -> App [TicketInfo]
+filterTicketsWithAttachments tickets = do
+    let checkTicketForAttachments :: TicketInfo -> App Bool
+        checkTicketForAttachments ticket = do
+          getTicketComments <- asksZendeskLayer zlGetTicketComments
+          comments <- getTicketComments (tiId ticket)
+          commentsWithAttachments <- pure $ (filter (\comment -> length (cAttachments comment) > 0) comments)
+          pure $ not (null commentsWithAttachments)
+    filterM (\ticket -> checkTicketForAttachments ticket) tickets
