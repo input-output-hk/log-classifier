@@ -383,7 +383,7 @@ instance Arbitrary TicketTags where
 
 -- TODO(ks): Just "open" for now, enumerate with @elements@ later.
 instance Arbitrary TicketStatus where
-    arbitrary = TicketStatus <$> elements ["new", "on-hold", "open","solved", "pending"]
+    arbitrary = TicketStatus <$> elements ["new", "hold", "open","solved", "pending"]
 
 instance Arbitrary TicketInfo where
     arbitrary = do
@@ -519,7 +519,6 @@ parseTickets = withObject "tickets" $ \o ->
     TicketList
         <$> o .: "tickets"
         <*> o .: "next_page"
-
 -- | TODO(ks): This seems like it's not required.
 -- Parse comments
 parseComments :: Value -> Parser [ Comment ]

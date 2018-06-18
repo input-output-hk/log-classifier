@@ -294,9 +294,12 @@ filterAnalyzedTickets ticketsInfo =
     isTicketAnalyzed :: TicketInfo -> Bool
     isTicketAnalyzed TicketInfo{..} = (renderTicketStatus AnalyzedByScriptV1_0) `notElem` (getTicketTags tiTags)
     -- ^ This is showing that something is wrong...
+    
+    unsolvedTicketStatus :: [TicketStatus]
+    unsolvedTicketStatus = TicketStatus <$> ["new", "open", "hold", "pending"]
 
     isTicketOpen :: TicketInfo -> Bool
-    isTicketOpen TicketInfo{..} = tiStatus == TicketStatus "open" -- || ticketStatus == "new"
+    isTicketOpen TicketInfo{..} = tiStatus `elem` unsolvedTicketStatus-- || ticketStatus == "new"
 
     -- | If we have a ticket we are having issues with...
     isTicketBlacklisted :: TicketInfo -> Bool

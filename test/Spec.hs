@@ -255,10 +255,10 @@ validShowURLSpec =
 filterAnalyzedTicketsSpec :: Spec
 filterAnalyzedTicketsSpec =
     describe "filterAnalyzedTickets" $ modifyMaxSuccess (const 200) $ do
-        it "should not filter tickets with status 'open', 'on-hold', 'pending', and 'new'" $
+        it "should not filter tickets with status 'open', 'hold', 'pending', and 'new'" $
             forAll (listOf arbitrary) $ \(ticketInfos :: [TicketInfo]) ->
                 let unsolvedTicketStatus :: [TicketStatus]
-                    unsolvedTicketStatus = TicketStatus <$> ["new", "on-hold", "open", "pending"]
+                    unsolvedTicketStatus = TicketStatus <$> ["new", "hold", "open", "pending"]
                 in all (\ticket -> tiStatus ticket `elem` unsolvedTicketStatus) ticketInfos ==>
                     length (filterAnalyzedTickets ticketInfos) `shouldBe` length ticketInfos
 
