@@ -31,6 +31,7 @@ module DataSource.Types
     , parseComments
     , parseTicket
     , parseTickets
+    , parseSearchResult
     , renderTicketStatus
     -- * General configuration
     , Config (..)
@@ -281,7 +282,7 @@ newtype CommentOuter = CommentOuter {
 data Ticket = Ticket
     { tComment  :: !Comment
     -- ^ Ticket comment
-    , tAssignee :: !Integer
+    , tAssignee :: Maybe Integer -- Don't change the assignee
     -- ^ Assignee of the ticket
     , tTag      :: ![Text]
     -- ^ Tags attached to ticket
@@ -518,6 +519,12 @@ parseTickets :: Value -> Parser TicketList
 parseTickets = withObject "tickets" $ \o ->
     TicketList
         <$> o .: "tickets"
+        <*> o .: "next_page"
+
+parseSearchResult :: Value -> Parser TicketList
+parseSearchResult = withObject "tickets" $ \o ->
+    TicketList
+        <$> o .: "results"
         <*> o .: "next_page"
 -- | TODO(ks): This seems like it's not required.
 -- Parse comments

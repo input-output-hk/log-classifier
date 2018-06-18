@@ -145,7 +145,7 @@ postTicketComment ZendeskResponse{..} = do
     let req2 = addJsonBody
                    (Ticket
                        (Comment (CommentId 0) (CommentBody $ "**Log classifier**\n\n" <> zrComment) [] zrIsPublic (cfgAgentId cfg))
-                       (cfgAssignTo cfg)
+                       Nothing
                        (renderTicketStatus AnalyzedByScriptV1_0:zrTags)
                    )
                    req1
