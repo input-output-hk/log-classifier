@@ -2,13 +2,16 @@ module Main where
 
 import           Universum
 
-import           Test.Hspec (Spec, hspec, describe, it, pending)
+import           Test.Hspec (Spec, describe, hspec, it, pending)
 import           Test.Hspec.QuickCheck (modifyMaxSuccess)
-import           Test.QuickCheck (arbitrary, forAll, listOf1)
-import           Test.QuickCheck.Monadic (monadicIO, pre, run, assert)
+import           Test.QuickCheck (Gen, arbitrary, forAll, listOf1, property)
+import           Test.QuickCheck.Monadic (assert, monadicIO, pre, run)
 
-import           DataSource
-import           Lib
+import           DataSource (App, Comment (..), Config (..), IOLayer (..), TicketId (..),
+                             TicketInfo (..), UserId (..), ZendeskAPIUrl (..), ZendeskLayer (..),
+                             ZendeskResponse (..), basicIOLayer, defaultConfig, emptyZendeskLayer,
+                             runApp, showURL)
+import           Lib (listAndSortTickets, processTicket)
 
 -- TODO(ks): What we are really missing is a realistic @Gen ZendeskLayer m@.
 
@@ -19,6 +22,7 @@ main = hspec spec
 spec :: Spec
 spec =
     describe "Zendesk" $ do
+        validShowURLSpec
         listAndSortTicketsSpec
         processTicketSpec
         processTicketsSpec
@@ -94,9 +98,9 @@ listAndSortTicketsSpec =
 processTicketSpec :: Spec
 processTicketSpec =
     describe "processTicket" $ modifyMaxSuccess (const 200) $ do
-        it "processes ticket, no comments" $ do
+        it "processes ticket, no comments" $
             forAll arbitrary $ \(ticketInfo :: TicketInfo) ->
-                forAll (listOf1 arbitrary) $ \(listTickets) -> do
+                forAll (listOf1 arbitrary) $ \(listTickets) ->
 
                     monadicIO $ do
 
@@ -112,24 +116,20 @@ processTicketSpec =
                         let stubbedConfig :: Config
                             stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
 
-                        let appExecution :: IO [ZendeskResponse]
+                        let appExecution :: IO (Maybe ZendeskResponse)
                             appExecution = runApp (processTicket . tiId $ ticketInfo) stubbedConfig
 
                         zendeskComments <- run appExecution
 
                         -- Check we have some comments.
-                        assert $ length zendeskComments == 0
+                        assert $ isNothing zendeskComments
 
-        it "processes ticket, with comments" $ do
+        it "processes ticket, with comments" $
             forAll arbitrary $ \(ticketInfo :: TicketInfo) ->
-                forAll (listOf1 arbitrary) $ \(listTickets) -> do
-                forAll (listOf1 arbitrary) $ \(comments) -> do
-
+                forAll (listOf1 arbitrary) $ \(listTickets) ->
+                forAll (listOf1 arbitrary) $ \(comments) ->
 
                     monadicIO $ do
-
-                        -- A simple precondition.
-                        pre $ any (\comment -> length (cAttachments comment) > 0) comments
 
                         let stubbedZendeskLayer :: ZendeskLayer App
                             stubbedZendeskLayer =
@@ -144,19 +144,113 @@ processTicketSpec =
                         let stubbedConfig :: Config
                             stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
 
-                        let appExecution :: IO [ZendeskResponse]
+                        let appExecution :: IO (Maybe ZendeskResponse)
                             appExecution = runApp (processTicket . tiId $ ticketInfo) stubbedConfig
 
-                        zendeskResponses <- run appExecution
+                        zendeskResponse <- run appExecution
 
                         -- Check we have some comments.
-                        assert $ length zendeskResponses > 0
+                        assert $ isJust zendeskResponse
+
+        it "processes ticket, with no attachments" $
+            forAll (listOf1 genCommentWithNoAttachment) $ \(commentsWithoutAttachment :: [Comment]) ->
+                forAll arbitrary $ \(ticketInfo :: TicketInfo) ->
+                    monadicIO $ do
+
+                    let stubbedZendeskLayer :: ZendeskLayer App
+                        stubbedZendeskLayer =
+                            emptyZendeskLayer
+                                { zlGetTicketComments = \_ -> pure commentsWithoutAttachment
+                                , zlGetTicketInfo     = \_ -> pure $ Just ticketInfo
+                                , zlPostTicketComment = \_ -> pure ()
+                                }
+
+                    let stubbedConfig :: Config
+                        stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
+
+                    let appExecution :: IO (Maybe ZendeskResponse)
+                        appExecution = runApp (processTicket . tiId $ ticketInfo) stubbedConfig
+
+                    zendeskResponse <- run appExecution
+
+                    assert $ isJust zendeskResponse
+                    assert $ isResponseTaggedWithNoLogs zendeskResponse
+
+        it "processes ticket, with attachments" $
+            forAll (listOf1 arbitrary) $ \(comments :: [Comment]) ->
+                forAll arbitrary $ \(ticketInfo :: TicketInfo) ->
+                    monadicIO $ do
+
+                    pre $ any (not . null . cAttachments) comments
+
+                    let stubbedZendeskLayer :: ZendeskLayer App
+                        stubbedZendeskLayer =
+                            emptyZendeskLayer
+                                { zlGetTicketComments = \_ -> pure comments
+                                , zlGetTicketInfo     = \_ -> pure $ Just ticketInfo
+                                , zlPostTicketComment = \_ -> pure ()
+                                , zlGetAttachment     = \_ -> pure $ Just mempty
+                                }
+
+                    let stubbedConfig :: Config
+                        stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
+
+                    let appExecution :: IO (Maybe ZendeskResponse)
+                        appExecution = runApp (processTicket . tiId $ ticketInfo) stubbedConfig
+
+                    zendeskResponse <- run appExecution
+
+                    assert $ isJust zendeskResponse
+                    assert $ not (isResponseTaggedWithNoLogs zendeskResponse)
+
+isResponseTaggedWithNoLogs :: Maybe ZendeskResponse -> Bool
+isResponseTaggedWithNoLogs (Just response) = "no-log-files" `elem` zrTags response
+isResponseTaggedWithNoLogs Nothing         = False
+
+genCommentWithNoAttachment :: Gen Comment
+genCommentWithNoAttachment = Comment
+    <$> arbitrary
+    <*> arbitrary
+    <*> return mempty
+    <*> arbitrary
+    <*> arbitrary
 
 processTicketsSpec :: Spec
 processTicketsSpec =
     describe "processTickets" $ do
         it "doesn't process tickets" $ do
             pending
+
+-- Simple tests to cover it works.
+validShowURLSpec :: Spec
+validShowURLSpec =
+    describe "showURL" $ modifyMaxSuccess (const 10000) $ do
+        it "returns valid UserRequestedTicketsURL" $ do
+            property $ \userId ->
+                let typedURL    = showURL $ UserRequestedTicketsURL userId
+                    untypedURL  = "/users/" <> show (getUserId userId) <> "/tickets/requested.json"
+                in  typedURL == untypedURL
+        it "returns valid UserAssignedTicketsURL" $ do
+            property $ \userId ->
+                let typedURL    = showURL $ UserAssignedTicketsURL userId
+                    untypedURL  = "/users/" <> show (getUserId userId) <> "/tickets/assigned.json"
+                in  typedURL == untypedURL
+        it "returns valid TicketsURL" $ do
+            property $ \ticketId ->
+                let typedURL    = showURL $ TicketsURL ticketId
+                    untypedURL  = "/tickets/" <> show (getTicketId ticketId) <> ".json"
+                in  typedURL == untypedURL
+        it "returns valid TicketAgentURL" $ do
+            property $ \ticketId ->
+                let typedURL    = showURL $ TicketAgentURL ticketId
+                    untypedURL  = "https://iohk.zendesk.com/agent/tickets/" <> show (getTicketId ticketId)
+                in  typedURL == untypedURL
+        it "returns valid TicketCommentsURL" $ do
+            property $ \ticketId ->
+                let typedURL    = showURL $ TicketCommentsURL ticketId
+                    untypedURL  = "/tickets/" <> show (getTicketId ticketId) <> "/comments.json"
+                in  typedURL == untypedURL
+
 
 filterTicketsByStatusSpec :: Spec
 filterTicketsByStatusSpec =

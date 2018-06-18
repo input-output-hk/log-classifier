@@ -29,6 +29,7 @@ module DataSource.Types
     , UserName (..)
     , UserEmail (..)
     , parseComments
+    , parseTicket
     , parseTickets
     , renderTicketStatus
     -- * General configuration
@@ -38,6 +39,8 @@ module DataSource.Types
     , assignToPath
     , asksZendeskLayer
     , asksIOLayer
+    , ZendeskAPIUrl (..)
+    , showURL
     , App
     , runApp
     ) where
@@ -143,6 +146,43 @@ data IOLayer m = IOLayer
     , iolReadFile               :: FilePath -> m String
     }
 
+------------------------------------------------------------
+-- Class and instances to display in URL
+------------------------------------------------------------
+
+-- Let's keep this simple for now. Not much use for it now since
+-- we can't simply extend it using @ZendeskAPIUrl@, but let's worry
+-- about that later.
+class ToURL a where
+    toURL :: a -> Text
+
+instance ToURL UserId where
+    toURL (UserId uId) = show uId
+
+instance ToURL TicketId where
+    toURL (TicketId ticketId) = show ticketId
+
+data ZendeskAPIUrl
+    = UserRequestedTicketsURL UserId
+    | UserAssignedTicketsURL UserId
+    | TicketsURL TicketId
+    | TicketAgentURL TicketId
+    | UserInfoURL
+    | TicketCommentsURL TicketId
+    deriving (Eq, Generic)
+
+showURL :: ZendeskAPIUrl -> Text
+showURL (UserRequestedTicketsURL userId)    = "/users/" <> toURL userId <> "/tickets/requested.json"
+showURL (UserAssignedTicketsURL userId)     = "/users/" <> toURL userId <> "/tickets/assigned.json"
+showURL (TicketsURL ticketId)               = "/tickets/" <> toURL ticketId <> ".json"
+showURL (TicketAgentURL ticketId)           = "https://iohk.zendesk.com/agent/tickets/" <> toURL ticketId
+showURL (UserInfoURL)                       = "/users/me.json"
+showURL (TicketCommentsURL ticketId)        = "/tickets/" <> toURL ticketId <> "/comments.json"
+
+------------------------------------------------------------
+-- Types
+------------------------------------------------------------
+
 newtype AttachmentId = AttachmentId
     { getAttachmentId :: Int
     } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
@@ -166,6 +206,9 @@ data Attachment = Attachment
     , aSize        :: !Int
     -- ^ Attachment size
     } deriving (Eq, Show)
+
+instance Ord Attachment where
+    compare a1 a2 = compare (aId a1) (aId a2)
 
 instance Arbitrary Attachment where
     arbitrary = Attachment
@@ -217,6 +260,8 @@ data Comment = Comment
     -- ^ Author of comment
     } deriving (Eq, Show)
 
+instance Ord Comment where
+    compare c1 c2 = compare (cId c1) (cId c2)
 
 instance Arbitrary Comment where
     arbitrary = Comment
@@ -273,12 +318,12 @@ newtype TicketStatus = TicketStatus
 
 
 data TicketInfo = TicketInfo
-    { tiId          :: !TicketId     -- ^ Id of an ticket
-    , tiRequesterId :: !UserId       -- ^ Id of the requester
-    , tiAssigneeId  :: !UserId       -- ^ Id of the asignee
-    , tiUrl         :: !TicketURL    -- ^ The ticket URL
-    , tiTags        :: !TicketTags   -- ^ Tags associated with ticket
-    , tiStatus      :: !TicketStatus -- ^ The status of the ticket
+    { tiId          :: !TicketId        -- ^ Id of an ticket
+    , tiRequesterId :: !UserId          -- ^ Id of the requester
+    , tiAssigneeId  :: !(Maybe UserId)  -- ^ Id of the asignee
+    , tiUrl         :: !TicketURL       -- ^ The ticket URL
+    , tiTags        :: !TicketTags      -- ^ Tags associated with ticket
+    , tiStatus      :: !TicketStatus    -- ^ The status of the ticket
     } deriving (Eq, Show, Generic)
 
 
@@ -369,12 +414,14 @@ data TicketTag
     = AnalyzedByScript      -- ^ Ticket has been analyzed
     | AnalyzedByScriptV1_0  -- ^ Ticket has been analyzed by the version 1.0
     | NoKnownIssue          -- ^ Ticket had no known issue
+    | NoLogAttached         -- ^ Log file not attached
 
 -- | Defining it's own show instance to use it as tags
 renderTicketStatus :: TicketTag -> Text
 renderTicketStatus AnalyzedByScript     = "analyzed-by-script"
 renderTicketStatus AnalyzedByScriptV1_0 = "analyzed-by-script-v1.0"
 renderTicketStatus NoKnownIssue         = "no-known-issues"
+renderTicketStatus NoLogAttached        = "no-log-files"
 
 -- | JSON Parsing
 instance FromJSON Comment where
@@ -462,6 +509,9 @@ instance ToJSON CommentOuter where
         object  [ "comment"         .= c
                 ]
 
+
+parseTicket :: Value -> Parser TicketInfo
+parseTicket = withObject "ticket" $ \o -> o .: "ticket"
 
 -- | Parse tickets
 parseTickets :: Value -> Parser TicketList

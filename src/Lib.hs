@@ -1,13 +1,14 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards   #-}
 
 module Lib
     ( runZendeskMain
     , collectEmails
+    , getZendeskResponses
     , processTicket
     , processTickets
     , fetchTickets
+    , showStatistics
     , listAndSortTickets
     ) where
 
@@ -25,7 +26,7 @@ import           DataSource (App, Attachment (..), AttachmentContent (..), Comme
                              renderTicketStatus, runApp, tokenPath)
 import           LogAnalysis.Classifier (extractErrorCodes, extractIssuesFromLogs,
                                          prettyFormatAnalysis, prettyFormatLogReadError,
-                                         prettyFormatNoIssues)
+                                         prettyFormatNoIssues, prettyFormatNoLogs)
 import           LogAnalysis.KnowledgeCSVParser (parseKnowLedgeBase)
 import           LogAnalysis.Types (ErrorCode (..), Knowledge, renderErrorCode, setupAnalysis)
 import           Util (extractLogsFromZip)
@@ -78,8 +79,8 @@ collectEmails = do
     mapM_ extractEmailAddress ticketIds
 
 
-processTicket :: TicketId -> App [ZendeskResponse]
-processTicket ticketId = do
+processTicket :: TicketId -> App (Maybe ZendeskResponse)
+processTicket tId = do
 
     -- We first fetch the function from the configuration
     getTicketInfo       <- asksZendeskLayer zlGetTicketInfo
@@ -87,20 +88,17 @@ processTicket ticketId = do
 
     printText "Processing single ticket"
 
-    ticketInfoM         <- getTicketInfo ticketId
-
-    -- TODO(ks): Better exception handling.
-    let ticketInfo      = fromMaybe (error "Missing ticket info!") ticketInfoM
-
-    attachments         <- getTicketAttachments ticketInfo
-
-    zendeskResponse     <- mapM (inspectAttachment ticketInfo) attachments
-
+    mTicketInfo         <- getTicketInfo tId
+    getTicketComments   <- asksZendeskLayer zlGetTicketComments
+    comments      <- getTicketComments tId
+    let attachments = getAttachmentsFromComment comments
+    let ticketInfo  = fromMaybe (error "No ticket info") mTicketInfo
+    zendeskResponse     <- getZendeskResponses comments attachments ticketInfo
     postTicketComment   <- asksZendeskLayer zlPostTicketComment
-    _                   <- mapM postTicketComment zendeskResponse
+    whenJust zendeskResponse postTicketComment
 
     printText "Process finished, please see the following url"
-    printText $ "https://iohk.zendesk.com/agent/tickets/" <> show ticketId
+    printText $ "https://iohk.zendesk.com/agent/tickets/" <> show tId
 
     pure zendeskResponse
 
@@ -182,20 +180,6 @@ extractEmailAddress ticketId = do
     liftIO $ appendFile "emailAddress.txt" (emailAddress <> "\n")
     liftIO $ putTextLn emailAddress
 
-
--- | Process specifig ticket id (can be used for testing) only inspects the one's with logs
--- TODO(ks): Switch to `(MonadReader Config m)`, pure function?
-getTicketAttachments :: TicketInfo -> App [Attachment]
-getTicketAttachments TicketInfo{..} = do
-
-    -- Get the function from the configuration
-    getTicketComments   <- asksZendeskLayer zlGetTicketComments
-    comments            <- getTicketComments tiId
-
-    -- However, if we want this to be more composable...
-    pure $ getAttachmentsFromComment comments
-
-
 -- | A pure function for fetching @Attachment@ from @Comment@.
 getAttachmentsFromComment :: [Comment] -> [Attachment]
 getAttachmentsFromComment comments = do
@@ -218,32 +202,44 @@ getAttachmentsFromComment comments = do
     isAttachmentZip :: Attachment -> Bool
     isAttachmentZip attachment = "application/zip" == aContentType attachment
 
+-- | Get zendesk responses
+-- | Returns with maybe because it could return no response
+getZendeskResponses :: [Comment] -> [Attachment] -> TicketInfo -> App (Maybe ZendeskResponse)
+getZendeskResponses comments attachments ticketInfo
+    | not (null attachments) = inspectAttachments ticketInfo attachments
+    | not (null comments)    = Just <$> responseNoLogs ticketInfo
+    | otherwise              = return Nothing
+
+-- | Inspect only the latest attachment. We could propagate this
+-- @Maybe@ upwards or use an @Either@ which will go hand in hand
+-- with the idea that we need to improve our exception handling.
+inspectAttachments :: TicketInfo -> [Attachment] -> App (Maybe ZendeskResponse)
+inspectAttachments ticketInfo attachments = runMaybeT $ do
+
+    config          <- ask
+    getAttachment   <- asksZendeskLayer zlGetAttachment
+
+    let lastAttach :: Maybe Attachment
+        lastAttach = safeHead . reverse . sort $ attachments
+
+    lastAttachment  <- MaybeT . pure $ lastAttach
+    att             <- MaybeT $ getAttachment lastAttachment
+
+    pure $ inspectAttachment config ticketInfo att
+
 
 -- | Given number of file of inspect, knowledgebase and attachment,
 -- analyze the logs and return the results.
---
--- The results are following:
---
--- __(comment, tags, bool of whether is should be public comment)__
-inspectAttachment :: TicketInfo -> Attachment -> App ZendeskResponse
-inspectAttachment ticketInfo@TicketInfo{..} att = do
+inspectAttachment :: Config -> TicketInfo -> AttachmentContent -> ZendeskResponse
+inspectAttachment Config{..} ticketInfo@TicketInfo{..} attContent = do
 
-    Config{..}      <- ask
-
-    getAttachment   <- asksZendeskLayer zlGetAttachment
-    printText       <- asksIOLayer iolPrintText
-
-    attachment     <- fromMaybe (error "Missing Attachment content!") <$> getAttachment att
-
-    let rawLog      = getAttachmentContent attachment
+    let rawLog      = getAttachmentContent attContent
     let results     = extractLogsFromZip cfgNumOfLogsToAnalyze rawLog
 
     case results of
         Left _ -> do
 
-            printText . renderErrorCode $ SentLogCorrupted
-
-            pure ZendeskResponse
+            ZendeskResponse
                 { zrTicketId    = tiId
                 , zrComment     = prettyFormatLogReadError ticketInfo
                 , zrTags        = [renderErrorCode SentLogCorrupted]
@@ -258,11 +254,7 @@ inspectAttachment ticketInfo@TicketInfo{..} att = do
                     let errorCodes = extractErrorCodes analysisResult
                     let commentRes = prettyFormatAnalysis analysisResult ticketInfo
 
-                    let fErrorCode = foldr (\errorCode acc -> errorCode <> ";" <> acc) "" errorCodes
-
-                    printText fErrorCode
-
-                    pure ZendeskResponse
+                    ZendeskResponse
                         { zrTicketId    = tiId
                         , zrComment     = commentRes
                         , zrTags        = errorCodes
@@ -271,14 +263,22 @@ inspectAttachment ticketInfo@TicketInfo{..} att = do
 
                 Left _ -> do
 
-                    printText . renderTicketStatus $ NoKnownIssue
-
-                    pure ZendeskResponse
+                    ZendeskResponse
                         { zrTicketId    = tiId
                         , zrComment     = prettyFormatNoIssues ticketInfo
                         , zrTags        = [renderTicketStatus NoKnownIssue]
                         , zrIsPublic    = cfgIsCommentPublic
                         }
+
+responseNoLogs :: TicketInfo -> App ZendeskResponse
+responseNoLogs TicketInfo{..} = do
+    Config {..} <- ask
+    pure ZendeskResponse
+             { zrTicketId = tiId
+             , zrComment  = prettyFormatNoLogs
+             , zrTags     = [renderTicketStatus NoLogAttached]
+             , zrIsPublic = cfgIsCommentPublic
+             }
 
 -- | Filter analyzed tickets
 filterAnalyzedTickets :: [TicketInfo] -> [TicketInfo]
@@ -287,7 +287,10 @@ filterAnalyzedTickets ticketsInfo =
   where
     ticketsFilter :: TicketInfo -> Bool
     ticketsFilter ticketInfo =
-        isTicketAnalyzed ticketInfo && isTicketOpen ticketInfo && isTicketBlacklisted ticketInfo
+           isTicketAnalyzed ticketInfo
+        && isTicketOpen ticketInfo
+        && isTicketBlacklisted ticketInfo
+        && isTicketInGoguenTestnet ticketInfo
 
     isTicketAnalyzed :: TicketInfo -> Bool
     isTicketAnalyzed TicketInfo{..} = (renderTicketStatus AnalyzedByScriptV1_0) `notElem` (getTicketTags tiTags)
@@ -299,5 +302,8 @@ filterAnalyzedTickets ticketsInfo =
     -- | If we have a ticket we are having issues with...
     isTicketBlacklisted :: TicketInfo -> Bool
     isTicketBlacklisted TicketInfo{..} = tiId `notElem` [TicketId 9377,TicketId 10815]
+
+    isTicketInGoguenTestnet :: TicketInfo -> Bool
+    isTicketInGoguenTestnet TicketInfo{..} = "goguen_testnets" `notElem` getTicketTags tiTags
 
 

@@ -20,10 +20,10 @@ import           Network.HTTP.Simple (Request, addRequestHeader, getResponseBody
 
 import           DataSource.Types (Attachment (..), AttachmentContent (..), Comment (..),
                                    CommentBody (..), CommentId (..), Config (..), IOLayer (..),
-                                   Ticket (..), TicketId, TicketInfo (..), TicketList (..),
-                                   TicketTag (..), User, UserId, ZendeskLayer (..),
-                                   ZendeskResponse (..), parseComments, parseTickets,
-                                   renderTicketStatus)
+                                   Ticket (..), TicketId (..), TicketInfo (..), TicketList (..),
+                                   TicketTag (..), User, UserId (..), ZendeskAPIUrl (..),
+                                   ZendeskLayer (..), ZendeskResponse (..), parseComments,
+                                   parseTicket, parseTickets, renderTicketStatus, showURL)
 
 
 -- | The default configuration.
@@ -80,8 +80,9 @@ getTicketInfo
 getTicketInfo ticketId = do
     cfg <- ask
 
-    let req = apiRequest cfg ("tickets/" <> show ticketId <> ".json")
-    liftIO $ apiCall parseJSON req
+    let url = showURL $ TicketsURL ticketId
+    let req = apiRequest cfg url
+    liftIO $ Just <$> apiCall parseTicket req
 
 
 -- | Return list of ticketIds that has been requested by config user.
@@ -92,8 +93,8 @@ listRequestedTickets
 listRequestedTickets userId = do
     cfg <- ask
 
-    let url     = "/users/" <> show userId <> "/tickets/requested.json"
-    let req     = apiRequest cfg url
+    let url = showURL $ UserRequestedTicketsURL userId
+    let req = apiRequest cfg url
 
     iterateTicketPages req
 
@@ -105,8 +106,8 @@ listAssignedTickets
 listAssignedTickets userId = do
     cfg <- ask
 
-    let url     = "/users/" <> show userId <> "/tickets/assigned.json"
-    let req     = apiRequest cfg url
+    let url = showURL $ UserAssignedTicketsURL userId
+    let req = apiRequest cfg url
 
     iterateTicketPages req
 
@@ -139,7 +140,8 @@ postTicketComment
 postTicketComment ZendeskResponse{..} = do
     cfg <- ask
 
-    let req1 = apiRequest cfg ("tickets/" <> show zrTicketId <> ".json")
+    let url  = showURL $ TicketsURL zrTicketId
+    let req1 = apiRequest cfg url
     let req2 = addJsonBody
                    (Ticket
                        (Comment (CommentId 0) (CommentBody $ "**Log classifier**\n\n" <> zrComment) [] zrIsPublic (cfgAgentId cfg))
@@ -155,7 +157,10 @@ _getUser
     => m User
 _getUser = do
     cfg <- ask
-    let req = apiRequest cfg "users/me.json"
+
+    let url = showURL UserInfoURL
+    let req = apiRequest cfg url
+
     liftIO $ apiCall parseJSON req
 
 -- | Given attachmentUrl, return attachment in bytestring
@@ -175,7 +180,10 @@ getTicketComments
     -> m [Comment]
 getTicketComments tId = do
     cfg <- ask
-    let req = apiRequest cfg ("tickets/" <> show tId <> "/comments.json")
+
+    let url = showURL $ TicketCommentsURL tId
+    let req = apiRequest cfg url
+
     liftIO $ apiCall parseComments req
 
 ------------------------------------------------------------
