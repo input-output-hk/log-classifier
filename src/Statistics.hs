@@ -3,9 +3,8 @@ module Statistics
 
 import           Universum
 import           DataSource (App, Attachment (..), Comment (..),
-                             Config (..),
                              TicketInfo (..),
-                             UserId (..), ZendeskLayer (..),
+                             ZendeskLayer (..),
                              asksZendeskLayer
                              )
 -----------------------------------------------------------
@@ -62,8 +61,7 @@ showTicketAttachments ticket = do
 
 filterTicketsByStatus :: [TicketInfo] -> Text -> [TicketInfo]
 filterTicketsByStatus tickets status =  do
-    tickets
-    --filter ((== status) . ticketStatus) tickets
+    filter ((== status) . tiStatus) tickets
 
 -- | Remove tickets without Attachments
 filterTicketsWithAttachments :: [TicketInfo] -> App [TicketInfo]
