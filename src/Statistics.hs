@@ -7,6 +7,7 @@ import DataSource
   , Attachment(..)
   , Comment(..)
   , TicketInfo(..)
+  , TicketId(..)
   , TicketStatus(..)
   , ZendeskLayer(..)
   , asksZendeskLayer
@@ -60,7 +61,7 @@ showCommentAttachments comment = do
 showTicketAttachments :: TicketInfo -> App ()
 showTicketAttachments ticket = do
     putText "Ticket #: "
-    (putTextLn . show) (getTicketId tiId ticket)
+    putTextLn . show . getTicketId $ tiId ticket
     getTicketComments <- asksZendeskLayer zlGetTicketComments
     comments <-  getTicketComments (tiId ticket)
     mapM_ showCommentAttachments (comments)
