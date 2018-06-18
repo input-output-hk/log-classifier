@@ -20,6 +20,7 @@ wallet-db/
 wallet-new-db/
 db-*/
 wdb-*/
+*.db
 
 # Keys
 *.key

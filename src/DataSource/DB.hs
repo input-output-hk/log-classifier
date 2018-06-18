@@ -156,7 +156,6 @@ getTicketComments ticketId = do
     getCommentAttachments commentId = withProdDatabase $ \conn ->
         queryNamed conn "SELECT * FROM comment_attachments WHERE comment_id = :id" [":id" := commentId]
 
-
 getAttachmentContent :: Attachment -> IO (Maybe AttachmentContent)
 getAttachmentContent Attachment{..} = withProdDatabase $ \conn ->
     safeHead <$> queryNamed conn "SELECT * FROM attachment_content WHERE attachment_id = :id" [":id" := aId]

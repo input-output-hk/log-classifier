@@ -39,6 +39,8 @@ module DataSource.Types
     , assignToPath
     , asksZendeskLayer
     , asksIOLayer
+    , ZendeskAPIUrl (..)
+    , showURL
     , App
     , runApp
     ) where
@@ -143,6 +145,43 @@ data IOLayer m = IOLayer
     { iolPrintText              :: Text -> m ()
     , iolReadFile               :: FilePath -> m String
     }
+
+------------------------------------------------------------
+-- Class and instances to display in URL
+------------------------------------------------------------
+
+-- Let's keep this simple for now. Not much use for it now since
+-- we can't simply extend it using @ZendeskAPIUrl@, but let's worry
+-- about that later.
+class ToURL a where
+    toURL :: a -> Text
+
+instance ToURL UserId where
+    toURL (UserId uId) = show uId
+
+instance ToURL TicketId where
+    toURL (TicketId ticketId) = show ticketId
+
+data ZendeskAPIUrl
+    = UserRequestedTicketsURL UserId
+    | UserAssignedTicketsURL UserId
+    | TicketsURL TicketId
+    | TicketAgentURL TicketId
+    | UserInfoURL
+    | TicketCommentsURL TicketId
+    deriving (Eq, Generic)
+
+showURL :: ZendeskAPIUrl -> Text
+showURL (UserRequestedTicketsURL userId)    = "/users/" <> toURL userId <> "/tickets/requested.json"
+showURL (UserAssignedTicketsURL userId)     = "/users/" <> toURL userId <> "/tickets/assigned.json"
+showURL (TicketsURL ticketId)               = "/tickets/" <> toURL ticketId <> ".json"
+showURL (TicketAgentURL ticketId)           = "https://iohk.zendesk.com/agent/tickets/" <> toURL ticketId
+showURL (UserInfoURL)                       = "/users/me.json"
+showURL (TicketCommentsURL ticketId)        = "/tickets/" <> toURL ticketId <> "/comments.json"
+
+------------------------------------------------------------
+-- Types
+------------------------------------------------------------
 
 newtype AttachmentId = AttachmentId
     { getAttachmentId :: Int
@@ -279,12 +318,12 @@ newtype TicketStatus = TicketStatus
 
 
 data TicketInfo = TicketInfo
-    { tiId          :: !TicketId     -- ^ Id of an ticket
-    , tiRequesterId :: !UserId       -- ^ Id of the requester
-    , tiAssigneeId  :: Maybe UserId  -- ^ Id of the asignee
-    , tiUrl         :: !TicketURL    -- ^ The ticket URL
-    , tiTags        :: !TicketTags   -- ^ Tags associated with ticket
-    , tiStatus      :: !TicketStatus -- ^ The status of the ticket
+    { tiId          :: !TicketId        -- ^ Id of an ticket
+    , tiRequesterId :: !UserId          -- ^ Id of the requester
+    , tiAssigneeId  :: !(Maybe UserId)  -- ^ Id of the asignee
+    , tiUrl         :: !TicketURL       -- ^ The ticket URL
+    , tiTags        :: !TicketTags      -- ^ Tags associated with ticket
+    , tiStatus      :: !TicketStatus    -- ^ The status of the ticket
     } deriving (Eq, Show, Generic)
 
 
