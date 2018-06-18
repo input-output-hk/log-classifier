@@ -166,6 +166,7 @@ data ZendeskAPIUrl
     = UserRequestedTicketsURL UserId
     | UserAssignedTicketsURL UserId
     | TicketsURL TicketId
+    | TicketAgentURL TicketId
     | UserInfoURL
     | TicketCommentsURL TicketId
     deriving (Eq, Generic)
@@ -174,6 +175,7 @@ showURL :: ZendeskAPIUrl -> Text
 showURL (UserRequestedTicketsURL userId)    = "/users/" <> toURL userId <> "/tickets/requested.json"
 showURL (UserAssignedTicketsURL userId)     = "/users/" <> toURL userId <> "/tickets/assigned.json"
 showURL (TicketsURL ticketId)               = "/tickets/" <> toURL ticketId <> ".json"
+showURL (TicketAgentURL ticketId)           = "https://iohk.zendesk.com/agent/tickets/" <> toURL ticketId
 showURL (UserInfoURL)                       = "/users/me.json"
 showURL (TicketCommentsURL ticketId)        = "/tickets/" <> toURL ticketId <> "/comments.json"
 
@@ -316,12 +318,12 @@ newtype TicketStatus = TicketStatus
 
 
 data TicketInfo = TicketInfo
-    { tiId          :: !TicketId     -- ^ Id of an ticket
-    , tiRequesterId :: !UserId       -- ^ Id of the requester
-    , tiAssigneeId  :: Maybe UserId  -- ^ Id of the asignee
-    , tiUrl         :: !TicketURL    -- ^ The ticket URL
-    , tiTags        :: !TicketTags   -- ^ Tags associated with ticket
-    , tiStatus      :: !TicketStatus -- ^ The status of the ticket
+    { tiId          :: !TicketId        -- ^ Id of an ticket
+    , tiRequesterId :: !UserId          -- ^ Id of the requester
+    , tiAssigneeId  :: !(Maybe UserId)  -- ^ Id of the asignee
+    , tiUrl         :: !TicketURL       -- ^ The ticket URL
+    , tiTags        :: !TicketTags      -- ^ Tags associated with ticket
+    , tiStatus      :: !TicketStatus    -- ^ The status of the ticket
     } deriving (Eq, Show, Generic)
 
 

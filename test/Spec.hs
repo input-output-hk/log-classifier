@@ -240,6 +240,11 @@ validShowURLSpec =
                 let typedURL    = showURL $ TicketsURL ticketId
                     untypedURL  = "/tickets/" <> show (getTicketId ticketId) <> ".json"
                 in  typedURL == untypedURL
+        it "returns valid TicketAgentURL" $ do
+            property $ \ticketId ->
+                let typedURL    = showURL $ TicketAgentURL ticketId
+                    untypedURL  = "https://iohk.zendesk.com/agent/tickets/" <> show (getTicketId ticketId)
+                in  typedURL == untypedURL
         it "returns valid TicketCommentsURL" $ do
             property $ \ticketId ->
                 let typedURL    = showURL $ TicketCommentsURL ticketId
