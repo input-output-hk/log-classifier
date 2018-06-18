@@ -1,12 +1,18 @@
 module Statistics
-    (showStatistics) where
+  ( showStatistics
+  ) where
 
-import           Universum
-import           DataSource (App, Attachment (..), Comment (..),
-                             TicketInfo (..),
-                             ZendeskLayer (..),
-                             asksZendeskLayer
-                             )
+import DataSource
+  ( App
+  , Attachment(..)
+  , Comment(..)
+  , TicketInfo(..)
+  , TicketStatus(..)
+  , ZendeskLayer(..)
+  , asksZendeskLayer
+  )
+import Universum
+
 -----------------------------------------------------------
 -- Functions
 ------------------------------------------------------------
@@ -31,10 +37,10 @@ showTicketCategoryCount tickets = do
     -- How many tickets are there
     putTextLn $ "Total: " <> show (length tickets)
     -- How many tickets are open
-    openTickets <- pure $ filterTicketsByStatus tickets "open"
+    openTickets <- pure $ filterTicketsByStatus tickets $ "open"
     putTextLn $ "Open: " <> show (length openTickets)
     -- How many tickets are closed
-    closedTickets <- pure $ filterTicketsByStatus (tickets) "closed"
+    closedTickets <- pure $ filterTicketsByStatus tickets $ "closed"
     putTextLn $ "Closed: " <> show (length closedTickets)
 
 -- | Show attachment info (Size - URL)
@@ -54,14 +60,15 @@ showCommentAttachments comment = do
 showTicketAttachments :: TicketInfo -> App ()
 showTicketAttachments ticket = do
     putText "Ticket #: "
-    (putTextLn . show) (tiId ticket)
+    (putTextLn . show) (getTicketId tiId ticket)
     getTicketComments <- asksZendeskLayer zlGetTicketComments
     comments <-  getTicketComments (tiId ticket)
     mapM_ showCommentAttachments (comments)
 
+-- | Filter Tickets that have a specified status
 filterTicketsByStatus :: [TicketInfo] -> Text -> [TicketInfo]
 filterTicketsByStatus tickets status =  do
-    filter ((== status) . tiStatus) tickets
+    filter ((== TicketStatus status) . tiStatus) tickets
 
 -- | Remove tickets without Attachments
 filterTicketsWithAttachments :: [TicketInfo] -> App [TicketInfo]
