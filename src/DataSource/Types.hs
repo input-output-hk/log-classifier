@@ -28,13 +28,15 @@ module DataSource.Types
     , UserURL (..)
     , UserName (..)
     , UserEmail (..)
+    , UserList (..)
     , parseComments
     , parseTicket
     , parseTickets
-    , parseSearchResult
+    , parseUsers
     , renderTicketStatus
     -- * General configuration
     , Config (..)
+    , groupPath
     , knowledgebasePath
     , tokenPath
     , assignToPath
@@ -81,6 +83,8 @@ data Config = Config
     -- ^ Zendesk token
     , cfgEmail              :: !Text
     -- ^ Email address of the user the classifier will process on
+    , cfgGroup              :: !Integer
+    -- ^ Support agent groups
     , cfgAssignTo           :: !Integer
     -- ^ User that will be assigned to after the classifier has done the analysis
     , cfgKnowledgebase      :: ![Knowledge]
@@ -128,6 +132,10 @@ tokenPath = "./tmp-secrets/token"
 assignToPath :: FilePath
 assignToPath = "./tmp-secrets/assign_to"
 
+-- | Filepath to group file
+groupPath :: FilePath
+groupPath = "./tmp-secrets/group"
+
 -- | The Zendesk API interface that we want to expose.
 -- We don't want anything to leak out, so we expose only the most relevant information,
 -- anything relating to how it internaly works should NOT be exposed.
@@ -135,6 +143,7 @@ data ZendeskLayer m = ZendeskLayer
     { zlGetTicketInfo           :: TicketId         -> m (Maybe TicketInfo)
     , zlListRequestedTickets    :: UserId           -> m [TicketInfo]
     , zlListAssignedTickets     :: UserId           -> m [TicketInfo]
+    , zlListAgents              :: m [User]
     , zlGetTicketComments       :: TicketId         -> m [Comment]
     , zlGetAttachment           :: Attachment       -> m (Maybe AttachmentContent)
     , zlPostTicketComment       :: ZendeskResponse  -> m ()
@@ -259,7 +268,7 @@ data Ticket = Ticket
 data TicketList = TicketList
     { tlTickets :: ![TicketInfo]
     -- ^ Information of tickets
-    , nextPage  :: Maybe Text
+    , tlNextPage  :: Maybe Text
     -- ^ Next page
     }
 
@@ -322,6 +331,12 @@ data User = User
     , uEmail    :: !UserEmail   -- ^ Email of the user
     } deriving (Eq, Show, Generic)
 
+data UserList = UserList
+    { ulUsers :: ![User]
+    -- ^ Information of tickets
+    , ulNextPage  :: Maybe Text
+    -- ^ Next page
+    }
 ------------------------------------------------------------
 -- Arbitrary instances
 ------------------------------------------------------------
@@ -449,6 +464,12 @@ instance FromJSON TicketList where
             <$> o .: "tickets"
             <*> o .: "next_page"
 
+instance FromJSON UserList where
+    parseJSON = withObject "userList" $ \o ->
+        UserList
+            <$> o .: "users"
+            <*> o .: "next_page"
+
 instance FromJSON User where
     parseJSON = withObject "user" $ \o -> do
         userId        <- o .: "id"
@@ -523,10 +544,10 @@ parseTickets = withObject "tickets" $ \o ->
         <$> o .: "tickets"
         <*> o .: "next_page"
 
-parseSearchResult :: Value -> Parser TicketList
-parseSearchResult = withObject "tickets" $ \o ->
-    TicketList
-        <$> o .: "results"
+parseUsers :: Value -> Parser UserList
+parseUsers = withObject "users" $ \o ->
+    UserList
+        <$> o .: "users"
         <*> o .: "next_page"
 
 -- | TODO(ks): This seems like it's not required.

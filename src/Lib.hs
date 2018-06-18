@@ -22,9 +22,9 @@ import           CLI (CLI (..), getCliArgs)
 import           DataSource (App, Attachment (..), AttachmentContent (..), Comment (..),
                              CommentBody (..), Config (..), IOLayer (..), TicketId (..),
                              TicketInfo (..), TicketStatus (..), TicketTag (..), TicketTags (..),
-                             UserId (..), ZendeskLayer (..), ZendeskResponse (..), asksIOLayer,
-                             asksZendeskLayer, assignToPath, defaultConfig, knowledgebasePath,
-                             renderTicketStatus, runApp, tokenPath)
+                             User, UserId (..), ZendeskLayer (..), ZendeskResponse (..),
+                             asksIOLayer, asksZendeskLayer, assignToPath, defaultConfig, groupPath,
+                             knowledgebasePath, renderTicketStatus, runApp, tokenPath)
 import           LogAnalysis.Classifier (extractErrorCodes, extractIssuesFromLogs,
                                          prettyFormatAnalysis, prettyFormatLogReadError,
                                          prettyFormatNoIssues, prettyFormatNoLogs)
@@ -41,24 +41,30 @@ runZendeskMain = do
     putTextLn "Welcome to Zendesk classifier!"
     token <- readFile tokenPath  -- Zendesk token
     assignFile <- readFile assignToPath  -- Select assignee
+    eGroup      <- readFile groupPath
     knowledges <- setupKnowledgebaseEnv knowledgebasePath
     assignTo <- case readEither assignFile of
         Right agentid -> return agentid
         Left  err     -> error err
+    agentGroup <- case readEither eGroup of
+        Right agentGroup -> return agentGroup
+        Left err         -> error err
 
     let cfg = defaultConfig
-                   { cfgToken = stripEnd token
-                   , cfgAssignTo = assignTo
-                   , cfgAgentId = assignTo
+                   { cfgToken         = stripEnd token
+                   , cfgAssignTo      = assignTo
+                   , cfgAgentId       = assignTo
+                   , cfgGroup         = agentGroup
                    , cfgKnowledgebase = knowledges
                    }
 
     -- At this point, the configuration is set up and there is no point in using a pure IO.
     case args of
         CollectEmails            -> runApp collectEmails cfg
+        FetchAgents              -> void $ runApp fetchAgents cfg
+        FetchTickets             -> runApp fetchTickets cfg
         (ProcessTicket ticketId) -> void $ runApp (processTicket (TicketId ticketId)) cfg
         ProcessTickets           -> void $ runApp processTickets cfg
-        FetchTickets             -> runApp fetchTickets cfg
         ShowStatistics           -> runApp showStatistics cfg
 
 
@@ -77,6 +83,17 @@ collectEmails = do
     let ticketIds = foldr (\TicketInfo{..} acc -> tiId : acc) [] tickets
     mapM_ extractEmailAddress ticketIds
 
+fetchAgents :: App [User]
+fetchAgents = do
+    listAgents <- asksZendeskLayer zlListAgents
+    printText <- asksIOLayer iolPrintText
+
+    printText "Fetching Zendesk agents"
+
+    agents <- listAgents
+
+    mapM_ print agents
+    pure agents
 
 processTicket :: TicketId -> App (Maybe ZendeskResponse)
 processTicket tId = do
@@ -294,7 +311,7 @@ filterAnalyzedTickets ticketsInfo =
     isTicketAnalyzed :: TicketInfo -> Bool
     isTicketAnalyzed TicketInfo{..} = (renderTicketStatus AnalyzedByScriptV1_0) `notElem` (getTicketTags tiTags)
     -- ^ This is showing that something is wrong...
-    
+
     unsolvedTicketStatus :: [TicketStatus]
     unsolvedTicketStatus = TicketStatus <$> ["new", "open", "hold", "pending"]
 

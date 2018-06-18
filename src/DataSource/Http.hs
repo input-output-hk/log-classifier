@@ -23,7 +23,7 @@ import           DataSource.Types (Attachment (..), AttachmentContent (..), Comm
                                    Ticket (..), TicketId (..), TicketInfo (..), TicketList (..),
                                    TicketTag (..), User, UserId (..), ZendeskAPIUrl (..),
                                    ZendeskLayer (..), ZendeskResponse (..), parseComments,
-                                   parseTicket, parseTickets, renderTicketStatus, showURL)
+                                   parseTicket, parseTickets, renderTicketStatus, showURL, UserList(..), parseUsers)
 
 
 -- | The default configuration.
@@ -34,6 +34,7 @@ defaultConfig =
         , cfgZendesk            = "https://iohk.zendesk.com"
         , cfgToken              = ""
         , cfgEmail              = "daedalus-bug-reports@iohk.io"
+        , cfgGroup              = 0
         , cfgAssignTo           = 0
         , cfgKnowledgebase      = []
         , cfgNumOfLogsToAnalyze = 5
@@ -48,6 +49,7 @@ basicZendeskLayer = ZendeskLayer
     { zlGetTicketInfo           = getTicketInfo
     , zlListRequestedTickets    = listRequestedTickets
     , zlListAssignedTickets     = listAssignedTickets
+    , zlListAgents              = listAgents
     , zlPostTicketComment       = postTicketComment
     , zlGetAttachment           = getAttachment
     , zlGetTicketComments       = getTicketComments
@@ -66,6 +68,7 @@ emptyZendeskLayer = ZendeskLayer
     { zlGetTicketInfo           = \_     -> error "Not implemented zlGetTicketInfo!"
     , zlListRequestedTickets    = \_     -> error "Not implemented zlListRequestedTickets!"
     , zlListAssignedTickets     = \_     -> error "Not implemented zlListAssignedTickets!"
+    , zlListAgents              = 　　　　　　error "Not implemented zlListAgents"
     , zlPostTicketComment       = \_     -> error "Not implemented zlPostTicketComment!"
     , zlGetAttachment           = \_     -> error "Not implemented zlGetAttachment!"
     , zlGetTicketComments       = \_     -> error "Not implemented zlGetTicketComments!"
@@ -111,6 +114,14 @@ listAssignedTickets userId = do
 
     iterateTicketPages req
 
+listAgents :: forall m. (MonadIO m, MonadReader Config m) => m [User]
+listAgents = do
+    cfg <- ask
+    let url = "/groups/" <> show (cfgGroup cfg) <> "/users.json"
+    let req = apiRequest cfg url
+
+    iterateUserPages req
+
 -- | Iterate all the ticket pages and combine into a result.
 iterateTicketPages
     :: forall m. (MonadIO m, MonadReader Config m)
@@ -128,6 +139,26 @@ iterateTicketPages req = do
               Nothing      -> pure (list' <> pagen)
 
     (TicketList page0 nextPage) <- liftIO $ apiCall parseTickets req
+    case nextPage of
+        Just nextUrl -> liftIO $ go page0 nextUrl
+        Nothing      -> pure page0
+
+iterateUserPages
+    :: forall m. (MonadIO m, MonadReader Config m)
+    => Request -> m [User]
+iterateUserPages req = do
+
+    cfg <- ask
+
+    let go :: [User] -> Text -> IO [User]
+        go list' nextPage' = do
+          let req' = apiRequestAbsolute cfg nextPage'
+          (UserList pagen nextPagen) <- apiCall parseUsers req'
+          case nextPagen of
+              Just nextUrl -> go (list' <> pagen) nextUrl
+              Nothing      -> pure (list' <> pagen)
+
+    (UserList page0 nextPage) <- liftIO $ apiCall parseUsers req
     case nextPage of
         Just nextUrl -> liftIO $ go page0 nextUrl
         Nothing      -> pure page0
