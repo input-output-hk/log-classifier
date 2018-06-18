@@ -4,12 +4,13 @@ import           Universum
 
 import           Test.Hspec (Spec, describe, hspec, it, pending)
 import           Test.Hspec.QuickCheck (modifyMaxSuccess)
-import           Test.QuickCheck (Gen, arbitrary, forAll, listOf1)
+import           Test.QuickCheck (Gen, arbitrary, forAll, listOf1, property)
 import           Test.QuickCheck.Monadic (assert, monadicIO, pre, run)
 
-import           DataSource (App, Comment (..), Config (..), IOLayer (..), TicketInfo (..),
-                             ZendeskLayer (..), ZendeskResponse (..), basicIOLayer, defaultConfig,
-                             emptyZendeskLayer, runApp)
+import           DataSource (App, Comment (..), Config (..), IOLayer (..), TicketId (..),
+                             TicketInfo (..), UserId (..), ZendeskAPIUrl (..), ZendeskLayer (..),
+                             ZendeskResponse (..), basicIOLayer, defaultConfig, emptyZendeskLayer,
+                             runApp, showURL)
 import           Lib (listAndSortTickets, processTicket)
 
 -- TODO(ks): What we are really missing is a realistic @Gen ZendeskLayer m@.
@@ -21,6 +22,7 @@ main = hspec spec
 spec :: Spec
 spec =
     describe "Zendesk" $ do
+        validShowURLSpec
         listAndSortTicketsSpec
         processTicketSpec
 
@@ -218,3 +220,29 @@ processTicketsSpec =
     describe "processTickets" $ do
         it "doesn't process tickets" $ do
             pending
+
+-- Simple tests to cover it works.
+validShowURLSpec :: Spec
+validShowURLSpec =
+    describe "showURL" $ modifyMaxSuccess (const 10000) $ do
+        it "returns valid UserRequestedTicketsURL" $ do
+            property $ \userId ->
+                let typedURL    = showURL $ UserRequestedTicketsURL userId
+                    untypedURL  = "/users/" <> show (getUserId userId) <> "/tickets/requested.json"
+                in  typedURL == untypedURL
+        it "returns valid UserAssignedTicketsURL" $ do
+            property $ \userId ->
+                let typedURL    = showURL $ UserAssignedTicketsURL userId
+                    untypedURL  = "/users/" <> show (getUserId userId) <> "/tickets/assigned.json"
+                in  typedURL == untypedURL
+        it "returns valid TicketsURL" $ do
+            property $ \ticketId ->
+                let typedURL    = showURL $ TicketsURL ticketId
+                    untypedURL  = "/tickets/" <> show (getTicketId ticketId) <> ".json"
+                in  typedURL == untypedURL
+        it "returns valid TicketCommentsURL" $ do
+            property $ \ticketId ->
+                let typedURL    = showURL $ TicketCommentsURL ticketId
+                    untypedURL  = "/tickets/" <> show (getTicketId ticketId) <> "/comments.json"
+                in  typedURL == untypedURL
+
