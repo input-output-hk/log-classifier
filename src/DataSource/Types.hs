@@ -415,6 +415,36 @@ instance Arbitrary TicketInfo where
 instance Arbitrary UserId where
     arbitrary = UserId <$> arbitrary
 
+
+instance Arbitrary UserEmail where
+    arbitrary = do
+        address     <- listOf1 $ elements ['a'..'z']
+        domain      <- elements ["gmail.com", "yahoo.com", "hotmail.com"]
+        pure . UserEmail . pack $ address <> "@" <> domain
+
+instance Arbitrary UserName where
+    arbitrary = UserName . fromString <$> arbitrary
+
+instance Arbitrary UserURL where
+    arbitrary = do
+        protocol    <- elements ["http://", "https://"]
+        name        <- listOf1 $ elements ['a'..'z']
+        domain      <- elements [".com",".com.br",".net",".io"]
+        pure . UserURL . pack $ protocol ++ name ++ domain
+
+instance Arbitrary User where
+    arbitrary = do
+        userId    <- arbitrary
+        userUrl   <- arbitrary
+        userName  <- arbitrary
+        userEmail <- arbitrary
+
+        pure User
+            { uId = userId
+            , uURL = userUrl
+            , uName = userName
+            , uEmail = userEmail
+            }
 ------------------------------------------------------------
 -- FromJSON instances
 ------------------------------------------------------------

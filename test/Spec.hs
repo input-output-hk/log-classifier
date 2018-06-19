@@ -8,7 +8,7 @@ import           Test.QuickCheck (Gen, arbitrary, forAll, listOf, listOf1, prope
 import           Test.QuickCheck.Monadic (assert, monadicIO, pre, run)
 
 import           DataSource (App, Comment (..), Config (..), IOLayer (..), TicketId (..),
-                             TicketInfo (..), TicketStatus (..), TicketTags (..), UserId (..),
+                             TicketInfo (..), TicketStatus (..), TicketTags (..), User, UserId (..),
                              ZendeskAPIUrl (..), ZendeskLayer (..), ZendeskResponse (..),
                              basicIOLayer, defaultConfig, emptyZendeskLayer, runApp, showURL)
 import           Lib (filterAnalyzedTickets, listAndSortTickets, processTicket)
@@ -57,6 +57,7 @@ listAndSortTicketsSpec =
                             emptyZendeskLayer
                                 { zlListAssignedTickets     = \_     -> pure []
                                 , zlGetTicketInfo           = \_     -> pure $ Just ticketInfo
+                                , zlListAgents              = \_     -> pure []
                                 }
 
                     let stubbedConfig :: Config
@@ -69,31 +70,35 @@ listAndSortTicketsSpec =
 
                     assert $ length tickets == 0
 
-        it "returns sorted nonempty tickets" $ do
+        it "returns sorted nonempty tickets" $
             forAll arbitrary $ \(ticketInfo) ->
-                forAll (listOf1 arbitrary) $ \(listTickets) -> do
+                forAll (listOf1 arbitrary) $ \(listTickets) ->
+                    forAll (listOf1 arbitrary) $ \(agents :: [User]) ->
 
-                    monadicIO $ do
+                        monadicIO $ do
+                        
+                            pre $ any (\TicketInfo{..} -> tiStatus /= TicketStatus "solved") listTickets
 
-                        let stubbedZendeskLayer :: ZendeskLayer App
-                            stubbedZendeskLayer =
-                                emptyZendeskLayer
-                                    { zlListAssignedTickets     = \_     -> pure listTickets
-                                    , zlGetTicketInfo           = \_     -> pure ticketInfo
-                                    }
+                            let stubbedZendeskLayer :: ZendeskLayer App
+                                stubbedZendeskLayer =
+                                    emptyZendeskLayer
+                                        { zlListAssignedTickets     = \_     -> pure listTickets
+                                        , zlGetTicketInfo           = \_     -> pure ticketInfo
+                                        , zlListAgents              = \_     -> pure agents
+                                        }
 
-                        let stubbedConfig :: Config
-                            stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
+                            let stubbedConfig :: Config
+                                stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
 
-                        let appExecution :: IO [TicketInfo]
-                            appExecution = runApp listAndSortTickets stubbedConfig
+                            let appExecution :: IO [TicketInfo]
+                                appExecution = runApp listAndSortTickets stubbedConfig
 
-                        tickets <- run appExecution
+                            tickets <- run appExecution
 
-                        -- Check we have some tickets.
-                        assert $ length tickets > 0
-                        -- Check the order is sorted.
-                        assert $ sortBy compare tickets == tickets
+                            -- Check we have some tickets.
+                            assert $ length tickets > 0
+                            -- Check the order is sorted.
+                            assert $ sortBy compare tickets == tickets
 
 
 processTicketSpec :: Spec
