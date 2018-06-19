@@ -100,3 +100,4 @@ exchange-topology.yaml
 # launch scripts
 launch_*
 result*
+cabal.config
