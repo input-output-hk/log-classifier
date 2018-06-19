@@ -84,7 +84,7 @@ data Config = Config
     -- ^ Zendesk token
     , cfgEmail              :: !Text
     -- ^ Email address of the user the classifier will process on
-    , cfgGroup              :: !GroupId
+    , cfgGroupId            :: !GroupId
     -- ^ Support agent groups
     , cfgAssignTo           :: !Integer
     -- ^ User that will be assigned to after the classifier has done the analysis

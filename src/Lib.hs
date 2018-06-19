@@ -22,7 +22,7 @@ import           CLI (CLI (..), getCliArgs)
 import           DataSource (App, Attachment (..), AttachmentContent (..), Comment (..),
                              CommentBody (..), Config (..), GroupId (..), IOLayer (..),
                              TicketId (..), TicketInfo (..), TicketStatus (..), TicketTag (..),
-                             TicketTags (..), User, UserId (..), ZendeskLayer (..),
+                             TicketTags (..), User (..), UserId (..), ZendeskLayer (..),
                              ZendeskResponse (..), asksIOLayer, asksZendeskLayer, assignToPath,
                              defaultConfig, groupPath, knowledgebasePath, renderTicketStatus,
                              runApp, tokenPath)
@@ -32,6 +32,7 @@ import           LogAnalysis.Classifier (extractErrorCodes, extractIssuesFromLog
 import           LogAnalysis.KnowledgeCSVParser (parseKnowLedgeBase)
 import           LogAnalysis.Types (ErrorCode (..), Knowledge, renderErrorCode, setupAnalysis)
 import           Util (extractLogsFromZip)
+
 ------------------------------------------------------------
 -- Functions
 ------------------------------------------------------------
@@ -55,7 +56,7 @@ runZendeskMain = do
                    { cfgToken         = stripEnd token
                    , cfgAssignTo      = assignTo
                    , cfgAgentId       = assignTo
-                   , cfgGroup         = GroupId agentGroup
+                   , cfgGroupId       = GroupId agentGroup
                    , cfgKnowledgebase = knowledges
                    }
 
@@ -68,7 +69,7 @@ runZendeskMain = do
         ProcessTickets           -> void $ runApp processTickets cfg
         ShowStatistics           -> runApp showStatistics cfg
 
-
+-- TODO(hs): Remove this function since it's not used
 collectEmails :: App ()
 collectEmails = do
     cfg <- ask
@@ -92,7 +93,7 @@ fetchAgents = do
 
     printText "Fetching Zendesk agents"
 
-    agents <- listAgents cfgGroup
+    agents <- listAgents cfgGroupId
 
     mapM_ print agents
     pure agents
@@ -104,7 +105,7 @@ processTicket tId = do
     getTicketInfo       <- asksZendeskLayer zlGetTicketInfo
     printText           <- asksIOLayer iolPrintText
 
-    printText "Processing single ticket"
+    printText "Processing a ticket"
 
     mTicketInfo         <- getTicketInfo tId
     getTicketComments   <- asksZendeskLayer zlGetTicketComments
@@ -156,18 +157,20 @@ listAndSortTickets = do
 
     Config{..}  <- ask
 
-    let email   = cfgEmail
-    let userId  = UserId . fromIntegral $ cfgAgentId
-
+    listAgents <- asksZendeskLayer zlListAgents
+    agents <- listAgents cfgGroupId
+    
+    let agentIds :: [UserId]
+        agentIds = uId <$> agents
     -- We first fetch the function from the configuration
     listTickets <- asksZendeskLayer zlListAssignedTickets
     printText   <- asksIOLayer iolPrintText
 
-    printText $ "Classifier is going to process tickets assign to: " <> email
+    printText "Classifier is going to process tickets assigned to agents"
 
-    tickets     <- listTickets userId
+    ticketInfos     <- concat <$> mapM listTickets agentIds
 
-    let filteredTicketIds = filterAnalyzedTickets tickets
+    let filteredTicketIds = filterAnalyzedTickets ticketInfos
     let sortedTicketIds   = sortBy compare filteredTicketIds
 
     printText $ "There are " <> show (length sortedTicketIds) <> " unanalyzed tickets."
