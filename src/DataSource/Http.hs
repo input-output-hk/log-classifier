@@ -19,11 +19,12 @@ import           Network.HTTP.Simple (Request, addRequestHeader, getResponseBody
                                       setRequestMethod, setRequestPath)
 
 import           DataSource.Types (Attachment (..), AttachmentContent (..), Comment (..),
-                                   CommentBody (..), CommentId (..), Config (..), IOLayer (..),
-                                   Ticket (..), TicketId (..), TicketInfo (..), TicketList (..),
-                                   TicketTag (..), User, UserId (..), ZendeskAPIUrl (..),
-                                   ZendeskLayer (..), ZendeskResponse (..), parseComments,
-                                   parseTicket, parseTickets, renderTicketStatus, showURL, UserList(..), parseUsers)
+                                   CommentBody (..), CommentId (..), Config (..), GroupId (..),
+                                   IOLayer (..), Ticket (..), TicketId (..), TicketInfo (..),
+                                   TicketList (..), TicketTag (..), User, UserId (..),
+                                   UserList (..), ZendeskAPIUrl (..), ZendeskLayer (..),
+                                   ZendeskResponse (..), parseComments, parseTicket, parseTickets,
+                                   parseUsers, renderTicketStatus, showURL)
 
 
 -- | The default configuration.
@@ -34,7 +35,7 @@ defaultConfig =
         , cfgZendesk            = "https://iohk.zendesk.com"
         , cfgToken              = ""
         , cfgEmail              = "daedalus-bug-reports@iohk.io"
-        , cfgGroup              = 0
+        , cfgGroup              = GroupId 0
         , cfgAssignTo           = 0
         , cfgKnowledgebase      = []
         , cfgNumOfLogsToAnalyze = 5
@@ -68,7 +69,7 @@ emptyZendeskLayer = ZendeskLayer
     { zlGetTicketInfo           = \_     -> error "Not implemented zlGetTicketInfo!"
     , zlListRequestedTickets    = \_     -> error "Not implemented zlListRequestedTickets!"
     , zlListAssignedTickets     = \_     -> error "Not implemented zlListAssignedTickets!"
-    , zlListAgents              = 　　　　　　error "Not implemented zlListAgents"
+    , zlListAgents              = \_　　　-> error "Not implemented zlListAgents"
     , zlPostTicketComment       = \_     -> error "Not implemented zlPostTicketComment!"
     , zlGetAttachment           = \_     -> error "Not implemented zlGetAttachment!"
     , zlGetTicketComments       = \_     -> error "Not implemented zlGetTicketComments!"
@@ -114,10 +115,10 @@ listAssignedTickets userId = do
 
     iterateTicketPages req
 
-listAgents :: forall m. (MonadIO m, MonadReader Config m) => m [User]
-listAgents = do
+listAgents :: forall m. (MonadIO m, MonadReader Config m) => GroupId -> m [User]
+listAgents groupId = do
     cfg <- ask
-    let url = "/groups/" <> show (cfgGroup cfg) <> "/users.json"
+    let url = showURL $ AgentGroupURL groupId
     let req = apiRequest cfg url
 
     iterateUserPages req

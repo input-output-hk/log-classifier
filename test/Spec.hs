@@ -4,7 +4,7 @@ import           Universum
 
 import           Test.Hspec (Spec, describe, hspec, it, pending, shouldBe)
 import           Test.Hspec.QuickCheck (modifyMaxSuccess)
-import           Test.QuickCheck (Gen, arbitrary, forAll, listOf, listOf1, property, (==>))
+import           Test.QuickCheck (Gen, arbitrary, forAll, listOf, listOf1, property, elements)
 import           Test.QuickCheck.Monadic (assert, monadicIO, pre, run)
 
 import           DataSource (App, Comment (..), Config (..), IOLayer (..), TicketId (..),
@@ -256,10 +256,7 @@ filterAnalyzedTicketsSpec :: Spec
 filterAnalyzedTicketsSpec =
     describe "filterAnalyzedTickets" $ modifyMaxSuccess (const 200) $ do
         it "should not filter tickets with status 'open', 'hold', 'pending', and 'new'" $
-            forAll (listOf arbitrary) $ \(ticketInfos :: [TicketInfo]) ->
-                let unsolvedTicketStatus :: [TicketStatus]
-                    unsolvedTicketStatus = TicketStatus <$> ["new", "hold", "open", "pending"]
-                in all (\ticket -> tiStatus ticket `elem` unsolvedTicketStatus) ticketInfos ==>
+            forAll (listOf genTicketWithUnsolvedStatus) $ \(ticketInfos :: [TicketInfo]) ->
                     length (filterAnalyzedTickets ticketInfos) `shouldBe` length ticketInfos
 
         it "should filter solved tickets" $
@@ -286,3 +283,12 @@ genTicketWithFilteredTags tagToBeFiltered = TicketInfo
     <*> arbitrary
     <*> return (TicketTags tagToBeFiltered)
     <*> arbitrary
+
+genTicketWithUnsolvedStatus :: Gen TicketInfo
+genTicketWithUnsolvedStatus = TicketInfo
+    <$> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> (TicketStatus <$> elements ["new", "hold", "open", "pending"])

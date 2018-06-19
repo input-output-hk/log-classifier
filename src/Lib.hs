@@ -20,11 +20,12 @@ import           Data.Text (isInfixOf, stripEnd)
 
 import           CLI (CLI (..), getCliArgs)
 import           DataSource (App, Attachment (..), AttachmentContent (..), Comment (..),
-                             CommentBody (..), Config (..), IOLayer (..), TicketId (..),
-                             TicketInfo (..), TicketStatus (..), TicketTag (..), TicketTags (..),
-                             User, UserId (..), ZendeskLayer (..), ZendeskResponse (..),
-                             asksIOLayer, asksZendeskLayer, assignToPath, defaultConfig, groupPath,
-                             knowledgebasePath, renderTicketStatus, runApp, tokenPath)
+                             CommentBody (..), Config (..), GroupId (..), IOLayer (..),
+                             TicketId (..), TicketInfo (..), TicketStatus (..), TicketTag (..),
+                             TicketTags (..), User, UserId (..), ZendeskLayer (..),
+                             ZendeskResponse (..), asksIOLayer, asksZendeskLayer, assignToPath,
+                             defaultConfig, groupPath, knowledgebasePath, renderTicketStatus,
+                             runApp, tokenPath)
 import           LogAnalysis.Classifier (extractErrorCodes, extractIssuesFromLogs,
                                          prettyFormatAnalysis, prettyFormatLogReadError,
                                          prettyFormatNoIssues, prettyFormatNoLogs)
@@ -54,7 +55,7 @@ runZendeskMain = do
                    { cfgToken         = stripEnd token
                    , cfgAssignTo      = assignTo
                    , cfgAgentId       = assignTo
-                   , cfgGroup         = agentGroup
+                   , cfgGroup         = GroupId agentGroup
                    , cfgKnowledgebase = knowledges
                    }
 
@@ -85,12 +86,13 @@ collectEmails = do
 
 fetchAgents :: App [User]
 fetchAgents = do
+    Config{..} <- ask
     listAgents <- asksZendeskLayer zlListAgents
     printText <- asksIOLayer iolPrintText
 
     printText "Fetching Zendesk agents"
 
-    agents <- listAgents
+    agents <- listAgents cfgGroup
 
     mapM_ print agents
     pure agents

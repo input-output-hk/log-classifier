@@ -11,6 +11,7 @@ module DataSource.Types
     , CommentId (..)
     , CommentBody (..)
     , CommentOuter (..)
+    , GroupId (..)
     , Attachment (..)
     , AttachmentId (..)
     , AttachmentContent (..)
@@ -83,7 +84,7 @@ data Config = Config
     -- ^ Zendesk token
     , cfgEmail              :: !Text
     -- ^ Email address of the user the classifier will process on
-    , cfgGroup              :: !Integer
+    , cfgGroup              :: !GroupId
     -- ^ Support agent groups
     , cfgAssignTo           :: !Integer
     -- ^ User that will be assigned to after the classifier has done the analysis
@@ -143,7 +144,7 @@ data ZendeskLayer m = ZendeskLayer
     { zlGetTicketInfo           :: TicketId         -> m (Maybe TicketInfo)
     , zlListRequestedTickets    :: UserId           -> m [TicketInfo]
     , zlListAssignedTickets     :: UserId           -> m [TicketInfo]
-    , zlListAgents              :: m [User]
+    , zlListAgents              :: GroupId          -> m [User]
     , zlGetTicketComments       :: TicketId         -> m [Comment]
     , zlGetAttachment           :: Attachment       -> m (Maybe AttachmentContent)
     , zlPostTicketComment       :: ZendeskResponse  -> m ()
@@ -166,6 +167,9 @@ data IOLayer m = IOLayer
 class ToURL a where
     toURL :: a -> Text
 
+instance ToURL GroupId where
+    toURL (GroupId gId) = show gId
+
 instance ToURL UserId where
     toURL (UserId uId) = show uId
 
@@ -173,7 +177,8 @@ instance ToURL TicketId where
     toURL (TicketId ticketId) = show ticketId
 
 data ZendeskAPIUrl
-    = UserRequestedTicketsURL UserId
+    = AgentGroupURL GroupId
+    | UserRequestedTicketsURL UserId
     | UserAssignedTicketsURL UserId
     | TicketsURL TicketId
     | TicketAgentURL TicketId
@@ -182,6 +187,7 @@ data ZendeskAPIUrl
     deriving (Eq, Generic)
 
 showURL :: ZendeskAPIUrl -> Text
+showURL (AgentGroupURL groupId)             = "/groups/" <> toURL groupId <> "/users.json"
 showURL (UserRequestedTicketsURL userId)    = "/users/" <> toURL userId <> "/tickets/requested.json"
 showURL (UserAssignedTicketsURL userId)     = "/users/" <> toURL userId <> "/tickets/assigned.json"
 showURL (TicketsURL ticketId)               = "/tickets/" <> toURL ticketId <> ".json"
@@ -253,6 +259,10 @@ data Comment = Comment
 newtype CommentOuter = CommentOuter {
       coComment :: Comment
     }
+
+newtype GroupId = GroupId
+    { getGroupId :: Integer
+    } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
 
 -- | Zendesk ticket
 data Ticket = Ticket
