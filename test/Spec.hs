@@ -57,7 +57,7 @@ listAndSortTicketsSpec =
                             emptyZendeskLayer
                                 { zlListAssignedTickets     = \_     -> pure []
                                 , zlGetTicketInfo           = \_     -> pure $ Just ticketInfo
-                                , zlListAgents              = \_     -> pure []
+                                , zlListAdminAgents         =           pure []
                                 }
 
                     let stubbedConfig :: Config
@@ -84,7 +84,7 @@ listAndSortTicketsSpec =
                                     emptyZendeskLayer
                                         { zlListAssignedTickets     = \_     -> pure listTickets
                                         , zlGetTicketInfo           = \_     -> pure ticketInfo
-                                        , zlListAgents              = \_     -> pure agents
+                                        , zlListAdminAgents         =           pure agents
                                         }
 
                             let stubbedConfig :: Config

@@ -14,7 +14,7 @@ import           Paths_log_classifier (version)
 -- use direct function calls.
 data CLI
     = CollectEmails     -- ^ Collect email addresses
-    | FetchAgents        -- ^ List agents
+    | FetchAgents       -- ^ List agents
     | FetchTickets      -- ^ Fetch all the tickets in Zendesk
     | ProcessTicket Int -- ^ Process ticket of an given ticket id
     | ProcessTickets    -- ^ Process all the tickets in Zendesk

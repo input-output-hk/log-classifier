@@ -11,7 +11,6 @@ module DataSource.Types
     , CommentId (..)
     , CommentBody (..)
     , CommentOuter (..)
-    , GroupId (..)
     , Attachment (..)
     , AttachmentId (..)
     , AttachmentContent (..)
@@ -37,7 +36,6 @@ module DataSource.Types
     , renderTicketStatus
     -- * General configuration
     , Config (..)
-    , groupPath
     , knowledgebasePath
     , tokenPath
     , assignToPath
@@ -84,8 +82,6 @@ data Config = Config
     -- ^ Zendesk token
     , cfgEmail              :: !Text
     -- ^ Email address of the user the classifier will process on
-    , cfgGroupId            :: !GroupId
-    -- ^ Support agent groups
     , cfgAssignTo           :: !Integer
     -- ^ User that will be assigned to after the classifier has done the analysis
     , cfgKnowledgebase      :: ![Knowledge]
@@ -133,10 +129,6 @@ tokenPath = "./tmp-secrets/token"
 assignToPath :: FilePath
 assignToPath = "./tmp-secrets/assign_to"
 
--- | Filepath to group file
-groupPath :: FilePath
-groupPath = "./tmp-secrets/group"
-
 -- | The Zendesk API interface that we want to expose.
 -- We don't want anything to leak out, so we expose only the most relevant information,
 -- anything relating to how it internaly works should NOT be exposed.
@@ -144,7 +136,7 @@ data ZendeskLayer m = ZendeskLayer
     { zlGetTicketInfo           :: TicketId         -> m (Maybe TicketInfo)
     , zlListRequestedTickets    :: UserId           -> m [TicketInfo]
     , zlListAssignedTickets     :: UserId           -> m [TicketInfo]
-    , zlListAgents              :: GroupId          -> m [User]
+    , zlListAdminAgents         :: m [User]
     , zlGetTicketComments       :: TicketId         -> m [Comment]
     , zlGetAttachment           :: Attachment       -> m (Maybe AttachmentContent)
     , zlPostTicketComment       :: ZendeskResponse  -> m ()
@@ -167,9 +159,6 @@ data IOLayer m = IOLayer
 class ToURL a where
     toURL :: a -> Text
 
-instance ToURL GroupId where
-    toURL (GroupId gId) = show gId
-
 instance ToURL UserId where
     toURL (UserId uId) = show uId
 
@@ -177,7 +166,7 @@ instance ToURL TicketId where
     toURL (TicketId ticketId) = show ticketId
 
 data ZendeskAPIUrl
-    = AgentGroupURL GroupId
+    = AgentGroupURL
     | UserRequestedTicketsURL UserId
     | UserAssignedTicketsURL UserId
     | TicketsURL TicketId
@@ -187,7 +176,8 @@ data ZendeskAPIUrl
     deriving (Eq, Generic)
 
 showURL :: ZendeskAPIUrl -> Text
-showURL (AgentGroupURL groupId)             = "/groups/" <> toURL groupId <> "/users.json"
+showURL AgentGroupURL                       = "/groups/41693007/users.json" -- magic number..?
+-- users.json?role[]=admin&role[]=agent returns InvalidUrl
 showURL (UserRequestedTicketsURL userId)    = "/users/" <> toURL userId <> "/tickets/requested.json"
 showURL (UserAssignedTicketsURL userId)     = "/users/" <> toURL userId <> "/tickets/assigned.json"
 showURL (TicketsURL ticketId)               = "/tickets/" <> toURL ticketId <> ".json"
@@ -259,10 +249,6 @@ data Comment = Comment
 newtype CommentOuter = CommentOuter {
       coComment :: Comment
     }
-
-newtype GroupId = GroupId
-    { getGroupId :: Integer
-    } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
 
 -- | Zendesk ticket
 data Ticket = Ticket

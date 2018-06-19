@@ -20,11 +20,11 @@ import           Data.Text (isInfixOf, stripEnd)
 
 import           CLI (CLI (..), getCliArgs)
 import           DataSource (App, Attachment (..), AttachmentContent (..), Comment (..),
-                             CommentBody (..), Config (..), GroupId (..), IOLayer (..),
+                             CommentBody (..), Config (..), IOLayer (..),
                              TicketId (..), TicketInfo (..), TicketStatus (..), TicketTag (..),
                              TicketTags (..), User (..), UserId (..), ZendeskLayer (..),
                              ZendeskResponse (..), asksIOLayer, asksZendeskLayer, assignToPath,
-                             defaultConfig, groupPath, knowledgebasePath, renderTicketStatus,
+                             defaultConfig, knowledgebasePath, renderTicketStatus,
                              runApp, tokenPath)
 import           LogAnalysis.Classifier (extractErrorCodes, extractIssuesFromLogs,
                                          prettyFormatAnalysis, prettyFormatLogReadError,
@@ -43,20 +43,15 @@ runZendeskMain = do
     putTextLn "Welcome to Zendesk classifier!"
     token <- readFile tokenPath  -- Zendesk token
     assignFile <- readFile assignToPath  -- Select assignee
-    eGroup      <- readFile groupPath
     knowledges <- setupKnowledgebaseEnv knowledgebasePath
     assignTo <- case readEither assignFile of
         Right agentid -> return agentid
         Left  err     -> error err
-    agentGroup <- case readEither eGroup of
-        Right agentGroup -> return agentGroup
-        Left err         -> error err
 
     let cfg = defaultConfig
                    { cfgToken         = stripEnd token
                    , cfgAssignTo      = assignTo
                    , cfgAgentId       = assignTo
-                   , cfgGroupId       = GroupId agentGroup
                    , cfgKnowledgebase = knowledges
                    }
 
@@ -88,12 +83,12 @@ collectEmails = do
 fetchAgents :: App [User]
 fetchAgents = do
     Config{..} <- ask
-    listAgents <- asksZendeskLayer zlListAgents
+    listAdminAgents <- asksZendeskLayer zlListAdminAgents
     printText <- asksIOLayer iolPrintText
 
     printText "Fetching Zendesk agents"
 
-    agents <- listAgents cfgGroupId
+    agents <- listAdminAgents
 
     mapM_ print agents
     pure agents
@@ -157,8 +152,8 @@ listAndSortTickets = do
 
     Config{..}  <- ask
 
-    listAgents <- asksZendeskLayer zlListAgents
-    agents <- listAgents cfgGroupId
+    listAgents <- asksZendeskLayer zlListAdminAgents
+    agents <- listAgents
     
     let agentIds :: [UserId]
         agentIds = uId <$> agents
@@ -168,7 +163,7 @@ listAndSortTickets = do
 
     printText "Classifier is going to process tickets assigned to agents"
 
-    ticketInfos     <- concat <$> mapM listTickets agentIds
+    ticketInfos     <- concat <$> traverse listTickets agentIds
 
     let filteredTicketIds = filterAnalyzedTickets ticketInfos
     let sortedTicketIds   = sortBy compare filteredTicketIds
@@ -318,7 +313,7 @@ filterAnalyzedTickets ticketsInfo =
     -- ^ This is showing that something is wrong...
 
     unsolvedTicketStatus :: [TicketStatus]
-    unsolvedTicketStatus = TicketStatus <$> ["new", "open", "hold", "pending"]
+    unsolvedTicketStatus = map TicketStatus ["new", "open", "hold", "pending"]
 
     isTicketOpen :: TicketInfo -> Bool
     isTicketOpen TicketInfo{..} = tiStatus `elem` unsolvedTicketStatus-- || ticketStatus == "new"

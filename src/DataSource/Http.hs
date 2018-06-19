@@ -19,7 +19,7 @@ import           Network.HTTP.Simple (Request, addRequestHeader, getResponseBody
                                       setRequestMethod, setRequestPath)
 
 import           DataSource.Types (Attachment (..), AttachmentContent (..), Comment (..),
-                                   CommentBody (..), CommentId (..), Config (..), GroupId (..),
+                                   CommentBody (..), CommentId (..), Config (..),
                                    IOLayer (..), Ticket (..), TicketId (..), TicketInfo (..),
                                    TicketList (..), TicketTag (..), User, UserId (..),
                                    UserList (..), ZendeskAPIUrl (..), ZendeskLayer (..),
@@ -35,7 +35,6 @@ defaultConfig =
         , cfgZendesk            = "https://iohk.zendesk.com"
         , cfgToken              = ""
         , cfgEmail              = "daedalus-bug-reports@iohk.io"
-        , cfgGroupId            = GroupId 0
         , cfgAssignTo           = 0
         , cfgKnowledgebase      = []
         , cfgNumOfLogsToAnalyze = 5
@@ -50,7 +49,7 @@ basicZendeskLayer = ZendeskLayer
     { zlGetTicketInfo           = getTicketInfo
     , zlListRequestedTickets    = listRequestedTickets
     , zlListAssignedTickets     = listAssignedTickets
-    , zlListAgents              = listAgents
+    , zlListAdminAgents         = listAdminAgents
     , zlPostTicketComment       = postTicketComment
     , zlGetAttachment           = getAttachment
     , zlGetTicketComments       = getTicketComments
@@ -69,7 +68,7 @@ emptyZendeskLayer = ZendeskLayer
     { zlGetTicketInfo           = \_     -> error "Not implemented zlGetTicketInfo!"
     , zlListRequestedTickets    = \_     -> error "Not implemented zlListRequestedTickets!"
     , zlListAssignedTickets     = \_     -> error "Not implemented zlListAssignedTickets!"
-    , zlListAgents              = \_　　　-> error "Not implemented zlListAgents"
+    , zlListAdminAgents         =           error "Not implemented zlListAgents" -- This returns error during testing
     , zlPostTicketComment       = \_     -> error "Not implemented zlPostTicketComment!"
     , zlGetAttachment           = \_     -> error "Not implemented zlGetAttachment!"
     , zlGetTicketComments       = \_     -> error "Not implemented zlGetTicketComments!"
@@ -87,7 +86,6 @@ getTicketInfo ticketId = do
     let url = showURL $ TicketsURL ticketId
     let req = apiRequest cfg url
     liftIO $ Just <$> apiCall parseTicket req
-
 
 -- | Return list of ticketIds that has been requested by config user.
 listRequestedTickets
@@ -115,13 +113,21 @@ listAssignedTickets userId = do
 
     iterateTicketPages req
 
-listAgents :: forall m. (MonadIO m, MonadReader Config m) => GroupId -> m [User]
-listAgents groupId = do
+listAdminAgents :: forall m. (MonadIO m, MonadReader Config m) => m [User]
+listAdminAgents = do
     cfg <- ask
-    let url = showURL $ AgentGroupURL groupId
+    let url = showURL AgentGroupURL
     let req = apiRequest cfg url
 
     iterateUserPages req
+
+-- Not sure how to generalize them..
+iteratePages :: forall m a b. (MonadIO m, MonadReader Config m)
+             => Request
+             -> ([a] -> Maybe Text -> b) -- List
+             -> (Value -> Parser a)      -- Parser
+             -> m [a]
+iteratePages req list parser = undefined
 
 -- | Iterate all the ticket pages and combine into a result.
 iterateTicketPages
