@@ -176,8 +176,7 @@ data ZendeskAPIUrl
     deriving (Eq, Generic)
 
 showURL :: ZendeskAPIUrl -> Text
-showURL AgentGroupURL                       = "/groups/41693007/users.json" -- magic number..?
--- users.json?role[]=admin&role[]=agent returns InvalidUrl
+showURL AgentGroupURL                       = "users.json?role%5B%5D=admin&role%5B%5D=agent"
 showURL (UserRequestedTicketsURL userId)    = "/users/" <> toURL userId <> "/tickets/requested.json"
 showURL (UserAssignedTicketsURL userId)     = "/users/" <> toURL userId <> "/tickets/assigned.json"
 showURL (TicketsURL ticketId)               = "/tickets/" <> toURL ticketId <> ".json"
