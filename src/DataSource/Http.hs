@@ -1,5 +1,6 @@
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module DataSource.Http
     ( basicZendeskLayer
@@ -19,11 +20,12 @@ import           Network.HTTP.Simple (Request, addRequestHeader, getResponseBody
                                       setRequestMethod, setRequestPath)
 
 import           DataSource.Types (Attachment (..), AttachmentContent (..), Comment (..),
-                                   CommentBody (..), CommentId (..), Config (..), IOLayer (..),
-                                   Ticket (..), TicketId (..), TicketInfo (..), TicketList (..),
-                                   TicketTag (..), User, UserId (..), ZendeskAPIUrl (..),
-                                   ZendeskLayer (..), ZendeskResponse (..), parseComments,
-                                   parseTicket, parseTickets, renderTicketStatus, showURL)
+                                   CommentBody (..), CommentId (..), Config (..),
+                                   FromPageResultList (..), IOLayer (..), PageResultList (..),
+                                   Ticket (..), TicketId (..), TicketInfo (..), TicketTag (..),
+                                   User, UserId (..), ZendeskAPIUrl (..), ZendeskLayer (..),
+                                   ZendeskResponse (..), parseComments, parseTicket,
+                                   renderTicketStatus, showURL)
 
 
 -- | The default configuration.
@@ -48,6 +50,7 @@ basicZendeskLayer = ZendeskLayer
     { zlGetTicketInfo           = getTicketInfo
     , zlListRequestedTickets    = listRequestedTickets
     , zlListAssignedTickets     = listAssignedTickets
+    , zlListAdminAgents         = listAdminAgents
     , zlPostTicketComment       = postTicketComment
     , zlGetAttachment           = getAttachment
     , zlGetTicketComments       = getTicketComments
@@ -61,16 +64,16 @@ basicIOLayer = IOLayer
     }
 
 -- | The non-implemented Zendesk layer.
-emptyZendeskLayer :: forall m. ZendeskLayer m
+emptyZendeskLayer :: forall m. (Monad m) => ZendeskLayer m
 emptyZendeskLayer = ZendeskLayer
     { zlGetTicketInfo           = \_     -> error "Not implemented zlGetTicketInfo!"
     , zlListRequestedTickets    = \_     -> error "Not implemented zlListRequestedTickets!"
     , zlListAssignedTickets     = \_     -> error "Not implemented zlListAssignedTickets!"
+    , zlListAdminAgents         =           pure []
     , zlPostTicketComment       = \_     -> error "Not implemented zlPostTicketComment!"
     , zlGetAttachment           = \_     -> error "Not implemented zlGetAttachment!"
     , zlGetTicketComments       = \_     -> error "Not implemented zlGetTicketComments!"
     }
-
 
 -- | Get single ticket info.
 getTicketInfo
@@ -84,7 +87,6 @@ getTicketInfo ticketId = do
     let req = apiRequest cfg url
     liftIO $ Just <$> apiCall parseTicket req
 
-
 -- | Return list of ticketIds that has been requested by config user.
 listRequestedTickets
     :: forall m. (MonadIO m, MonadReader Config m)
@@ -96,7 +98,7 @@ listRequestedTickets userId = do
     let url = showURL $ UserRequestedTicketsURL userId
     let req = apiRequest cfg url
 
-    iterateTicketPages req
+    iteratePages req
 
 -- | Return list of ticketIds that has been assigned by config user.
 listAssignedTickets
@@ -109,25 +111,33 @@ listAssignedTickets userId = do
     let url = showURL $ UserAssignedTicketsURL userId
     let req = apiRequest cfg url
 
-    iterateTicketPages req
+    iteratePages req
+
+listAdminAgents :: forall m. (MonadIO m, MonadReader Config m) => m [User]
+listAdminAgents = do
+    cfg <- ask
+    let url = showURL AgentGroupURL
+    let req = apiRequest cfg url
+
+    iteratePages req
 
 -- | Iterate all the ticket pages and combine into a result.
-iterateTicketPages
-    :: forall m. (MonadIO m, MonadReader Config m)
-    => Request -> m [TicketInfo]
-iterateTicketPages req = do
-
+iteratePages
+    :: forall m a. (MonadIO m, MonadReader Config m, FromPageResultList a)
+    => Request
+    -> m [a]
+iteratePages req = do
     cfg <- ask
 
-    let go :: [TicketInfo] -> Text -> IO [TicketInfo]
+    let go :: [a] -> Text -> IO [a]
         go list' nextPage' = do
-          let req' = apiRequestAbsolute cfg nextPage'
-          (TicketList pagen nextPagen) <- apiCall parseTickets req'
+          let req'      = apiRequestAbsolute cfg nextPage'
+          (PageResultList pagen nextPagen) <- apiCall parseJSON req'
           case nextPagen of
               Just nextUrl -> go (list' <> pagen) nextUrl
               Nothing      -> pure (list' <> pagen)
 
-    (TicketList page0 nextPage) <- liftIO $ apiCall parseTickets req
+    (PageResultList page0 nextPage) <- liftIO $ apiCall parseJSON req
     case nextPage of
         Just nextUrl -> liftIO $ go page0 nextUrl
         Nothing      -> pure page0
@@ -144,8 +154,12 @@ postTicketComment ZendeskResponse{..} = do
     let req1 = apiRequest cfg url
     let req2 = addJsonBody
                    (Ticket
-                       (Comment (CommentId 0) (CommentBody $ "**Log classifier**\n\n" <> zrComment) [] zrIsPublic (cfgAgentId cfg))
-                       (cfgAssignTo cfg)
+                       (Comment (CommentId 0)
+                           (CommentBody $ "**Log classifier**\n\n" <> zrComment)
+                           []
+                           zrIsPublic
+                           (cfgAgentId cfg))
+                       Nothing -- If Nothing, assigned_id field will be left untouched
                        (renderTicketStatus AnalyzedByScriptV1_0:zrTags)
                    )
                    req1

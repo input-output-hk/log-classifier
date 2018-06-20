@@ -10,6 +10,7 @@ module Lib
     , fetchTickets
     , showStatistics
     , listAndSortTickets
+    , filterAnalyzedTickets
     ) where
 
 import           Universum
@@ -19,17 +20,19 @@ import           Data.Text (isInfixOf, stripEnd)
 
 import           CLI (CLI (..), getCliArgs)
 import           DataSource (App, Attachment (..), AttachmentContent (..), Comment (..),
-                             CommentBody (..), Config (..), IOLayer (..), TicketId (..),
-                             TicketInfo (..), TicketStatus (..), TicketTag (..), TicketTags (..),
-                             UserId (..), ZendeskLayer (..), ZendeskResponse (..), asksIOLayer,
-                             asksZendeskLayer, assignToPath, defaultConfig, knowledgebasePath,
-                             renderTicketStatus, runApp, tokenPath)
+                             CommentBody (..), Config (..), IOLayer (..),
+                             TicketId (..), TicketInfo (..), TicketStatus (..), TicketTag (..),
+                             TicketTags (..), User (..), UserId (..), ZendeskLayer (..),
+                             ZendeskResponse (..), asksIOLayer, asksZendeskLayer, assignToPath,
+                             defaultConfig, knowledgebasePath, renderTicketStatus,
+                             runApp, tokenPath)
 import           LogAnalysis.Classifier (extractErrorCodes, extractIssuesFromLogs,
                                          prettyFormatAnalysis, prettyFormatLogReadError,
                                          prettyFormatNoIssues, prettyFormatNoLogs)
 import           LogAnalysis.KnowledgeCSVParser (parseKnowLedgeBase)
 import           LogAnalysis.Types (ErrorCode (..), Knowledge, renderErrorCode, setupAnalysis)
 import           Util (extractLogsFromZip)
+
 ------------------------------------------------------------
 -- Functions
 ------------------------------------------------------------
@@ -46,21 +49,22 @@ runZendeskMain = do
         Left  err     -> error err
 
     let cfg = defaultConfig
-                   { cfgToken = stripEnd token
-                   , cfgAssignTo = assignTo
-                   , cfgAgentId = assignTo
+                   { cfgToken         = stripEnd token
+                   , cfgAssignTo      = assignTo
+                   , cfgAgentId       = assignTo
                    , cfgKnowledgebase = knowledges
                    }
 
     -- At this point, the configuration is set up and there is no point in using a pure IO.
     case args of
         CollectEmails            -> runApp collectEmails cfg
+        FetchAgents              -> void $ runApp fetchAgents cfg
+        FetchTickets             -> runApp fetchTickets cfg
         (ProcessTicket ticketId) -> void $ runApp (processTicket (TicketId ticketId)) cfg
         ProcessTickets           -> void $ runApp processTickets cfg
-        FetchTickets             -> runApp fetchTickets cfg
         ShowStatistics           -> runApp showStatistics cfg
 
-
+-- TODO(hs): Remove this function since it's not used
 collectEmails :: App ()
 collectEmails = do
     cfg <- ask
@@ -76,6 +80,18 @@ collectEmails = do
     let ticketIds = foldr (\TicketInfo{..} acc -> tiId : acc) [] tickets
     mapM_ extractEmailAddress ticketIds
 
+fetchAgents :: App [User]
+fetchAgents = do
+    Config{..} <- ask
+    listAdminAgents <- asksZendeskLayer zlListAdminAgents
+    printText <- asksIOLayer iolPrintText
+
+    printText "Fetching Zendesk agents"
+
+    agents <- listAdminAgents
+
+    mapM_ print agents
+    pure agents
 
 processTicket :: TicketId -> App (Maybe ZendeskResponse)
 processTicket tId = do
@@ -84,7 +100,7 @@ processTicket tId = do
     getTicketInfo       <- asksZendeskLayer zlGetTicketInfo
     printText           <- asksIOLayer iolPrintText
 
-    printText "Processing single ticket"
+    printText "Processing a ticket"
 
     mTicketInfo         <- getTicketInfo tId
     getTicketComments   <- asksZendeskLayer zlGetTicketComments
@@ -136,18 +152,20 @@ listAndSortTickets = do
 
     Config{..}  <- ask
 
-    let email   = cfgEmail
-    let userId  = UserId . fromIntegral $ cfgAgentId
-
+    listAgents <- asksZendeskLayer zlListAdminAgents
+    agents <- listAgents
+    
+    let agentIds :: [UserId]
+        agentIds = map uId agents
     -- We first fetch the function from the configuration
     listTickets <- asksZendeskLayer zlListAssignedTickets
     printText   <- asksIOLayer iolPrintText
 
-    printText $ "Classifier is going to process tickets assign to: " <> email
+    printText "Classifier is going to process tickets assigned to agents"
 
-    tickets     <- listTickets userId
+    ticketInfos     <- map concat $ traverse listTickets agentIds
 
-    let filteredTicketIds = filterAnalyzedTickets tickets
+    let filteredTicketIds = filterAnalyzedTickets ticketInfos
     let sortedTicketIds   = sortBy compare filteredTicketIds
 
     printText $ "There are " <> show (length sortedTicketIds) <> " unanalyzed tickets."
@@ -294,8 +312,11 @@ filterAnalyzedTickets ticketsInfo =
     isTicketAnalyzed TicketInfo{..} = (renderTicketStatus AnalyzedByScriptV1_0) `notElem` (getTicketTags tiTags)
     -- ^ This is showing that something is wrong...
 
+    unsolvedTicketStatus :: [TicketStatus]
+    unsolvedTicketStatus = map TicketStatus ["new", "open", "hold", "pending"]
+
     isTicketOpen :: TicketInfo -> Bool
-    isTicketOpen TicketInfo{..} = tiStatus == TicketStatus "open" -- || ticketStatus == "new"
+    isTicketOpen TicketInfo{..} = tiStatus `elem` unsolvedTicketStatus-- || ticketStatus == "new"
 
     -- | If we have a ticket we are having issues with...
     isTicketBlacklisted :: TicketInfo -> Bool
