@@ -1,5 +1,6 @@
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module DataSource.Http
     ( basicZendeskLayer
@@ -19,11 +20,12 @@ import           Network.HTTP.Simple (Request, addRequestHeader, getResponseBody
                                       setRequestMethod, setRequestPath)
 
 import           DataSource.Types (Attachment (..), AttachmentContent (..), Comment (..),
-                                   CommentBody (..), CommentId (..), Config (..), IOLayer (..),
-                                   PageResultList (..), Ticket (..), TicketId (..), TicketInfo (..),
-                                   TicketTag (..), User, UserId (..), ZendeskAPIUrl (..),
-                                   ZendeskLayer (..), ZendeskResponse (..), parseComments,
-                                   parseTicket, renderTicketStatus, showURL)
+                                   CommentBody (..), CommentId (..), Config (..),
+                                   FromPageResultList (..), IOLayer (..), PageResultList (..),
+                                   Ticket (..), TicketId (..), TicketInfo (..), TicketTag (..),
+                                   User, UserId (..), ZendeskAPIUrl (..), ZendeskLayer (..),
+                                   ZendeskResponse (..), parseComments, parseTicket,
+                                   renderTicketStatus, showURL)
 
 
 -- | The default configuration.
@@ -120,15 +122,16 @@ listAdminAgents = do
     iteratePages req
 
 -- | Iterate all the ticket pages and combine into a result.
-iteratePages :: forall m a. (MonadIO m, MonadReader Config m, FromJSON a)
-             => Request
-             -> m [a]
+iteratePages
+    :: forall m a. (MonadIO m, MonadReader Config m, FromPageResultList a)
+    => Request
+    -> m [a]
 iteratePages req = do
     cfg <- ask
 
     let go :: [a] -> Text -> IO [a]
         go list' nextPage' = do
-          let req' = apiRequestAbsolute cfg nextPage'
+          let req'      = apiRequestAbsolute cfg nextPage'
           (PageResultList pagen nextPagen) <- apiCall parseJSON req'
           case nextPagen of
               Just nextUrl -> go (list' <> pagen) nextUrl

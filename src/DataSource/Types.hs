@@ -26,6 +26,7 @@ module DataSource.Types
     , UserName (..)
     , UserEmail (..)
     , ZendeskResponse (..)
+    , FromPageResultList (..)
     , parseComments
     , parseTicket
     , renderTicketStatus
@@ -317,7 +318,7 @@ data User = User
 
 data PageResultList a = PageResultList
     { prlResults  :: ![a]
-    , prlNextPage :: Maybe Text -- Text ?
+    , prlNextPage :: !(Maybe Text)
     }
 
 ------------------------------------------------------------
@@ -453,12 +454,23 @@ instance FromJSON Comment where
             , cAuthor      = commentAuthorId
             }
 
--- Is there an way to make this better?
-instance (FromJSON a) => FromJSON (PageResultList a) where
-    parseJSON = withObject "ticketList" $ \o ->
+class FromPageResultList a where
+    fromPageResult :: Value -> Parser (PageResultList a)
+
+instance FromPageResultList TicketInfo where
+    fromPageResult = withObject "ticketList" $ \o ->
             PageResultList
-                <$> (o .: "tickets" <|>  o .: "users")
+                <$> o .: "tickets"
                 <*> o .: "next_page"
+
+instance FromPageResultList User where
+    fromPageResult = withObject "userList" $ \o ->
+            PageResultList
+                <$> o .: "users"
+                <*> o .: "next_page"
+
+instance (FromPageResultList a) => FromJSON (PageResultList a) where
+    parseJSON = fromPageResult
 
 instance FromJSON TicketInfo where
     parseJSON = withObject "ticket" $ \o -> do
