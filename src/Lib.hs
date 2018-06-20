@@ -156,14 +156,14 @@ listAndSortTickets = do
     agents <- listAgents
     
     let agentIds :: [UserId]
-        agentIds = uId <$> agents
+        agentIds = map uId agents
     -- We first fetch the function from the configuration
     listTickets <- asksZendeskLayer zlListAssignedTickets
     printText   <- asksIOLayer iolPrintText
 
     printText "Classifier is going to process tickets assigned to agents"
 
-    ticketInfos     <- concat <$> traverse listTickets agentIds
+    ticketInfos     <- map concat $ traverse listTickets agentIds
 
     let filteredTicketIds = filterAnalyzedTickets ticketInfos
     let sortedTicketIds   = sortBy compare filteredTicketIds
