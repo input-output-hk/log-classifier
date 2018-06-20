@@ -63,17 +63,16 @@ basicIOLayer = IOLayer
     }
 
 -- | The non-implemented Zendesk layer.
-emptyZendeskLayer :: forall m. ZendeskLayer m
+emptyZendeskLayer :: forall m. (Monad m) => ZendeskLayer m
 emptyZendeskLayer = ZendeskLayer
     { zlGetTicketInfo           = \_     -> error "Not implemented zlGetTicketInfo!"
     , zlListRequestedTickets    = \_     -> error "Not implemented zlListRequestedTickets!"
     , zlListAssignedTickets     = \_     -> error "Not implemented zlListAssignedTickets!"
-    , zlListAdminAgents         =           error "Not implemented zlListAgents" -- This returns error during testing
+    , zlListAdminAgents         = pure []
     , zlPostTicketComment       = \_     -> error "Not implemented zlPostTicketComment!"
     , zlGetAttachment           = \_     -> error "Not implemented zlGetAttachment!"
     , zlGetTicketComments       = \_     -> error "Not implemented zlGetTicketComments!"
     }
-
 
 -- | Get single ticket info.
 getTicketInfo

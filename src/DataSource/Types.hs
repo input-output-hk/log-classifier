@@ -136,7 +136,7 @@ data ZendeskLayer m = ZendeskLayer
     { zlGetTicketInfo           :: TicketId         -> m (Maybe TicketInfo)
     , zlListRequestedTickets    :: UserId           -> m [TicketInfo]
     , zlListAssignedTickets     :: UserId           -> m [TicketInfo]
-    , zlListAdminAgents         :: m [User]
+    , zlListAdminAgents         ::                     m [User]
     , zlGetTicketComments       :: TicketId         -> m [Comment]
     , zlGetAttachment           :: Attachment       -> m (Maybe AttachmentContent)
     , zlPostTicketComment       :: ZendeskResponse  -> m ()
