@@ -11,8 +11,8 @@ import           DataSource (App, Comment (..), Config (..), IOLayer (..), Ticke
                              TicketInfo (..), UserId (..), ZendeskAPIUrl (..), ZendeskLayer (..),
                              ZendeskResponse (..), basicIOLayer, defaultConfig, emptyZendeskLayer,
                              runApp, showURL)
-import           Lib (listAndSortTickets, processTicket)
-
+import           Lib (listAndSortTickets, processTicket, getTickets)
+import           Statistics (filterTicketsWithAttachments)
 -- TODO(ks): What we are really missing is a realistic @Gen ZendeskLayer m@.
 
 main :: IO ()
@@ -26,7 +26,7 @@ spec =
         listAndSortTicketsSpec
         processTicketSpec
         processTicketsSpec
-        filterTicketsByStatusSpec
+        filterTicketsWithAttachmentsSpec
 
 
 -- | A utility function for testing which stubs IO and returns
@@ -252,8 +252,30 @@ validShowURLSpec =
                 in  typedURL == untypedURL
 
 
-filterTicketsByStatusSpec :: Spec
-filterTicketsByStatusSpec =
-    describe "filterTicketsByStatusSpec" $ do
-        it "doesn't process tickets" $ do
-            pending
+filterTicketsWithAttachmentsSpec :: Spec
+filterTicketsWithAttachmentsSpec =
+    describe "filterTicketsWithAttachmentsSpec" $ do
+        it "filters tickets with no attachments" $ do
+            forAll arbitrary $ \(ticketInfo :: TicketInfo) ->
+                forAll (listOf1 arbitrary) $ \(listTickets) ->
+                    forAll (listOf1 arbitrary) $ \(comments) ->
+
+                        monadicIO $ do
+
+                            let stubbedZendeskLayer :: ZendeskLayer App
+                                stubbedZendeskLayer =
+                                    emptyZendeskLayer
+                                        { zlListAssignedTickets     = \_     -> pure listTickets
+                                        , zlGetTicketInfo           = \_     -> pure $ Just ticketInfo
+                                        , zlGetTicketComments       = \_     -> pure comments
+                                        , zlGetAttachment           = \_     -> pure $ Just mempty
+                                        }
+                            let stubbedConfig :: Config
+                                stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
+
+                            let appExecution :: IO [TicketInfo]
+                                appExecution = runApp (getTickets >>= filterTicketsWithAttachments ) stubbedConfig
+
+                            tickets <- run appExecution
+                            -- Check we have some tickets.
+                            assert $ length tickets > 0

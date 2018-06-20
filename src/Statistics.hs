@@ -1,5 +1,6 @@
 module Statistics
   ( showStatistics
+  , filterTicketsWithAttachments
   ) where
 
 import DataSource
