@@ -1,22 +1,19 @@
+{-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE DeriveGeneric              #-}
 
 module DataSource.Types
-    ( IOLayer (..)
-    , ZendeskLayer (..)
-    , ZendeskResponse (..)
+    ( Attachment (..)
+    , AttachmentId (..)
+    , AttachmentContent (..)
     , Comment (..)
     , CommentId (..)
     , CommentBody (..)
     , CommentOuter (..)
-    , Attachment (..)
-    , AttachmentId (..)
-    , AttachmentContent (..)
+    , PageResultList (..)
     , RequestType (..)
     , Ticket (..)
-    , TicketList (..)
     , TicketId (..)
     , TicketURL (..)
     , TicketTags (..)
@@ -28,22 +25,22 @@ module DataSource.Types
     , UserURL (..)
     , UserName (..)
     , UserEmail (..)
-    , UserList (..)
+    , ZendeskResponse (..)
     , parseComments
     , parseTicket
-    , parseTickets
-    , parseUsers
     , renderTicketStatus
     -- * General configuration
+    , App
     , Config (..)
+    , IOLayer (..)
+    , ZendeskLayer (..)
+    , ZendeskAPIUrl (..)
     , knowledgebasePath
     , tokenPath
     , assignToPath
     , asksZendeskLayer
     , asksIOLayer
-    , ZendeskAPIUrl (..)
     , showURL
-    , App
     , runApp
     ) where
 
@@ -55,7 +52,7 @@ import           Data.Aeson.Types (Parser)
 import           Data.Text (pack)
 import           LogAnalysis.Types (Knowledge)
 
-import           Test.QuickCheck (Arbitrary (..), elements, vectorOf, listOf1)
+import           Test.QuickCheck (Arbitrary (..), elements, listOf1, vectorOf)
 
 ------------------------------------------------------------
 -- Configuration
@@ -133,20 +130,20 @@ assignToPath = "./tmp-secrets/assign_to"
 -- We don't want anything to leak out, so we expose only the most relevant information,
 -- anything relating to how it internaly works should NOT be exposed.
 data ZendeskLayer m = ZendeskLayer
-    { zlGetTicketInfo           :: TicketId         -> m (Maybe TicketInfo)
-    , zlListRequestedTickets    :: UserId           -> m [TicketInfo]
-    , zlListAssignedTickets     :: UserId           -> m [TicketInfo]
-    , zlListAdminAgents         ::                     m [User]
-    , zlGetTicketComments       :: TicketId         -> m [Comment]
-    , zlGetAttachment           :: Attachment       -> m (Maybe AttachmentContent)
-    , zlPostTicketComment       :: ZendeskResponse  -> m ()
+    { zlGetTicketInfo        :: TicketId         -> m (Maybe TicketInfo)
+    , zlListRequestedTickets :: UserId           -> m [TicketInfo]
+    , zlListAssignedTickets  :: UserId           -> m [TicketInfo]
+    , zlListAdminAgents      ::                     m [User]
+    , zlGetTicketComments    :: TicketId         -> m [Comment]
+    , zlGetAttachment        :: Attachment       -> m (Maybe AttachmentContent)
+    , zlPostTicketComment    :: ZendeskResponse  -> m ()
     }
 
 -- | The IOLayer interface that we can expose.
 -- We want to do this since we want to be able to mock out any function tied to @IO@.
 data IOLayer m = IOLayer
-    { iolPrintText              :: Text -> m ()
-    , iolReadFile               :: FilePath -> m String
+    { iolPrintText :: Text -> m ()
+    , iolReadFile  :: FilePath -> m String
     }
 
 ------------------------------------------------------------
@@ -259,14 +256,6 @@ data Ticket = Ticket
     -- ^ Tags attached to ticket
     }
 
--- | List of zendesk ticket
-data TicketList = TicketList
-    { tlTickets :: ![TicketInfo]
-    -- ^ Information of tickets
-    , tlNextPage  :: Maybe Text
-    -- ^ Next page
-    }
-
 -- TODO(ks): We need to verify this still works, we don't have any
 -- regression tests...
 newtype TicketId = TicketId
@@ -320,18 +309,17 @@ newtype UserEmail = UserEmail
     } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
 
 data User = User
-    { uId       :: !UserId      -- ^ Id of the user
-    , uURL      :: !UserURL     -- ^ URL of the user
-    , uName     :: !UserName    -- ^ Name of the user
-    , uEmail    :: !UserEmail   -- ^ Email of the user
+    { uId    :: !UserId      -- ^ Id of the user
+    , uURL   :: !UserURL     -- ^ URL of the user
+    , uName  :: !UserName    -- ^ Name of the user
+    , uEmail :: !UserEmail   -- ^ Email of the user
     } deriving (Eq, Show, Generic)
 
-data UserList = UserList
-    { ulUsers :: ![User]
-    -- ^ Information of tickets
-    , ulNextPage  :: Maybe Text
-    -- ^ Next page
+data PageResultList a = PageResultList
+    { prlResults  :: ![a]
+    , prlNextPage :: Maybe Text -- Text ?
     }
+
 ------------------------------------------------------------
 -- Arbitrary instances
 ------------------------------------------------------------
@@ -465,6 +453,13 @@ instance FromJSON Comment where
             , cAuthor      = commentAuthorId
             }
 
+-- Is there an way to make this better?
+instance (FromJSON a) => FromJSON (PageResultList a) where
+    parseJSON = withObject "ticketList" $ \o ->
+            PageResultList
+                <$> (o .: "tickets" <|>  o .: "users")
+                <*> o .: "next_page"
+
 instance FromJSON TicketInfo where
     parseJSON = withObject "ticket" $ \o -> do
         ticketId            <- o .: "id"
@@ -482,18 +477,6 @@ instance FromJSON TicketInfo where
             , tiTags        = ticketTags
             , tiStatus      = ticketStatus
             }
-
-instance FromJSON TicketList where
-    parseJSON = withObject "ticketList" $ \o ->
-        TicketList
-            <$> o .: "tickets"
-            <*> o .: "next_page"
-
-instance FromJSON UserList where
-    parseJSON = withObject "userList" $ \o ->
-        UserList
-            <$> o .: "users"
-            <*> o .: "next_page"
 
 instance FromJSON User where
     parseJSON = withObject "user" $ \o -> do
@@ -528,6 +511,7 @@ instance ToJSON Comment where
                 , "author_id"       .= author
                 ]
 
+-- TODO (hs): Erase ths since it's not used
 instance ToJSON CommentOuter where
     toJSON (CommentOuter c) =
         object  [ "comment"         .= c
@@ -561,19 +545,6 @@ instance Ord TicketInfo where
 
 parseTicket :: Value -> Parser TicketInfo
 parseTicket = withObject "ticket" $ \o -> o .: "ticket"
-
--- | Parse tickets
-parseTickets :: Value -> Parser TicketList
-parseTickets = withObject "tickets" $ \o ->
-    TicketList
-        <$> o .: "tickets"
-        <*> o .: "next_page"
-
-parseUsers :: Value -> Parser UserList
-parseUsers = withObject "users" $ \o ->
-    UserList
-        <$> o .: "users"
-        <*> o .: "next_page"
 
 -- | TODO(ks): This seems like it's not required.
 -- Parse comments

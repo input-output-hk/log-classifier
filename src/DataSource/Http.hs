@@ -19,12 +19,11 @@ import           Network.HTTP.Simple (Request, addRequestHeader, getResponseBody
                                       setRequestMethod, setRequestPath)
 
 import           DataSource.Types (Attachment (..), AttachmentContent (..), Comment (..),
-                                   CommentBody (..), CommentId (..), Config (..),
-                                   IOLayer (..), Ticket (..), TicketId (..), TicketInfo (..),
-                                   TicketList (..), TicketTag (..), User, UserId (..),
-                                   UserList (..), ZendeskAPIUrl (..), ZendeskLayer (..),
-                                   ZendeskResponse (..), parseComments, parseTicket, parseTickets,
-                                   parseUsers, renderTicketStatus, showURL)
+                                   CommentBody (..), CommentId (..), Config (..), IOLayer (..),
+                                   PageResultList (..), Ticket (..), TicketId (..), TicketInfo (..),
+                                   TicketTag (..), User, UserId (..), ZendeskAPIUrl (..),
+                                   ZendeskLayer (..), ZendeskResponse (..), parseComments,
+                                   parseTicket, renderTicketStatus, showURL)
 
 
 -- | The default configuration.
@@ -68,7 +67,7 @@ emptyZendeskLayer = ZendeskLayer
     { zlGetTicketInfo           = \_     -> error "Not implemented zlGetTicketInfo!"
     , zlListRequestedTickets    = \_     -> error "Not implemented zlListRequestedTickets!"
     , zlListAssignedTickets     = \_     -> error "Not implemented zlListAssignedTickets!"
-    , zlListAdminAgents         = pure []
+    , zlListAdminAgents         =           pure []
     , zlPostTicketComment       = \_     -> error "Not implemented zlPostTicketComment!"
     , zlGetAttachment           = \_     -> error "Not implemented zlGetAttachment!"
     , zlGetTicketComments       = \_     -> error "Not implemented zlGetTicketComments!"
@@ -97,7 +96,7 @@ listRequestedTickets userId = do
     let url = showURL $ UserRequestedTicketsURL userId
     let req = apiRequest cfg url
 
-    iterateTicketPages req
+    iteratePages req
 
 -- | Return list of ticketIds that has been assigned by config user.
 listAssignedTickets
@@ -110,7 +109,7 @@ listAssignedTickets userId = do
     let url = showURL $ UserAssignedTicketsURL userId
     let req = apiRequest cfg url
 
-    iterateTicketPages req
+    iteratePages req
 
 listAdminAgents :: forall m. (MonadIO m, MonadReader Config m) => m [User]
 listAdminAgents = do
@@ -118,53 +117,24 @@ listAdminAgents = do
     let url = showURL AgentGroupURL
     let req = apiRequest cfg url
 
-    iterateUserPages req
-
--- Not sure how to generalize them..
-iteratePages :: forall m a b. (MonadIO m, MonadReader Config m)
-             => Request
-             -> ([a] -> Maybe Text -> b) -- List
-             -> (Value -> Parser a)      -- Parser
-             -> m [a]
-iteratePages req list parser = undefined
+    iteratePages req
 
 -- | Iterate all the ticket pages and combine into a result.
-iterateTicketPages
-    :: forall m. (MonadIO m, MonadReader Config m)
-    => Request -> m [TicketInfo]
-iterateTicketPages req = do
-
+iteratePages :: forall m a. (MonadIO m, MonadReader Config m, FromJSON a)
+             => Request
+             -> m [a]
+iteratePages req = do
     cfg <- ask
 
-    let go :: [TicketInfo] -> Text -> IO [TicketInfo]
+    let go :: [a] -> Text -> IO [a]
         go list' nextPage' = do
           let req' = apiRequestAbsolute cfg nextPage'
-          (TicketList pagen nextPagen) <- apiCall parseTickets req'
+          (PageResultList pagen nextPagen) <- apiCall parseJSON req'
           case nextPagen of
               Just nextUrl -> go (list' <> pagen) nextUrl
               Nothing      -> pure (list' <> pagen)
 
-    (TicketList page0 nextPage) <- liftIO $ apiCall parseTickets req
-    case nextPage of
-        Just nextUrl -> liftIO $ go page0 nextUrl
-        Nothing      -> pure page0
-
-iterateUserPages
-    :: forall m. (MonadIO m, MonadReader Config m)
-    => Request -> m [User]
-iterateUserPages req = do
-
-    cfg <- ask
-
-    let go :: [User] -> Text -> IO [User]
-        go list' nextPage' = do
-          let req' = apiRequestAbsolute cfg nextPage'
-          (UserList pagen nextPagen) <- apiCall parseUsers req'
-          case nextPagen of
-              Just nextUrl -> go (list' <> pagen) nextUrl
-              Nothing      -> pure (list' <> pagen)
-
-    (UserList page0 nextPage) <- liftIO $ apiCall parseUsers req
+    (PageResultList page0 nextPage) <- liftIO $ apiCall parseJSON req
     case nextPage of
         Just nextUrl -> liftIO $ go page0 nextUrl
         Nothing      -> pure page0
