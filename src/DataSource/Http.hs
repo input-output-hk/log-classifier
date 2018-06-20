@@ -151,8 +151,12 @@ postTicketComment ZendeskResponse{..} = do
     let req1 = apiRequest cfg url
     let req2 = addJsonBody
                    (Ticket
-                       (Comment (CommentId 0) (CommentBody $ "**Log classifier**\n\n" <> zrComment) [] zrIsPublic (cfgAgentId cfg))
-                       Nothing
+                       (Comment (CommentId 0)
+                           (CommentBody $ "**Log classifier**\n\n" <> zrComment)
+                           []
+                           zrIsPublic
+                           (cfgAgentId cfg))
+                       Nothing -- If Nothing, assigned_id field will be left untouched
                        (renderTicketStatus AnalyzedByScriptV1_0:zrTags)
                    )
                    req1
