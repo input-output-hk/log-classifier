@@ -1,6 +1,7 @@
 module Statistics
   ( showStatistics
   , filterTicketsWithAttachments
+  , showTicketWithAttachments
   ) where
 
 import DataSource
@@ -26,7 +27,7 @@ showStatistics tickets = do
     tickets >>= showTicketWithAttachments
 
 -- | Show all Tickets with Attachments
-showTicketWithAttachments :: [TicketInfo] -> App ()
+--showTicketWithAttachments :: [TicketInfo] -> App ()
 showTicketWithAttachments tickets = do
     ticketsWithAttachments <- filterTicketsWithAttachments tickets
     putTextLn $ "  Tickets with Attachments: " <> show (length ticketsWithAttachments)
@@ -46,12 +47,13 @@ showTicketCategoryCount tickets = do
     putTextLn $ "Closed: " <> show (length closedTickets)
 
 -- | Show attachment info (Size - URL)
-showAttachmentInfo :: Attachment -> App ()
+showAttachmentInfo :: Attachment -> App Attachment
 showAttachmentInfo attachment = do
     putText "  Attachment: "
     (putText . show) (aSize attachment)
     putText " - "
     putTextLn $ aURL attachment
+    void attachment
 
 -- | Show attachments of a comment
 showCommentAttachments :: Comment -> App ()

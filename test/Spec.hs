@@ -12,7 +12,7 @@ import           DataSource (App, Comment (..), Config (..), IOLayer (..), Ticke
                              ZendeskResponse (..), basicIOLayer, defaultConfig, emptyZendeskLayer,
                              runApp, showURL)
 import           Lib (listAndSortTickets, processTicket, getTickets)
-import           Statistics (filterTicketsWithAttachments)
+import           Statistics (filterTicketsWithAttachments, showTicketWithAttachments)
 -- TODO(ks): What we are really missing is a realistic @Gen ZendeskLayer m@.
 
 main :: IO ()
@@ -44,6 +44,7 @@ withStubbedIOAndZendeskLayer stubbedZendeskLayer =
             { iolPrintText      = \_     -> pure ()
             -- ^ Do nothing with the output
             }
+
 listAndSortTicketsSpec :: Spec
 listAndSortTicketsSpec =
     describe "listAndSortTickets" $ modifyMaxSuccess (const 200) $ do
@@ -215,6 +216,14 @@ genCommentWithNoAttachment = Comment
     <*> arbitrary
     <*> arbitrary
 
+genCommentWithAttachment :: Gen Comment
+genCommentWithAttachment = Comment
+    <$> arbitrary
+    <*> arbitrary
+    <*> listOf1 arbitrary
+    <*> arbitrary
+    <*> arbitrary
+
 processTicketsSpec :: Spec
 processTicketsSpec =
     describe "processTickets" $ do
@@ -254,11 +263,11 @@ validShowURLSpec =
 
 filterTicketsWithAttachmentsSpec :: Spec
 filterTicketsWithAttachmentsSpec =
-    describe "filterTicketsWithAttachmentsSpec" $ do
+    describe "filterTicketsWithAttachments" $ do
         it "filters tickets with no attachments" $ do
             forAll arbitrary $ \(ticketInfo :: TicketInfo) ->
                 forAll (listOf1 arbitrary) $ \(listTickets) ->
-                    forAll (listOf1 arbitrary) $ \(comments) ->
+                    forAll (listOf1 genCommentWithAttachment) $ \(comments) ->
 
                         monadicIO $ do
 
@@ -278,4 +287,30 @@ filterTicketsWithAttachmentsSpec =
 
                             tickets <- run appExecution
                             -- Check we have some tickets.
-                            assert $ length tickets > 0
+                            assert $ (length tickets) > 0
+
+showTicketWithAttachmentsSpec :: Spec
+showTicketWithAttachmentsSpec =
+    describe "showTicketWithAttachments" $ do
+        it "shows tickets with attachments" $ do
+            forAll arbitrary $ \(ticketInfo :: TicketInfo) ->
+                forAll (listOf1 arbitrary) $ \(listTickets) ->
+                    forAll (listOf1 genCommentWithAttachment) $ \(comments) ->
+                        monadicIO $ do
+
+                            let stubbedZendeskLayer :: ZendeskLayer App
+                                stubbedZendeskLayer =
+                                    emptyZendeskLayer
+                                        { zlListAssignedTickets     = \_     -> pure listTickets
+                                        , zlGetTicketInfo           = \_     -> pure $ Just ticketInfo
+                                        , zlGetTicketComments       = \_     -> pure comments
+                                        , zlGetAttachment           = \_     -> pure $ Just mempty
+                                        }
+                            let stubbedConfig :: Config
+                                stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
+
+                            let appExecution :: IO ()
+                                appExecution = runApp (getTickets >>= showTicketWithAttachments ) stubbedConfig
+
+                            tickets <- run appExecution
+                            assert $ (length tickets) == (length listTickets)
