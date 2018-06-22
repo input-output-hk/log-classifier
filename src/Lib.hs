@@ -112,7 +112,7 @@ processTicket tId = do
     whenJust zendeskResponse postTicketComment
 
     printText "Process finished, please see the following url"
-    printText $ "https://iohk.zendesk.com/agent/tickets/" <> show tId
+    printText $ "https://iohk.zendesk.com/agent/tickets/" <> show (getTicketId tId)
 
     pure zendeskResponse
 
@@ -308,8 +308,11 @@ filterAnalyzedTickets ticketsInfo =
         && isTicketBlacklisted ticketInfo
         && isTicketInGoguenTestnet ticketInfo
 
+    analyzedTags :: [Text]
+    analyzedTags = map renderTicketStatus [AnalyzedByScriptV1_0, AnalyzedByScriptV1_1]
+
     isTicketAnalyzed :: TicketInfo -> Bool
-    isTicketAnalyzed TicketInfo{..} = (renderTicketStatus AnalyzedByScriptV1_0) `notElem` (getTicketTags tiTags)
+    isTicketAnalyzed TicketInfo{..} = all (\analyzedTag -> analyzedTag `notElem` (getTicketTags tiTags)) analyzedTags
     -- ^ This is showing that something is wrong...
 
     unsolvedTicketStatus :: [TicketStatus]

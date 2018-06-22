@@ -39,7 +39,7 @@ defaultConfig =
         , cfgAssignTo           = 0
         , cfgKnowledgebase      = []
         , cfgNumOfLogsToAnalyze = 5
-        , cfgIsCommentPublic    = True -- TODO(ks): For now, we need this in CLI.
+        , cfgIsCommentPublic    = False -- TODO(ks): For now, we need this in CLI.
         , cfgZendeskLayer       = basicZendeskLayer
         , cfgIOLayer            = basicIOLayer
         }
@@ -155,12 +155,12 @@ postTicketComment ZendeskResponse{..} = do
     let req2 = addJsonBody
                    (Ticket
                        (Comment (CommentId 0)
-                           (CommentBody $ "**Log classifier**\n\n" <> zrComment)
+                           (CommentBody zrComment)
                            []
                            zrIsPublic
                            (cfgAgentId cfg))
                        Nothing -- If Nothing, assigned_id field will be left untouched
-                       (renderTicketStatus AnalyzedByScriptV1_0:zrTags)
+                       (renderTicketStatus AnalyzedByScriptV1_1:zrTags)
                    )
                    req1
     void $ liftIO $ apiCall (pure . encodeToLazyText) req2

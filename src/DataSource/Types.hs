@@ -290,6 +290,7 @@ data TicketInfo = TicketInfo
 data TicketTag
     = AnalyzedByScript      -- ^ Ticket has been analyzed
     | AnalyzedByScriptV1_0  -- ^ Ticket has been analyzed by the version 1.0
+    | AnalyzedByScriptV1_1  -- ^ Ticket has been analyzed by the version 1.1
     | NoKnownIssue          -- ^ Ticket had no known issue
     | NoLogAttached         -- ^ Log file not attached
 
@@ -571,5 +572,6 @@ parseComments = withObject "comments" $ \o -> o .: "comments"
 renderTicketStatus :: TicketTag -> Text
 renderTicketStatus AnalyzedByScript     = "analyzed-by-script"
 renderTicketStatus AnalyzedByScriptV1_0 = "analyzed-by-script-v1.0"
+renderTicketStatus AnalyzedByScriptV1_1 = "analyzed-by-script-v1.1" -- switch to v1.1 on prod
 renderTicketStatus NoKnownIssue         = "no-known-issues"
 renderTicketStatus NoLogAttached        = "no-log-files"
