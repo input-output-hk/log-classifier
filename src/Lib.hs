@@ -100,7 +100,7 @@ processTicket tId = do
     getTicketInfo       <- asksZendeskLayer zlGetTicketInfo
     printText           <- asksIOLayer iolPrintText
 
-    printText "Processing a ticket"
+    printText $ "Processing a ticket: " <> show (getTicketId tId)
 
     mTicketInfo         <- getTicketInfo tId
     getTicketComments   <- asksZendeskLayer zlGetTicketComments
@@ -323,7 +323,7 @@ filterAnalyzedTickets ticketsInfo =
 
     -- | If we have a ticket we are having issues with...
     isTicketBlacklisted :: TicketInfo -> Bool
-    isTicketBlacklisted TicketInfo{..} = tiId `notElem` [TicketId 9377,TicketId 10815]
+    isTicketBlacklisted TicketInfo{..} = tiId `notElem` [TicketId 9377,TicketId 10815, TicketId 15066]
 
     isTicketInGoguenTestnet :: TicketInfo -> Bool
     isTicketInGoguenTestnet TicketInfo{..} = "goguen_testnets" `notElem` getTicketTags tiTags

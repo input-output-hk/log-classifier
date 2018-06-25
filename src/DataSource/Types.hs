@@ -572,6 +572,6 @@ parseComments = withObject "comments" $ \o -> o .: "comments"
 renderTicketStatus :: TicketTag -> Text
 renderTicketStatus AnalyzedByScript     = "analyzed-by-script"
 renderTicketStatus AnalyzedByScriptV1_0 = "analyzed-by-script-v1.0"
-renderTicketStatus AnalyzedByScriptV1_1 = "analyzed-by-script-v1.1" -- switch to v1.1 on prod
+renderTicketStatus AnalyzedByScriptV1_1 = "analyzed-by-script-v1.1"
 renderTicketStatus NoKnownIssue         = "no-known-issues"
 renderTicketStatus NoLogAttached        = "no-log-files"

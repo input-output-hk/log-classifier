@@ -39,7 +39,7 @@ defaultConfig =
         , cfgAssignTo           = 0
         , cfgKnowledgebase      = []
         , cfgNumOfLogsToAnalyze = 5
-        , cfgIsCommentPublic    = False -- TODO(ks): For now, we need this in CLI.
+        , cfgIsCommentPublic    = True -- TODO(ks): For now, we need this in CLI.
         , cfgZendeskLayer       = basicZendeskLayer
         , cfgIOLayer            = basicIOLayer
         }
