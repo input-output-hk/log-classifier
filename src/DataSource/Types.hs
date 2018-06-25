@@ -251,8 +251,6 @@ newtype CommentOuter = CommentOuter {
 data Ticket = Ticket
     { tComment  :: !Comment
     -- ^ Ticket comment
-    , tAssignee :: Maybe Integer -- Don't change the assignee
-    -- ^ Assignee of the ticket
     , tTag      :: ![Text]
     -- ^ Tags attached to ticket
     }
@@ -531,10 +529,9 @@ instance ToJSON CommentOuter where
                 ]
 
 instance ToJSON Ticket where
-    toJSON (Ticket comment assignee tags) =
+    toJSON (Ticket comment tags) =
         object  [ "ticket" .= object
                     [ "comment"     .= comment
-                    , "assignee_id" .= assignee
                     , "tags"        .= tags
                     ]
                 ]

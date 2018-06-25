@@ -159,7 +159,6 @@ postTicketComment ZendeskResponse{..} = do
                            []
                            zrIsPublic
                            (cfgAgentId cfg))
-                       Nothing -- If Nothing, assigned_id field will be left untouched
                        (renderTicketStatus AnalyzedByScriptV1_1:zrTags)
                    )
                    req1
