@@ -251,8 +251,6 @@ newtype CommentOuter = CommentOuter {
 data Ticket = Ticket
     { tComment  :: !Comment
     -- ^ Ticket comment
-    , tAssignee :: Maybe Integer -- Don't change the assignee
-    -- ^ Assignee of the ticket
     , tTag      :: ![Text]
     -- ^ Tags attached to ticket
     }
@@ -290,6 +288,7 @@ data TicketInfo = TicketInfo
 data TicketTag
     = AnalyzedByScript      -- ^ Ticket has been analyzed
     | AnalyzedByScriptV1_0  -- ^ Ticket has been analyzed by the version 1.0
+    | AnalyzedByScriptV1_1  -- ^ Ticket has been analyzed by the version 1.1
     | NoKnownIssue          -- ^ Ticket had no known issue
     | NoLogAttached         -- ^ Log file not attached
 
@@ -530,10 +529,9 @@ instance ToJSON CommentOuter where
                 ]
 
 instance ToJSON Ticket where
-    toJSON (Ticket comment assignee tags) =
+    toJSON (Ticket comment tags) =
         object  [ "ticket" .= object
                     [ "comment"     .= comment
-                    , "assignee_id" .= assignee
                     , "tags"        .= tags
                     ]
                 ]
@@ -571,5 +569,6 @@ parseComments = withObject "comments" $ \o -> o .: "comments"
 renderTicketStatus :: TicketTag -> Text
 renderTicketStatus AnalyzedByScript     = "analyzed-by-script"
 renderTicketStatus AnalyzedByScriptV1_0 = "analyzed-by-script-v1.0"
+renderTicketStatus AnalyzedByScriptV1_1 = "analyzed-by-script-v1.1"
 renderTicketStatus NoKnownIssue         = "no-known-issues"
 renderTicketStatus NoLogAttached        = "no-log-files"

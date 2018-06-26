@@ -100,7 +100,7 @@ processTicket tId = do
     getTicketInfo       <- asksZendeskLayer zlGetTicketInfo
     printText           <- asksIOLayer iolPrintText
 
-    printText "Processing a ticket"
+    printText $ "Processing a ticket: " <> show (getTicketId tId)
 
     mTicketInfo         <- getTicketInfo tId
     getTicketComments   <- asksZendeskLayer zlGetTicketComments
@@ -112,7 +112,7 @@ processTicket tId = do
     whenJust zendeskResponse postTicketComment
 
     printText "Process finished, please see the following url"
-    printText $ "https://iohk.zendesk.com/agent/tickets/" <> show tId
+    printText $ "https://iohk.zendesk.com/agent/tickets/" <> show (getTicketId tId)
 
     pure zendeskResponse
 
@@ -308,8 +308,11 @@ filterAnalyzedTickets ticketsInfo =
         && isTicketBlacklisted ticketInfo
         && isTicketInGoguenTestnet ticketInfo
 
+    analyzedTags :: [Text]
+    analyzedTags = map renderTicketStatus [AnalyzedByScriptV1_0, AnalyzedByScriptV1_1]
+
     isTicketAnalyzed :: TicketInfo -> Bool
-    isTicketAnalyzed TicketInfo{..} = (renderTicketStatus AnalyzedByScriptV1_0) `notElem` (getTicketTags tiTags)
+    isTicketAnalyzed TicketInfo{..} = all (\analyzedTag -> analyzedTag `notElem` (getTicketTags tiTags)) analyzedTags
     -- ^ This is showing that something is wrong...
 
     unsolvedTicketStatus :: [TicketStatus]
@@ -320,7 +323,7 @@ filterAnalyzedTickets ticketsInfo =
 
     -- | If we have a ticket we are having issues with...
     isTicketBlacklisted :: TicketInfo -> Bool
-    isTicketBlacklisted TicketInfo{..} = tiId `notElem` [TicketId 9377,TicketId 10815]
+    isTicketBlacklisted TicketInfo{..} = tiId `notElem` [TicketId 9377,TicketId 10815, TicketId 15066]
 
     isTicketInGoguenTestnet :: TicketInfo -> Bool
     isTicketInGoguenTestnet TicketInfo{..} = "goguen_testnets" `notElem` getTicketTags tiTags
