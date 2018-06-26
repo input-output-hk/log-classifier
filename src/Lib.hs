@@ -61,7 +61,7 @@ runZendeskMain = do
         (ProcessTicket ticketId) -> void $ runApp (processTicket (TicketId ticketId)) cfg
         ProcessTickets           -> void $ runApp processTickets cfg
         FetchTickets             -> runApp fetchTickets cfg
-        ShowStatistics           -> void $ runApp (showStatistics getTickets) cfg
+        ShowStatistics           -> void $ runApp (getTickets >>= showStatistics) cfg
 
 
 collectEmails :: App ()

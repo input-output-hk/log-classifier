@@ -265,30 +265,49 @@ filterTicketsWithAttachmentsSpec :: Spec
 filterTicketsWithAttachmentsSpec =
     describe "filterTicketsWithAttachments" $ do
         it "filters tickets with no attachments" $ do
-            forAll arbitrary $ \(ticketInfo :: TicketInfo) ->
-                forAll (listOf1 arbitrary) $ \(listTickets) ->
-                    forAll (listOf1 genCommentWithAttachment) $ \(comments) ->
+            forAll (listOf1 arbitrary) $ \(listTickets) ->
+                forAll (listOf1 genCommentWithAttachment) $ \(comments) ->
 
-                        monadicIO $ do
+                    monadicIO $ do
 
-                            let stubbedZendeskLayer :: ZendeskLayer App
-                                stubbedZendeskLayer =
-                                    emptyZendeskLayer
-                                        { zlListAssignedTickets     = \_     -> pure listTickets
-                                        , zlGetTicketInfo           = \_     -> pure $ Just ticketInfo
-                                        , zlGetTicketComments       = \_     -> pure comments
-                                        , zlGetAttachment           = \_     -> pure $ Just mempty
-                                        }
-                            let stubbedConfig :: Config
-                                stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
+                        let stubbedZendeskLayer :: ZendeskLayer App
+                            stubbedZendeskLayer =
+                                emptyZendeskLayer
+                                    {
+                                      zlGetTicketComments       = \_     -> pure comments
+                                    }
+                        let stubbedConfig :: Config
+                            stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
 
-                            let appExecution :: IO [TicketInfo]
-                                appExecution = runApp (getTickets >>= filterTicketsWithAttachments ) stubbedConfig
+                        let appExecution :: IO [TicketInfo]
+                            appExecution = runApp (filterTicketsWithAttachments listTickets) stubbedConfig
 
-                            tickets <- run appExecution
-                            -- Check we have some tickets.
-                            assert $ (length tickets) > 0
+                        tickets <- run appExecution
+                        -- Check we have some tickets.
+                        assert $ (length tickets) == (length listTickets)
 
+        it "if none of tickets should filter to zero" $ do
+            forAll (listOf1 arbitrary) $ \(listTickets) ->
+                forAll (listOf1 genCommentWithNoAttachment) $ \(comments) ->
+
+                    monadicIO $ do
+
+                        let stubbedZendeskLayer :: ZendeskLayer App
+                            stubbedZendeskLayer =
+                                emptyZendeskLayer
+                                    {
+                                      zlGetTicketComments       = \_     -> pure comments
+                                    }
+                        let stubbedConfig :: Config
+                            stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
+
+                        let appExecution :: IO [TicketInfo]
+                            appExecution = runApp (filterTicketsWithAttachments listTickets) stubbedConfig
+
+                        tickets <- run appExecution
+                        -- Check we have some tickets.
+                        assert $ (length tickets) == 0
+{-
 showTicketWithAttachmentsSpec :: Spec
 showTicketWithAttachmentsSpec =
     describe "showTicketWithAttachments" $ do
@@ -314,3 +333,4 @@ showTicketWithAttachmentsSpec =
 
                             tickets <- run appExecution
                             assert $ (length tickets) == (length listTickets)
+                            -}

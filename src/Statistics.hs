@@ -21,66 +21,74 @@ import Universum
 ------------------------------------------------------------
 
 -- | Show ticket statistics
-showStatistics :: App [TicketInfo] -> App ()
+showStatistics :: [TicketInfo] -> App [Text] 
 showStatistics tickets = do
-    tickets >>= showTicketCategoryCount
-    tickets >>= showTicketWithAttachments
+    let ticketCatCountIO = showTicketCategoryCount tickets
+    ticketWithAttachIO <- showTicketWithAttachments tickets
+    return $ concat [ticketWithAttachIO, ticketWithAttachIO]
 
 -- | Show all Tickets with Attachments
---showTicketWithAttachments :: [TicketInfo] -> App ()
+showTicketWithAttachments :: [TicketInfo] -> App [Text]
 showTicketWithAttachments tickets = do
     ticketsWithAttachments <- filterTicketsWithAttachments tickets
-    putTextLn $ "  Tickets with Attachments: " <> show (length ticketsWithAttachments)
-    mapM_ showTicketAttachments ticketsWithAttachments
+    let ticketsCountIO = ("Tickets with Attachments: " <> show (length ticketsWithAttachments) :: Text)
+    ticketsWithAttachIO <- concat <$> mapM (showTicketAttachments) ticketsWithAttachments
+    return $ ticketsCountIO : ticketsWithAttachIO
 
 -- | Display total, open, and closed tickets
-showTicketCategoryCount :: [TicketInfo] -> App ()
+showTicketCategoryCount :: [TicketInfo] -> [Text]
 showTicketCategoryCount tickets = do
-    putTextLn $ "--Tickets--"
-    -- How many tickets are there
-    putTextLn $ "Total: " <> show (length tickets)
-    -- How many tickets are open
-    openTickets <- pure $ filterTicketsByStatus tickets $ "open"
-    putTextLn $ "Open: " <> show (length openTickets)
-    -- How many tickets are closed
-    closedTickets <- pure $ filterTicketsByStatus tickets $ "closed"
-    putTextLn $ "Closed: " <> show (length closedTickets)
-
+    let headerIO  =  "--Tickets--" :: Text
+    let totalIO   = "Total: " <> show (length tickets) :: Text
+    let openTickets = filterTicketsByStatus tickets "open"
+    let openIO    =  "Open: " <> show (length openTickets) :: Text
+    let closedTickets = filterTicketsByStatus tickets "closed"
+    let closedIO  =  "Closed: " <> show (length closedTickets) :: Text
+    headerIO : totalIO : openIO : [closedIO]
+    
 -- | Show attachment info (Size - URL)
-showAttachmentInfo :: Attachment -> App Attachment
-showAttachmentInfo attachment = do
-    putText "  Attachment: "
-    (putText . show) (aSize attachment)
-    putText " - "
-    putTextLn $ aURL attachment
-    void attachment
+showAttachmentInfo :: Attachment -> Text
+showAttachmentInfo attachment =
+  ("  Attachment: " :: Text) <> (show $ aSize attachment) <> " - " <> (aURL attachment)
 
 -- | Show attachments of a comment
-showCommentAttachments :: Comment -> App ()
-showCommentAttachments comment = do
-    mapM_ showAttachmentInfo (cAttachments comment)
+showCommentAttachments :: Comment -> [Text]
+showCommentAttachments comment = fmap (showAttachmentInfo) (cAttachments comment)
 
 -- | Show attachments of a ticket
-showTicketAttachments :: TicketInfo -> App ()
-showTicketAttachments ticket = do
-    putText "Ticket #: "
-    putTextLn . show . getTicketId $ tiId ticket
-    getTicketComments <- asksZendeskLayer zlGetTicketComments
-    comments <-  getTicketComments (tiId ticket)
-    mapM_ showCommentAttachments (comments)
+showTicketAttachments :: TicketInfo -> App [Text]
+showTicketAttachments ticket = let 
+        ticketNumIO = (" Ticket #" <> (show $ tiId ticket) <> " : " :: Text)
+    in
+          getCommentsFromTicket ticket >>= \comments -> (return $ ticketNumIO : concat (fmap showCommentAttachments comments))
 
 -- | Filter Tickets that have a specified status
 filterTicketsByStatus :: [TicketInfo] -> Text -> [TicketInfo]
-filterTicketsByStatus tickets status =  do
-    filter ((== TicketStatus status) . tiStatus) tickets
+filterTicketsByStatus tickets status =
+    filter (\ticket -> ticketsFilter ticket status) tickets
+  where
+    ticketsFilter :: TicketInfo -> Text -> Bool
+    ticketsFilter ticket status =
+        ((== TicketStatus status) . tiStatus) ticket
 
+getCommentsFromTicket :: TicketInfo -> App [Comment]
+getCommentsFromTicket ticket = do
+    getTicketComments <- asksZendeskLayer zlGetTicketComments
+    getTicketComments (tiId ticket)
+    
 -- | Remove tickets without Attachments
 filterTicketsWithAttachments :: [TicketInfo] -> App [TicketInfo]
 filterTicketsWithAttachments tickets = do
-    let checkTicketForAttachments :: TicketInfo -> App Bool
-        checkTicketForAttachments ticket = do
-          getTicketComments <- asksZendeskLayer zlGetTicketComments
-          comments <- getTicketComments (tiId ticket)
-          commentsWithAttachments <- pure $ (filter (\comment -> length (cAttachments comment) > 0) comments)
-          pure $ not (null commentsWithAttachments)
-    filterM (\ticket -> checkTicketForAttachments ticket) tickets
+    filterM ticketsFilter tickets
+  where
+    ticketsFilter :: TicketInfo -> App Bool
+    ticketsFilter ticket =
+        doesTicketHaveAttachments ticket
+
+    commentHasAttachment :: Comment -> Bool
+    commentHasAttachment comment = length (cAttachments comment) > 0
+
+    doesTicketHaveAttachments :: TicketInfo -> App Bool
+    doesTicketHaveAttachments ticket = do
+      comments <- (getCommentsFromTicket ticket)
+      return (any commentHasAttachment comments)
