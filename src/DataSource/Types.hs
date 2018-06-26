@@ -47,8 +47,8 @@ module DataSource.Types
 
 import           Universum
 
-import           Data.Aeson (FromJSON, ToJSON, Value, object, parseJSON, toJSON, withObject, (.:),
-                             (.=))
+import           Data.Aeson (FromJSON, ToJSON, Value (Object), object, parseJSON, toJSON,
+                             withObject, (.:), (.=))
 import           Data.Aeson.Types (Parser)
 import           Data.Text (pack)
 import           LogAnalysis.Types (Knowledge)
@@ -131,13 +131,14 @@ assignToPath = "./tmp-secrets/assign_to"
 -- We don't want anything to leak out, so we expose only the most relevant information,
 -- anything relating to how it internaly works should NOT be exposed.
 data ZendeskLayer m = ZendeskLayer
-    { zlGetTicketInfo        :: TicketId         -> m (Maybe TicketInfo)
-    , zlListRequestedTickets :: UserId           -> m [TicketInfo]
-    , zlListAssignedTickets  :: UserId           -> m [TicketInfo]
-    , zlListAdminAgents      ::                     m [User]
-    , zlGetTicketComments    :: TicketId         -> m [Comment]
-    , zlGetAttachment        :: Attachment       -> m (Maybe AttachmentContent)
-    , zlPostTicketComment    :: ZendeskResponse  -> m ()
+    { zlGetTicketInfo         :: TicketId         -> m (Maybe TicketInfo)
+    , zlListRequestedTickets  :: UserId           -> m [TicketInfo]
+    , zlListAssignedTickets   :: UserId           -> m [TicketInfo]
+    , zlListUnassignedTickets ::                     m [TicketInfo]
+    , zlListAdminAgents       ::                     m [User]
+    , zlGetTicketComments     :: TicketId         -> m [Comment]
+    , zlGetAttachment         :: Attachment       -> m (Maybe AttachmentContent)
+    , zlPostTicketComment     :: ZendeskResponse  -> m ()
     }
 
 -- | The IOLayer interface that we can expose.
@@ -167,6 +168,7 @@ data ZendeskAPIUrl
     = AgentGroupURL
     | UserRequestedTicketsURL UserId
     | UserAssignedTicketsURL UserId
+    | UserUnassignedTicketsURL
     | TicketsURL TicketId
     | TicketAgentURL TicketId
     | UserInfoURL
@@ -177,6 +179,7 @@ showURL :: ZendeskAPIUrl -> Text
 showURL AgentGroupURL                       = "users.json?role%5B%5D=admin&role%5B%5D=agent"
 showURL (UserRequestedTicketsURL userId)    = "/users/" <> toURL userId <> "/tickets/requested.json"
 showURL (UserAssignedTicketsURL userId)     = "/users/" <> toURL userId <> "/tickets/assigned.json"
+showURL (UserUnassignedTicketsURL)          = "/search.json?query=type%3Aticket%20assignee%3Anone&sort_by=created_at&sort_order=asc"
 showURL (TicketsURL ticketId)               = "/tickets/" <> toURL ticketId <> ".json"
 showURL (TicketAgentURL ticketId)           = "https://iohk.zendesk.com/agent/tickets/" <> toURL ticketId
 showURL (UserInfoURL)                       = "/users/me.json"
@@ -249,9 +252,9 @@ newtype CommentOuter = CommentOuter {
 
 -- | Zendesk ticket
 data Ticket = Ticket
-    { tComment  :: !Comment
+    { tComment :: !Comment
     -- ^ Ticket comment
-    , tTag      :: ![Text]
+    , tTag     :: ![Text]
     -- ^ Tags attached to ticket
     }
 
@@ -457,10 +460,26 @@ class FromPageResultList a where
     fromPageResult :: Value -> Parser (PageResultList a)
 
 instance FromPageResultList TicketInfo where
-    fromPageResult = withObject "ticketList" $ \o ->
+    fromPageResult obj = asum
+        [ ticketListParser obj
+        , resultsTicketsParser obj
+        ]
+      where
+          -- | The case when we have the simple parser from tickets.
+        ticketListParser :: Value -> Parser (PageResultList TicketInfo)
+        ticketListParser = withObject "ticketList" $ \o ->
             PageResultList
                 <$> o .: "tickets"
                 <*> o .: "next_page"
+
+        -- | The case when we get results back from a query using the
+        -- search API.
+        resultsTicketsParser :: Value -> Parser (PageResultList TicketInfo)
+        resultsTicketsParser (Object o) =
+            PageResultList
+                <$> o .: "results"
+                <*> o .: "next_page"
+        resultsTicketsParser _ = fail "Cannot parse PageResultList from search API."
 
 instance FromPageResultList User where
     fromPageResult = withObject "userList" $ \o ->

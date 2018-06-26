@@ -119,16 +119,24 @@ processTicket tId = do
 
 processTickets :: App ()
 processTickets = do
-    sortedTicketIds     <- listAndSortTickets
-    _                   <- mapM (processTicket . tiId) sortedTicketIds
+    sortedTicketIds             <- listAndSortTickets
+    sortedUnassignedTicketIds   <- listAndSortUnassignedTickets
+
+    let allTickets = sortedTicketIds <> sortedUnassignedTicketIds
+
+    _                   <- mapM (processTicket . tiId) sortedUnassignedTicketIds
 
     putTextLn "All the tickets has been processed."
 
 
 fetchTickets :: App ()
 fetchTickets = do
-    sortedTicketIds <- listAndSortTickets
-    mapM_ (putTextLn . show) sortedTicketIds
+    sortedTicketIds             <- listAndSortTickets
+    sortedUnassignedTicketIds   <- listAndSortUnassignedTickets
+
+    let allTickets = sortedTicketIds <> sortedUnassignedTicketIds
+
+    mapM_ (putTextLn . show) allTickets
     putTextLn "All the tickets has been processed."
 
 
@@ -147,6 +155,8 @@ showStatistics = do
     tickets     <- listTickets userId
     pure () -- TODO(ks): Implement anew.
 
+
+-- TODO(ks): Extract repeating code, generalize.
 listAndSortTickets :: App [TicketInfo]
 listAndSortTickets = do
 
@@ -154,7 +164,7 @@ listAndSortTickets = do
 
     listAgents <- asksZendeskLayer zlListAdminAgents
     agents <- listAgents
-    
+
     let agentIds :: [UserId]
         agentIds = map uId agents
     -- We first fetch the function from the configuration
@@ -173,6 +183,24 @@ listAndSortTickets = do
 
     pure sortedTicketIds
 
+listAndSortUnassignedTickets :: App [TicketInfo]
+listAndSortUnassignedTickets = do
+
+    -- We first fetch the function from the configuration
+    listUnassignedTickets   <- asksZendeskLayer zlListUnassignedTickets
+    printText               <- asksIOLayer iolPrintText
+
+    printText "Classifier is going to process tickets assigned to agents"
+
+    ticketInfos             <- listUnassignedTickets
+
+    let filteredTicketIds   = filterAnalyzedTickets ticketInfos
+    let sortedTicketIds     = sortBy compare filteredTicketIds
+
+    printText $ "There are " <> show (length sortedTicketIds) <> " unanalyzed and unassigned tickets."
+    printText "Processing tickets, this may take hours to finish."
+
+    pure sortedTicketIds
 
 -- | Read CSV file and setup knowledge base
 setupKnowledgebaseEnv :: FilePath -> IO [Knowledge]
