@@ -23,9 +23,9 @@ import           DataSource.Types (Attachment (..), AttachmentContent (..), Comm
                                    CommentBody (..), CommentId (..), Config (..),
                                    FromPageResultList (..), IOLayer (..), PageResultList (..),
                                    Ticket (..), TicketId (..), TicketInfo (..), TicketTag (..),
-                                   User, UserId (..), ZendeskAPIUrl (..), ZendeskLayer (..),
-                                   ZendeskResponse (..), parseComments, parseTicket,
-                                   renderTicketStatus, showURL)
+                                   TicketTags (..), User, UserId (..), ZendeskAPIUrl (..),
+                                   ZendeskLayer (..), ZendeskResponse (..), parseComments,
+                                   parseTicket, renderTicketStatus, showURL)
 
 
 -- | The default configuration.
@@ -164,6 +164,7 @@ postTicketComment
 postTicketComment ZendeskResponse{..} = do
     cfg <- ask
 
+    let ticketTags = TicketTags (renderTicketStatus AnalyzedByScriptV1_1 : getTicketTags zrTags)
     let url  = showURL $ TicketsURL zrTicketId
     let req1 = apiRequest cfg url
     let req2 = addJsonBody
@@ -173,7 +174,7 @@ postTicketComment ZendeskResponse{..} = do
                            []
                            zrIsPublic
                            (cfgAgentId cfg))
-                       (renderTicketStatus AnalyzedByScriptV1_1:zrTags)
+                       ticketTags
                    )
                    req1
     void $ liftIO $ apiCall (pure . encodeToLazyText) req2

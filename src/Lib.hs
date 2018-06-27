@@ -95,27 +95,36 @@ fetchAgents = do
 
 processTicket :: TicketId -> App (Maybe ZendeskResponse)
 processTicket tId = do
+    printText <- asksIOLayer iolPrintText
+    -- Printing id before inspecting the ticket so that when the process stops by the
+    -- corrupted log file, we know which id to blacklist.
+    printText $ "Analyzing ticket id: " <> show (getTicketId tId)
 
     -- We first fetch the function from the configuration
     getTicketInfo       <- asksZendeskLayer zlGetTicketInfo
-    printText           <- asksIOLayer iolPrintText
-
-    printText $ "Processing a ticket: " <> show (getTicketId tId)
-
     mTicketInfo         <- getTicketInfo tId
+    
     getTicketComments   <- asksZendeskLayer zlGetTicketComments
     comments            <- getTicketComments tId
     let attachments     = getAttachmentsFromComment comments
     let ticketInfo      = fromMaybe (error "No ticket info") mTicketInfo
     zendeskResponse     <- getZendeskResponses comments attachments ticketInfo
-    postTicketComment   <- asksZendeskLayer zlPostTicketComment
-    whenJust zendeskResponse postTicketComment
 
-    printText "Process finished, please see the following url"
-    printText $ "https://iohk.zendesk.com/agent/tickets/" <> show (getTicketId tId)
+    postTicketComment   <- asksZendeskLayer zlPostTicketComment
+    whenJust zendeskResponse $ \response -> do
+        printZendeskResponse response
+        postTicketComment response
 
     pure zendeskResponse
 
+printZendeskResponse :: ZendeskResponse -> App ()
+printZendeskResponse zendeskResponse = do
+    let ticketTags = zrTags zendeskResponse
+    printText <- asksIOLayer iolPrintText
+    printText $ formatTags ticketTags
+  where
+    formatTags :: TicketTags -> Text
+    formatTags tags = foldr (\tag acc -> tag <> ":" <> acc) "" (getTicketTags tags)
 
 processTickets :: App ()
 processTickets = do
@@ -286,7 +295,7 @@ inspectAttachment Config{..} ticketInfo@TicketInfo{..} attContent = do
             ZendeskResponse
                 { zrTicketId    = tiId
                 , zrComment     = prettyFormatLogReadError ticketInfo
-                , zrTags        = [renderErrorCode SentLogCorrupted]
+                , zrTags        = TicketTags [renderErrorCode SentLogCorrupted]
                 , zrIsPublic    = cfgIsCommentPublic
                 }
         Right result -> do
@@ -301,7 +310,7 @@ inspectAttachment Config{..} ticketInfo@TicketInfo{..} attContent = do
                     ZendeskResponse
                         { zrTicketId    = tiId
                         , zrComment     = commentRes
-                        , zrTags        = errorCodes
+                        , zrTags        = TicketTags errorCodes
                         , zrIsPublic    = cfgIsCommentPublic
                         }
 
@@ -310,7 +319,7 @@ inspectAttachment Config{..} ticketInfo@TicketInfo{..} attContent = do
                     ZendeskResponse
                         { zrTicketId    = tiId
                         , zrComment     = prettyFormatNoIssues ticketInfo
-                        , zrTags        = [renderTicketStatus NoKnownIssue]
+                        , zrTags        = TicketTags [renderTicketStatus NoKnownIssue]
                         , zrIsPublic    = cfgIsCommentPublic
                         }
 
@@ -320,7 +329,7 @@ responseNoLogs TicketInfo{..} = do
     pure ZendeskResponse
              { zrTicketId = tiId
              , zrComment  = prettyFormatNoLogs
-             , zrTags     = [renderTicketStatus NoLogAttached]
+             , zrTags     = TicketTags [renderTicketStatus NoLogAttached]
              , zrIsPublic = cfgIsCommentPublic
              }
 

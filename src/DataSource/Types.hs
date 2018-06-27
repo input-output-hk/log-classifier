@@ -261,7 +261,7 @@ data RequestType
 data ZendeskResponse = ZendeskResponse
     { zrTicketId :: !TicketId
     , zrComment  :: !Text
-    , zrTags     :: ![Text] -- TODO(ks): This should be wrapped
+    , zrTags     :: !TicketTags
     , zrIsPublic :: !Bool
     }
 
@@ -296,7 +296,7 @@ newtype CommentOuter = CommentOuter {
 data Ticket = Ticket
     { tComment :: !Comment
     -- ^ Ticket comment
-    , tTag     :: ![Text]
+    , tTag      :: !TicketTags
     -- ^ Tags attached to ticket
     }
 
