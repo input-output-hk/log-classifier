@@ -2,6 +2,7 @@ module Statistics
   ( showStatistics
   , filterTicketsWithAttachments
   , showTicketWithAttachments
+  , filterTicketsByStatus
   ) where
 
 import DataSource
