@@ -74,21 +74,21 @@ collectEmails = do
 
     -- We first fetch the function from the configuration
     listTickets <- asksZendeskLayer zlListAssignedTickets
-    putTextLn $  "Classifier is going to extract emails requested by: " <> email
-    tickets <- listTickets userId
+    putTextLn $ "Classifier is going to extract emails requested by: " <> email
+    tickets     <- listTickets userId
     putTextLn $ "There are " <> show (length tickets) <> " tickets requested by this user."
     let ticketIds = foldr (\TicketInfo{..} acc -> tiId : acc) [] tickets
     mapM_ extractEmailAddress ticketIds
 
 fetchAgents :: App [User]
 fetchAgents = do
-    Config{..} <- ask
+    Config{..}      <- ask
     listAdminAgents <- asksZendeskLayer zlListAdminAgents
-    printText <- asksIOLayer iolPrintText
+    printText       <- asksIOLayer iolPrintText
 
     printText "Fetching Zendesk agents"
 
-    agents <- listAdminAgents
+    agents          <- listAdminAgents
 
     mapM_ print agents
     pure agents
@@ -104,9 +104,9 @@ processTicket tId = do
 
     mTicketInfo         <- getTicketInfo tId
     getTicketComments   <- asksZendeskLayer zlGetTicketComments
-    comments      <- getTicketComments tId
-    let attachments = getAttachmentsFromComment comments
-    let ticketInfo  = fromMaybe (error "No ticket info") mTicketInfo
+    comments            <- getTicketComments tId
+    let attachments     = getAttachmentsFromComment comments
+    let ticketInfo      = fromMaybe (error "No ticket info") mTicketInfo
     zendeskResponse     <- getZendeskResponses comments attachments ticketInfo
     postTicketComment   <- asksZendeskLayer zlPostTicketComment
     whenJust zendeskResponse postTicketComment
@@ -124,7 +124,7 @@ processTickets = do
 
     let allTickets = sortedTicketIds <> sortedUnassignedTicketIds
 
-    _                   <- mapM (processTicket . tiId) sortedUnassignedTicketIds
+    _                   <- mapM (processTicket . tiId) allTickets
 
     putTextLn "All the tickets has been processed."
 

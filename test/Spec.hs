@@ -76,7 +76,7 @@ listAndSortTicketsSpec =
                     forAll (listOf1 arbitrary) $ \(agents :: [User]) ->
 
                         monadicIO $ do
-                        
+
                             pre $ any (\TicketInfo{..} -> tiStatus /= TicketStatus "solved") listTickets
 
                             let stubbedZendeskLayer :: ZendeskLayer App
@@ -240,6 +240,10 @@ validShowURLSpec =
             property $ \userId ->
                 let typedURL    = showURL $ UserAssignedTicketsURL userId
                     untypedURL  = "/users/" <> show (getUserId userId) <> "/tickets/assigned.json"
+                in  typedURL == untypedURL
+        it "returns valid UserUnassignedTicketsURL" $
+                let typedURL    = showURL $ UserUnassignedTicketsURL
+                    untypedURL  = "/search.json?query=type%3Aticket%20assignee%3Anone&sort_by=created_at&sort_order=asc"
                 in  typedURL == untypedURL
         it "returns valid TicketsURL" $ do
             property $ \ticketId ->

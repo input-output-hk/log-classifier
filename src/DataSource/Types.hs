@@ -50,7 +50,7 @@ import           Universum
 import           Data.Aeson (FromJSON, ToJSON, Value (Object), object, parseJSON, toJSON,
                              withObject, (.:), (.=))
 import           Data.Aeson.Types (Parser)
-import           Data.Text (pack)
+import qualified Data.Text as T
 import           LogAnalysis.Types (Knowledge)
 
 import           Test.QuickCheck (Arbitrary (..), elements, listOf1, vectorOf)
@@ -179,11 +179,53 @@ showURL :: ZendeskAPIUrl -> Text
 showURL AgentGroupURL                       = "users.json?role%5B%5D=admin&role%5B%5D=agent"
 showURL (UserRequestedTicketsURL userId)    = "/users/" <> toURL userId <> "/tickets/requested.json"
 showURL (UserAssignedTicketsURL userId)     = "/users/" <> toURL userId <> "/tickets/assigned.json"
-showURL (UserUnassignedTicketsURL)          = "/search.json?query=type%3Aticket%20assignee%3Anone&sort_by=created_at&sort_order=asc"
+showURL (UserUnassignedTicketsURL)          = "/search.json?query=" <> urlEncode "type:ticket assignee:none" <> "&sort_by=created_at&sort_order=asc"
 showURL (TicketsURL ticketId)               = "/tickets/" <> toURL ticketId <> ".json"
 showURL (TicketAgentURL ticketId)           = "https://iohk.zendesk.com/agent/tickets/" <> toURL ticketId
 showURL (UserInfoURL)                       = "/users/me.json"
 showURL (TicketCommentsURL ticketId)        = "/tickets/" <> toURL ticketId <> "/comments.json"
+
+-- | Plain @Text@ to @Text@ encoding.
+-- https://en.wikipedia.org/wiki/Percent-encoding
+urlEncode :: Text -> Text
+urlEncode url = T.concatMap encodeChar url
+  where
+    encodeChar :: Char -> Text
+    encodeChar '!'  = T.pack "%21"
+    encodeChar '#'  = T.pack "%23"
+    encodeChar '$'  = T.pack "%24"
+    encodeChar '&'  = T.pack "%26"
+    encodeChar '\'' = T.pack "%27"
+    encodeChar '('  = T.pack "%28"
+    encodeChar ')'  = T.pack "%29"
+    encodeChar '*'  = T.pack "%2A"
+    encodeChar '+'  = T.pack "%2B"
+    encodeChar ','  = T.pack "%2C"
+    encodeChar '/'  = T.pack "%2F"
+    encodeChar ':'  = T.pack "%3A"
+    encodeChar ';'  = T.pack "%3B"
+    encodeChar '='  = T.pack "%3D"
+    encodeChar '?'  = T.pack "%3F"
+    encodeChar '@'  = T.pack "%40"
+    encodeChar '['  = T.pack "%5B"
+    encodeChar ']'  = T.pack "%5D"
+    encodeChar '\n' = T.pack "%0A"
+    encodeChar ' '  = T.pack "%20"
+    encodeChar '"'  = T.pack "%22"
+    encodeChar '%'  = T.pack "%25"
+    encodeChar '-'  = T.pack "%2D"
+    encodeChar '.'  = T.pack "%2E"
+    encodeChar '<'  = T.pack "%3C"
+    encodeChar '>'  = T.pack "%3E"
+    encodeChar '\\' = T.pack "%5C"
+    encodeChar '^'  = T.pack "%5E"
+    encodeChar '_'  = T.pack "%5F"
+    encodeChar '`'  = T.pack "%60"
+    encodeChar '{'  = T.pack "%7B"
+    encodeChar '|'  = T.pack "%7C"
+    encodeChar '}'  = T.pack "%7D"
+    encodeChar '~'  = T.pack "%7E"
+    encodeChar char = T.singleton char
 
 ------------------------------------------------------------
 -- Types
@@ -368,7 +410,7 @@ instance Arbitrary TicketURL where
         protocol    <- elements ["http://", "https://"]
         name        <- listOf1 $ elements ['a'..'z']
         domain      <- elements [".com",".com.br",".net",".io"]
-        pure . TicketURL . pack $ protocol ++ name ++ domain
+        pure . TicketURL . T.pack $ protocol ++ name ++ domain
 
 instance Arbitrary TicketInfo where
     arbitrary = do
@@ -396,7 +438,7 @@ instance Arbitrary UserEmail where
     arbitrary = do
         address     <- listOf1 $ elements ['a'..'z']
         domain      <- elements ["gmail.com", "yahoo.com", "hotmail.com"]
-        pure . UserEmail . pack $ address <> "@" <> domain
+        pure . UserEmail . T.pack $ address <> "@" <> domain
 
 instance Arbitrary UserName where
     arbitrary = UserName . fromString <$> arbitrary
@@ -406,7 +448,7 @@ instance Arbitrary UserURL where
         protocol    <- elements ["http://", "https://"]
         name        <- listOf1 $ elements ['a'..'z']
         domain      <- elements [".com",".com.br",".net",".io"]
-        pure . UserURL . pack $ protocol ++ name ++ domain
+        pure . UserURL . T.pack $ protocol ++ name ++ domain
 
 instance Arbitrary User where
     arbitrary = do
