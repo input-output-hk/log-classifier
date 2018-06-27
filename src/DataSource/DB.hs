@@ -23,6 +23,7 @@ import           Database.SQLite.Simple.ToField (ToField (..))
 
 import           DataSource.Types (Attachment (..), AttachmentContent (..), AttachmentId (..),
                                    Comment (..), CommentBody (..), CommentId (..), Config,
+                                   TicketField (..), TicketFieldId (..), TicketFieldValue (..),
                                    TicketId (..), TicketInfo (..), TicketStatus (..),
                                    TicketTags (..), TicketURL (..), UserId (..), ZendeskLayer (..))
 
@@ -46,6 +47,17 @@ cachedZendeskLayer = ZendeskLayer
 -- Database instances
 -- FROM
 
+instance FromField TicketFieldId where
+    fromField (Field (SQLInteger tfId) _)     = Ok . TicketFieldId . fromIntegral $ tfId
+    fromField f                             = returnError ConversionFailed f "need a text, ticket status"
+
+instance FromField TicketFieldValue where
+    fromField (Field (SQLText tfValue) _)     = Ok . TicketFieldValue $ tfValue
+    fromField f                             = returnError ConversionFailed f "need a text, ticket status"
+
+instance FromField [TicketField] where
+    fromField _ = undefined
+
 instance FromField TicketId where
     fromField (Field (SQLInteger tId) _)    = Ok . TicketId . fromIntegral $ tId
     fromField f                             = returnError ConversionFailed f "need an integer, ticket id"
@@ -68,7 +80,7 @@ instance FromField TicketStatus where
     fromField f                             = returnError ConversionFailed f "need a text, ticket status"
 
 instance FromRow TicketInfo where
-    fromRow = TicketInfo <$> field <*> field <*> field <*> field <*> field <*> field
+    fromRow = TicketInfo <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
 
 instance FromField CommentId where
     fromField (Field (SQLInteger commId) _) = Ok . CommentId . fromIntegral $ commId

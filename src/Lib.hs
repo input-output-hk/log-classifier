@@ -111,7 +111,6 @@ processTicket tId = do
     let attachments     = getAttachmentsFromComment comments
     let ticketInfo      = fromMaybe (error "No ticket info") mTicketInfo
     zendeskResponse     <- getZendeskResponses comments attachments ticketInfo
-
     postTicketComment   <- asksZendeskLayer zlPostTicketComment
     
     whenJust zendeskResponse $ \response -> do
@@ -119,7 +118,7 @@ processTicket tId = do
         printText formattedTags
         appendF <- asksIOLayer iolAppendFile
         appendF "logs/analysis-result.log" (show (getTicketId tId) <> " " <> formattedTags <> "\n")
-        postTicketComment response
+        postTicketComment ticketInfo response
 
     pure zendeskResponse
 

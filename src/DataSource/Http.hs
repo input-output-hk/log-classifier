@@ -22,10 +22,10 @@ import           Network.HTTP.Simple (Request, addRequestHeader, getResponseBody
 import           DataSource.Types (Attachment (..), AttachmentContent (..), Comment (..),
                                    CommentBody (..), CommentId (..), Config (..),
                                    FromPageResultList (..), IOLayer (..), PageResultList (..),
-                                   Ticket (..), TicketId (..), TicketInfo (..), TicketTag (..),
-                                   TicketTags (..), User, UserId (..), ZendeskAPIUrl (..),
-                                   ZendeskLayer (..), ZendeskResponse (..), parseComments,
-                                   parseTicket, renderTicketStatus, showURL)
+                                   Ticket (..), TicketId (..), TicketInfo (..), TicketTag (..), TicketTags(..),
+                                   User, UserId (..), ZendeskAPIUrl (..), ZendeskLayer (..),
+                                   ZendeskResponse (..), parseComments, parseTicket,
+                                   renderTicketStatus, showURL)
 
 
 -- | The default configuration.
@@ -160,12 +160,14 @@ iteratePages req = do
 -- | Send API request to post comment
 postTicketComment
     :: (MonadIO m, MonadReader Config m)
-    => ZendeskResponse
+    => TicketInfo
+    -> ZendeskResponse
     -> m ()
-postTicketComment ZendeskResponse{..} = do
+postTicketComment TicketInfo{..} ZendeskResponse{..} = do
     cfg <- ask
 
-    let ticketTags = TicketTags (renderTicketStatus AnalyzedByScriptV1_1 : getTicketTags zrTags)
+    let analyzedTag = renderTicketStatus AnalyzedByScriptV1_1
+    let mergedTags = TicketTags $ [analyzedTag] <> getTicketTags tiTags <> getTicketTags zrTags
     let url  = showURL $ TicketsURL zrTicketId
     let req1 = apiRequest cfg url
     let req2 = addJsonBody
@@ -175,7 +177,9 @@ postTicketComment ZendeskResponse{..} = do
                            []
                            zrIsPublic
                            (cfgAgentId cfg))
-                       ticketTags
+                       mergedTags
+                       tiField
+                       tiCustomField
                    )
                    req1
     void $ liftIO $ apiCall (pure . encodeToLazyText) req2
