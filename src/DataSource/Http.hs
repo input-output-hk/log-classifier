@@ -50,6 +50,7 @@ basicZendeskLayer = ZendeskLayer
     { zlGetTicketInfo           = getTicketInfo
     , zlListRequestedTickets    = listRequestedTickets
     , zlListAssignedTickets     = listAssignedTickets
+    , zlListUnassignedTickets   = listUnassignedTickets
     , zlListAdminAgents         = listAdminAgents
     , zlPostTicketComment       = postTicketComment
     , zlGetAttachment           = getAttachment
@@ -69,6 +70,7 @@ emptyZendeskLayer = ZendeskLayer
     { zlGetTicketInfo           = \_     -> error "Not implemented zlGetTicketInfo!"
     , zlListRequestedTickets    = \_     -> error "Not implemented zlListRequestedTickets!"
     , zlListAssignedTickets     = \_     -> error "Not implemented zlListAssignedTickets!"
+    , zlListUnassignedTickets   =           pure []
     , zlListAdminAgents         =           pure []
     , zlPostTicketComment       = \_     -> error "Not implemented zlPostTicketComment!"
     , zlGetAttachment           = \_     -> error "Not implemented zlGetAttachment!"
@@ -109,6 +111,18 @@ listAssignedTickets userId = do
     cfg <- ask
 
     let url = showURL $ UserAssignedTicketsURL userId
+    let req = apiRequest cfg url
+
+    iteratePages req
+
+-- | Return list of ticketIds that has been unassigned.
+listUnassignedTickets
+    :: forall m. (MonadIO m, MonadReader Config m)
+    => m [TicketInfo]
+listUnassignedTickets = do
+    cfg <- ask
+
+    let url = showURL $ UserUnassignedTicketsURL
     let req = apiRequest cfg url
 
     iteratePages req

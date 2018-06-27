@@ -4,7 +4,7 @@ import           Universum
 
 import           Test.Hspec (Spec, describe, hspec, it, pending, shouldBe)
 import           Test.Hspec.QuickCheck (modifyMaxSuccess)
-import           Test.QuickCheck (Gen, arbitrary, elements, forAll, listOf, listOf1, property)
+import           Test.QuickCheck (Gen, arbitrary, forAll, listOf, listOf1, property, elements)
 import           Test.QuickCheck.Monadic (assert, monadicIO, pre, run)
 
 import           DataSource (App, Comment (..), Config (..), IOLayer (..), TicketId (..),
@@ -241,6 +241,10 @@ validShowURLSpec =
                 let typedURL    = showURL $ UserAssignedTicketsURL userId
                     untypedURL  = "/users/" <> show (getUserId userId) <> "/tickets/assigned.json"
                 in  typedURL == untypedURL
+        it "returns valid UserUnassignedTicketsURL" $
+                let typedURL    = showURL $ UserUnassignedTicketsURL
+                    untypedURL  = "/search.json?query=type%3Aticket%20assignee%3Anone&sort_by=created_at&sort_order=asc"
+                in  typedURL == untypedURL
         it "returns valid TicketsURL" $ do
             property $ \ticketId ->
                 let typedURL    = showURL $ TicketsURL ticketId
@@ -275,13 +279,8 @@ filterAnalyzedTicketsSpec =
                 \(ticketInfos :: [TicketInfo]) ->
                     length (filterAnalyzedTickets ticketInfos) `shouldBe` 0
 
-        it "should filter analyzed tickets v1.0" $
+        it "should filter analyzed tickets" $
             forAll (listOf $ genTicketWithFilteredTags ["analyzed-by-script-v1.0"]) $
-                \(ticketInfos :: [TicketInfo]) ->
-                    length (filterAnalyzedTickets ticketInfos) `shouldBe` 0
-
-        it "should filter analyzed tickets v1.1" $
-            forAll (listOf $ genTicketWithFilteredTags ["analyzed-by-script-v1.1"]) $
                 \(ticketInfos :: [TicketInfo]) ->
                     length (filterAnalyzedTickets ticketInfos) `shouldBe` 0
 
@@ -291,7 +290,7 @@ genTicketWithFilteredTags tagToBeFiltered = TicketInfo
     <*> arbitrary
     <*> arbitrary
     <*> arbitrary
-    <*> return (TicketTags tagToBeFiltered) -- (hs) Want to create random list
+    <*> return (TicketTags tagToBeFiltered)
     <*> arbitrary
 
 genTicketWithUnsolvedStatus :: Gen TicketInfo
