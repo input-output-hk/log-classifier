@@ -4,15 +4,15 @@ import           Universum
 
 import           Test.Hspec (Spec, describe, hspec, it, pending)
 import           Test.Hspec.QuickCheck (modifyMaxSuccess)
-import           Test.QuickCheck (Gen, arbitrary, forAll, listOf1, property)
+import           Test.QuickCheck (Gen, arbitrary, forAll, listOf1, property, elements)
 import           Test.QuickCheck.Monadic (assert, monadicIO, pre, run)
 
 import           DataSource (App, Comment (..), Config (..), IOLayer (..), TicketId (..),
-                             TicketInfo (..), UserId (..), ZendeskAPIUrl (..), ZendeskLayer (..),
+                             TicketStatus (..), TicketInfo (..), UserId (..), ZendeskAPIUrl (..), ZendeskLayer (..),
                              ZendeskResponse (..), basicIOLayer, defaultConfig, emptyZendeskLayer,
                              runApp, showURL)
-import           Lib (listAndSortTickets, processTicket, getTickets)
-import           Statistics (filterTicketsWithAttachments, showTicketWithAttachments)
+import           Lib (listAndSortTickets, processTicket)
+import           Statistics (filterTicketsWithAttachments, filterTicketsByStatus)
 -- TODO(ks): What we are really missing is a realistic @Gen ZendeskLayer m@.
 
 main :: IO ()
@@ -25,7 +25,6 @@ spec =
         validShowURLSpec
         listAndSortTicketsSpec
         processTicketSpec
-        processTicketsSpec
         filterTicketsWithAttachmentsSpec
 
 
@@ -224,6 +223,15 @@ genCommentWithAttachment = Comment
     <*> arbitrary
     <*> arbitrary
 
+genTicketWithStatus :: Gen TicketInfo
+genTicketWithStatus = TicketInfo 
+    <$> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> elements [TicketStatus "open", TicketStatus "closed"]
+
 processTicketsSpec :: Spec
 processTicketsSpec =
     describe "processTickets" $ do
@@ -264,7 +272,7 @@ validShowURLSpec =
 filterTicketsWithAttachmentsSpec :: Spec
 filterTicketsWithAttachmentsSpec =
     describe "filterTicketsWithAttachments" $ do
-        it "filters tickets with no attachments" $ do
+        it "filtered/unfiltered tickets return same length if all tickets have attachments" $ do
             forAll (listOf1 arbitrary) $ \(listTickets) ->
                 forAll (listOf1 genCommentWithAttachment) $ \(comments) ->
 
@@ -286,7 +294,7 @@ filterTicketsWithAttachmentsSpec =
                         -- Check we have some tickets.
                         assert $ (length tickets) == (length listTickets)
 
-        it "if none of tickets should filter to zero" $ do
+        it "filtered tickets length is zero if no tickets have attachments" $ do
             forAll (listOf1 arbitrary) $ \(listTickets) ->
                 forAll (listOf1 genCommentWithNoAttachment) $ \(comments) ->
 
@@ -307,30 +315,20 @@ filterTicketsWithAttachmentsSpec =
                         tickets <- run appExecution
                         -- Check we have some tickets.
                         assert $ (length tickets) == 0
-{-
-showTicketWithAttachmentsSpec :: Spec
-showTicketWithAttachmentsSpec =
-    describe "showTicketWithAttachments" $ do
-        it "shows tickets with attachments" $ do
-            forAll arbitrary $ \(ticketInfo :: TicketInfo) ->
-                forAll (listOf1 arbitrary) $ \(listTickets) ->
-                    forAll (listOf1 genCommentWithAttachment) $ \(comments) ->
-                        monadicIO $ do
 
-                            let stubbedZendeskLayer :: ZendeskLayer App
-                                stubbedZendeskLayer =
-                                    emptyZendeskLayer
-                                        { zlListAssignedTickets     = \_     -> pure listTickets
-                                        , zlGetTicketInfo           = \_     -> pure $ Just ticketInfo
-                                        , zlGetTicketComments       = \_     -> pure comments
-                                        , zlGetAttachment           = \_     -> pure $ Just mempty
-                                        }
-                            let stubbedConfig :: Config
-                                stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
+filterTicketsByStatusSpec :: Spec
+filterTicketsByStatusSpec =
+    describe "filterTicketsByStatus" $ do
+        it "a TicketInfo array with x open tickets should filter to length x" $ property $
+            forAll (listOf1 genTicketWithStatus) $ \tickets -> do
+                length (filterTicketsByStatus tickets "open") == length (filter ((== TicketStatus "open") . tiStatus) tickets)
+        it "a TicketInfo array with x closed tickets should filter to length x" $ property $
+            forAll (listOf1 genTicketWithStatus) $ \tickets -> do
+                length (filterTicketsByStatus tickets "closed") == length (filter ((== TicketStatus "closed") . tiStatus) tickets)
 
-                            let appExecution :: IO ()
-                                appExecution = runApp (getTickets >>= showTicketWithAttachments ) stubbedConfig
-
-                            tickets <- run appExecution
-                            assert $ (length tickets) == (length listTickets)
-                            -}
+showAttachmentInfoSpec :: Spec
+showAttachmentInfoSpec =
+    describe "showAttachmentInfo" $ do
+        it "given an attachment, return  a Text describing the attachment" $ property $
+            forAll (listOf1 arbitrary) $ \attachments -> do
+                (\attachment -> showAttachmentInfo attachment) attachments == (\attachment -> ("  Attachment: " <> (show $ aSize attachment) <> " - " <> aURL attachment :: Text)) attachments
