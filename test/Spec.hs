@@ -210,7 +210,7 @@ processTicketSpec =
                     assert $ not (isResponseTaggedWithNoLogs zendeskResponse)
 
 isResponseTaggedWithNoLogs :: Maybe ZendeskResponse -> Bool
-isResponseTaggedWithNoLogs (Just response) = "no-log-files" `elem` zrTags response
+isResponseTaggedWithNoLogs (Just response) = "no-log-files" `elem` getTicketTags (zrTags response)
 isResponseTaggedWithNoLogs Nothing         = False
 
 genCommentWithNoAttachment :: Gen Comment
