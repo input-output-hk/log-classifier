@@ -3,36 +3,30 @@ module Statistics
   , filterTicketsWithAttachments
   , showTicketWithAttachments
   , filterTicketsByStatus
+  , showAttachmentInfo
   ) where
 
-import DataSource
-  ( App
-  , Attachment(..)
-  , Comment(..)
-  , TicketInfo(..)
-  , TicketStatus(..)
-  , ZendeskLayer(..)
-  , asksZendeskLayer
-  )
-import Universum
+import           DataSource (App, Attachment (..), Comment (..), TicketInfo (..), TicketStatus (..),
+                             ZendeskLayer (..), asksZendeskLayer)
+import           Universum
 
 -----------------------------------------------------------
 -- Functions
 ------------------------------------------------------------
 
 -- | Show ticket statistics
-showStatistics :: [TicketInfo] -> App [Text] 
+showStatistics :: [TicketInfo] -> App [Text]
 showStatistics tickets = do
     let ticketCatCountIO = showTicketCategoryCount tickets
     ticketWithAttachIO <- showTicketWithAttachments tickets
-    return $ ticketCatCountIO ++ ticketWithAttachIO
+    return $ ticketCatCountIO <> ticketWithAttachIO
 
 -- | Show all Tickets with Attachments
 showTicketWithAttachments :: [TicketInfo] -> App [Text]
 showTicketWithAttachments tickets = do
     ticketsWithAttachments <- filterTicketsWithAttachments tickets
     let ticketsCountIO = "Tickets with Attachments: " <> show (length ticketsWithAttachments) :: Text
-    ticketsWithAttachIO <- concat <$> mapM showTicketAttachments ticketsWithAttachments
+    ticketsWithAttachIO <- concatMapM showTicketAttachments ticketsWithAttachments
     return $ ticketsCountIO : ticketsWithAttachIO
 
 -- | Display total, open, and closed tickets
@@ -45,7 +39,7 @@ showTicketCategoryCount tickets = do
     let closedTickets = filterTicketsByStatus tickets "closed"
     let closedIO  =  "Closed: " <> show (length closedTickets) :: Text
     headerIO : totalIO : openIO : [closedIO]
-    
+
 -- | Show attachment info (Size - URL)
 showAttachmentInfo :: Attachment -> Text
 showAttachmentInfo attachment =
@@ -57,10 +51,11 @@ showCommentAttachments comment = showAttachmentInfo <$> cAttachments comment
 
 -- | Show attachments of a ticket
 showTicketAttachments :: TicketInfo -> App [Text]
-showTicketAttachments ticket = let 
+showTicketAttachments ticket = do
+    getTicketComments <- asksZendeskLayer zlGetTicketComments
+    getTicketComments (tiId ticket) >>= \comments -> return $ ticketNumIO : concatMap showCommentAttachments comments
+    where
         ticketNumIO = " Ticket #" <> (show $ tiId ticket) <> " : " :: Text
-    in
-          getCommentsFromTicket ticket >>= \comments -> return $ ticketNumIO : concatMap showCommentAttachments comments
 
 -- | Filter Tickets that have a specified status
 filterTicketsByStatus :: [TicketInfo] -> Text -> [TicketInfo]
@@ -71,11 +66,6 @@ filterTicketsByStatus tickets status =
     ticketsFilter ticket statusText =
         ((== TicketStatus statusText) . tiStatus) ticket
 
-getCommentsFromTicket :: TicketInfo -> App [Comment]
-getCommentsFromTicket ticket = do
-    getTicketComments <- asksZendeskLayer zlGetTicketComments
-    getTicketComments (tiId ticket)
-    
 -- | Remove tickets without Attachments
 filterTicketsWithAttachments :: [TicketInfo] -> App [TicketInfo]
 filterTicketsWithAttachments = filterM ticketsFilter
@@ -87,5 +77,6 @@ filterTicketsWithAttachments = filterM ticketsFilter
     commentHasAttachment comment = not $ null (cAttachments comment)
 
     doesTicketHaveAttachments :: TicketInfo -> App Bool
-    doesTicketHaveAttachments ticket =
-        any commentHasAttachment <$> getCommentsFromTicket ticket
+    doesTicketHaveAttachments ticket = do
+        getTicketComments <- asksZendeskLayer zlGetTicketComments
+        any commentHasAttachment <$> getTicketComments (tiId ticket)

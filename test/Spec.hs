@@ -4,15 +4,16 @@ import           Universum
 
 import           Test.Hspec (Spec, describe, hspec, it, pending)
 import           Test.Hspec.QuickCheck (modifyMaxSuccess)
-import           Test.QuickCheck (Gen, arbitrary, forAll, listOf1, property, elements)
+import           Test.QuickCheck (Gen, arbitrary, elements, forAll, listOf1, property)
 import           Test.QuickCheck.Monadic (assert, monadicIO, pre, run)
 
-import           DataSource (App, Comment (..), Config (..), IOLayer (..), TicketId (..),
-                             TicketStatus (..), TicketInfo (..), UserId (..), ZendeskAPIUrl (..), ZendeskLayer (..),
-                             ZendeskResponse (..), basicIOLayer, defaultConfig, emptyZendeskLayer,
-                             runApp, showURL)
+import           DataSource (App, Attachment (..), Comment (..), Config (..), IOLayer (..),
+                             TicketId (..), TicketInfo (..), TicketStatus (..), UserId (..),
+                             ZendeskAPIUrl (..), ZendeskLayer (..), ZendeskResponse (..),
+                             basicIOLayer, defaultConfig, emptyZendeskLayer, runApp, showURL)
 import           Lib (listAndSortTickets, processTicket)
-import           Statistics (filterTicketsWithAttachments, filterTicketsByStatus)
+import           Statistics (filterTicketsByStatus, filterTicketsWithAttachments,
+                             showAttachmentInfo)
 -- TODO(ks): What we are really missing is a realistic @Gen ZendeskLayer m@.
 
 main :: IO ()
@@ -21,13 +22,21 @@ main = hspec spec
 -- stack test log-classifier --fast --test-arguments "-m Zendesk"
 spec :: Spec
 spec =
-    describe "Zendesk" $ do
-        validShowURLSpec
-        listAndSortTicketsSpec
-        processTicketSpec
-        filterTicketsWithAttachmentsSpec
+    describe "Log Classifier Tests" $ do
+        describe "Zendesk" $ do
+            validShowURLSpec
+            listAndSortTicketsSpec
+            processTicketSpec
+        describe "Statistics" $ do
+            filterTicketsWithAttachmentsSpec
+            filterTicketsByStatusSpec
+            showAttachmentInfoSpec
+            -- TODO(rc): showCommentAttachmentsSpec
+            -- TODO(rc): showTicketCategoryCountSpec
+            -- TODO(rc): showTicketWithAttachmentsSpec
+            -- TODO(rc): showStatisticsSpec
 
-
+-- | A utility function for testing which stubs IO and returns
 -- | A utility function for testing which stubs IO and returns
 -- the @Config@ with the @ZendeskLayer@ that was passed into it.
 withStubbedIOAndZendeskLayer :: ZendeskLayer App -> Config
@@ -224,7 +233,7 @@ genCommentWithAttachment = Comment
     <*> arbitrary
 
 genTicketWithStatus :: Gen TicketInfo
-genTicketWithStatus = TicketInfo 
+genTicketWithStatus = TicketInfo
     <$> arbitrary
     <*> arbitrary
     <*> arbitrary
@@ -303,8 +312,7 @@ filterTicketsWithAttachmentsSpec =
                         let stubbedZendeskLayer :: ZendeskLayer App
                             stubbedZendeskLayer =
                                 emptyZendeskLayer
-                                    {
-                                      zlGetTicketComments       = \_     -> pure comments
+                                    { zlGetTicketComments       = \_     -> pure comments
                                     }
                         let stubbedConfig :: Config
                             stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
@@ -330,5 +338,5 @@ showAttachmentInfoSpec :: Spec
 showAttachmentInfoSpec =
     describe "showAttachmentInfo" $ do
         it "given an attachment, return  a Text describing the attachment" $ property $
-            forAll (listOf1 arbitrary) $ \attachments -> do
-                (\attachment -> showAttachmentInfo attachment) attachments == (\attachment -> ("  Attachment: " <> (show $ aSize attachment) <> " - " <> aURL attachment :: Text)) attachments
+            forAll (listOf1 arbitrary) $ \(listOfAttachments :: [Attachment]) ->
+                fmap showAttachmentInfo listOfAttachments == fmap (\attachment -> ("  Attachment: " <> (show $ aSize attachment) <> " - " <> aURL attachment :: Text)) listOfAttachments
