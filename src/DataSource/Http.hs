@@ -59,7 +59,8 @@ basicZendeskLayer = ZendeskLayer
 
 basicIOLayer :: (MonadIO m, MonadReader Config m) => IOLayer m
 basicIOLayer = IOLayer
-    { iolPrintText              = putTextLn
+    { iolAppendFile             = appendFile
+    , iolPrintText              = putTextLn
     , iolReadFile               = \_ -> error "Not implemented readFile!"
     -- ^ TODO(ks): We need to implement this!
     }

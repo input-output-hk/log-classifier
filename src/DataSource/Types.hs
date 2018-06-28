@@ -144,8 +144,9 @@ data ZendeskLayer m = ZendeskLayer
 -- | The IOLayer interface that we can expose.
 -- We want to do this since we want to be able to mock out any function tied to @IO@.
 data IOLayer m = IOLayer
-    { iolPrintText :: Text -> m ()
-    , iolReadFile  :: FilePath -> m String
+    { iolAppendFile :: FilePath -> Text -> m ()
+    , iolPrintText  :: Text -> m ()
+    , iolReadFile   :: FilePath -> m String
     }
 
 ------------------------------------------------------------

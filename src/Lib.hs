@@ -111,20 +111,23 @@ processTicket tId = do
     zendeskResponse     <- getZendeskResponses comments attachments ticketInfo
 
     postTicketComment   <- asksZendeskLayer zlPostTicketComment
+    
     whenJust zendeskResponse $ \response -> do
-        printZendeskResponse response
+        let formattedTags = formatZendeskResponseTags response
+        printText formattedTags
+        appendF <- asksIOLayer iolAppendFile
+        appendF "logs/analysis-result.log" (show (getTicketId tId) <> " " <> formattedTags <> "\n")
         postTicketComment response
 
     pure zendeskResponse
 
-printZendeskResponse :: ZendeskResponse -> App ()
-printZendeskResponse zendeskResponse = do
+formatZendeskResponseTags :: ZendeskResponse -> Text
+formatZendeskResponseTags zendeskResponse = do
     let ticketTags = zrTags zendeskResponse
-    printText <- asksIOLayer iolPrintText
-    printText $ formatTags ticketTags
+    formatTags ticketTags
   where
     formatTags :: TicketTags -> Text
-    formatTags tags = foldr (\tag acc -> tag <> ":" <> acc) "" (getTicketTags tags)
+    formatTags tags = foldr (\tag acc -> tag <> ";" <> acc) "" (getTicketTags tags)
 
 processTickets :: App ()
 processTickets = do
