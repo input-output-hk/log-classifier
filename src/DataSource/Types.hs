@@ -267,7 +267,7 @@ data ZendeskResponse = ZendeskResponse
     , zrComment  :: !Text
     , zrTags     :: !TicketTags
     , zrIsPublic :: !Bool
-    }
+    } deriving (Eq, Show)
 
 newtype CommentId = CommentId
     { getCommentId :: Int
@@ -500,6 +500,21 @@ instance Arbitrary User where
             , uName = userName
             , uEmail = userEmail
             }
+    
+instance Arbitrary ZendeskResponse where
+    arbitrary = do
+        zendeskResponseTicketId <- arbitrary
+        zendeskResponseComment  <- fromString <$> arbitrary
+        zendeskResponseTags     <- arbitrary
+        zendeskResponseIsPublic <- arbitrary
+
+        pure ZendeskResponse
+            { zrTicketId = zendeskResponseTicketId
+            , zrComment  = zendeskResponseComment
+            , zrTags     = zendeskResponseTags
+            , zrIsPublic = zendeskResponseIsPublic
+            }
+
 ------------------------------------------------------------
 -- FromJSON instances
 ------------------------------------------------------------

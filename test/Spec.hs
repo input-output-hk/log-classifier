@@ -7,10 +7,10 @@ import           Test.Hspec.QuickCheck (modifyMaxSuccess)
 import           Test.QuickCheck (Gen, arbitrary, forAll, listOf, listOf1, property, elements)
 import           Test.QuickCheck.Monadic (assert, monadicIO, pre, run)
 
-import           DataSource (App, Comment (..), Config (..), IOLayer (..), TicketId (..),
+import           DataSource (App, Comment (..), Config (..), IOLayer (..), TicketId (..), Ticket(..),
                              TicketInfo (..), TicketStatus (..), TicketTags (..), User, UserId (..),
                              ZendeskAPIUrl (..), ZendeskLayer (..), ZendeskResponse (..),
-                             basicIOLayer, defaultConfig, emptyZendeskLayer, runApp, showURL)
+                             basicIOLayer, defaultConfig, emptyZendeskLayer, runApp, showURL, createResponseTicket)
 import           Lib (filterAnalyzedTickets, listAndSortTickets, processTicket)
 
 -- TODO(ks): What we are really missing is a realistic @Gen ZendeskLayer m@.
@@ -26,6 +26,7 @@ spec =
         listAndSortTicketsSpec
         processTicketSpec
         filterAnalyzedTicketsSpec
+        createResponseTicketSpec
 
 
 -- | A utility function for testing which stubs IO and returns
@@ -46,7 +47,7 @@ withStubbedIOAndZendeskLayer stubbedZendeskLayer =
 
 listAndSortTicketsSpec :: Spec
 listAndSortTicketsSpec =
-    describe "listAndSortTickets" $ modifyMaxSuccess (const 200) $
+    describe "listAndSortTickets" $ modifyMaxSuccess (const 200) $ do
         it "doesn't return tickets since there are none" $
             forAll arbitrary $ \(ticketInfo :: TicketInfo) ->
 
@@ -305,3 +306,20 @@ genTicketWithUnsolvedStatus = TicketInfo
     <*> (TicketStatus <$> elements ["new", "hold", "open", "pending"])
     <*> arbitrary
     <*> arbitrary
+
+createResponseTicketSpec :: Spec
+createResponseTicketSpec = 
+    describe "createResponseTicket" $ modifyMaxSuccess (const 200) $ do
+        it "should preserve ticket field and custom field from ticketInfo" $
+            property $ \agentId ticketInfo zendeskResponse -> 
+                let responseTicket = createResponseTicket agentId ticketInfo zendeskResponse
+                in tiField ticketInfo == tField responseTicket
+                && tiCustomField ticketInfo == tCustomField responseTicket
+        it "should preserve tags from ticketinfo and zendeskresponse" $
+            property $ \agentId ticketInfo zendeskResponse ->
+                let responseTicket      = createResponseTicket agentId ticketInfo zendeskResponse
+                    ticketInfoTags      = getTicketTags (tiTags ticketInfo)
+                    zendeskResponseTags = getTicketTags (zrTags zendeskResponse)
+                    mergedTags          = ticketInfoTags <> zendeskResponseTags
+                    responseTags        = getTicketTags $ tTag responseTicket
+                in all (`elem` responseTags) mergedTags
