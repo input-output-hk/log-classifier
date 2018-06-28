@@ -464,7 +464,7 @@ instance Arbitrary TicketInfo where
             , tiTags        = ticketTags
             , tiStatus      = ticketStatus
             , tiField       = ticketField
-            , tiCustomField  = ticketCustomField
+            , tiCustomField = ticketCustomField
             }
 
 instance Arbitrary UserId where
