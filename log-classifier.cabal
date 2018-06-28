@@ -35,6 +35,7 @@ library
                      , base >=4.7 && <5
                      , bytestring
                      , containers
+                     , directory
                      , http-conduit
                      , mtl
                      , optparse-applicative
