@@ -46,9 +46,9 @@ withStubbedIOAndZendeskLayer stubbedZendeskLayer =
 
 listAndSortTicketsSpec :: Spec
 listAndSortTicketsSpec =
-    describe "listAndSortTickets" $ modifyMaxSuccess (const 200) $ do
-        it "doesn't return tickets since there are none" $ do
-            forAll arbitrary $ \(ticketInfo :: TicketInfo) -> do
+    describe "listAndSortTickets" $ modifyMaxSuccess (const 200) $
+        it "doesn't return tickets since there are none" $
+            forAll arbitrary $ \(ticketInfo :: TicketInfo) ->
 
                 monadicIO $ do
 
@@ -115,7 +115,7 @@ processTicketSpec =
                                 emptyZendeskLayer
                                     { zlListAssignedTickets     = \_     -> pure listTickets
                                     , zlGetTicketInfo           = \_     -> pure $ Just ticketInfo
-                                    , zlPostTicketComment       = \_     -> pure ()
+                                    , zlPostTicketComment       = \_ _   -> pure ()
                                     , zlGetTicketComments       = \_     -> pure []
                                     }
 
@@ -142,7 +142,7 @@ processTicketSpec =
                                 emptyZendeskLayer
                                     { zlListAssignedTickets     = \_     -> pure listTickets
                                     , zlGetTicketInfo           = \_     -> pure $ Just ticketInfo
-                                    , zlPostTicketComment       = \_     -> pure ()
+                                    , zlPostTicketComment       = \_ _    -> pure ()
                                     , zlGetTicketComments       = \_     -> pure comments
                                     , zlGetAttachment           = \_     -> pure $ Just mempty
                                     }
@@ -166,9 +166,9 @@ processTicketSpec =
                     let stubbedZendeskLayer :: ZendeskLayer App
                         stubbedZendeskLayer =
                             emptyZendeskLayer
-                                { zlGetTicketComments = \_ -> pure commentsWithoutAttachment
-                                , zlGetTicketInfo     = \_ -> pure $ Just ticketInfo
-                                , zlPostTicketComment = \_ -> pure ()
+                                { zlGetTicketComments = \_   -> pure commentsWithoutAttachment
+                                , zlGetTicketInfo     = \_   -> pure $ Just ticketInfo
+                                , zlPostTicketComment = \_ _ -> pure ()
                                 }
 
                     let stubbedConfig :: Config
@@ -192,10 +192,10 @@ processTicketSpec =
                     let stubbedZendeskLayer :: ZendeskLayer App
                         stubbedZendeskLayer =
                             emptyZendeskLayer
-                                { zlGetTicketComments = \_ -> pure comments
-                                , zlGetTicketInfo     = \_ -> pure $ Just ticketInfo
-                                , zlPostTicketComment = \_ -> pure ()
-                                , zlGetAttachment     = \_ -> pure $ Just mempty
+                                { zlGetTicketComments = \_   -> pure comments
+                                , zlGetTicketInfo     = \_   -> pure $ Just ticketInfo
+                                , zlPostTicketComment = \_ _ -> pure ()
+                                , zlGetAttachment     = \_   -> pure $ Just mempty
                                 }
 
                     let stubbedConfig :: Config
@@ -292,6 +292,8 @@ genTicketWithFilteredTags tagToBeFiltered = TicketInfo
     <*> arbitrary
     <*> return (TicketTags tagToBeFiltered)
     <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
 
 genTicketWithUnsolvedStatus :: Gen TicketInfo
 genTicketWithUnsolvedStatus = TicketInfo
@@ -301,3 +303,5 @@ genTicketWithUnsolvedStatus = TicketInfo
     <*> arbitrary
     <*> arbitrary
     <*> (TicketStatus <$> elements ["new", "hold", "open", "pending"])
+    <*> arbitrary
+    <*> arbitrary
