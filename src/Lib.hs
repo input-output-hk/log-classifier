@@ -17,6 +17,7 @@ import           Universum
 
 import           Data.Attoparsec.Text.Lazy (eitherResult, parse)
 import           Data.Text (isInfixOf, stripEnd)
+import           System.Directory (createDirectoryIfMissing)
 
 import           CLI (CLI (..), getCliArgs)
 import           DataSource (App, Attachment (..), AttachmentContent (..), Comment (..),
@@ -39,6 +40,7 @@ import           Util (extractLogsFromZip)
 
 runZendeskMain :: IO ()
 runZendeskMain = do
+    createDirectoryIfMissing True "logs"
     args <- getCliArgs
     putTextLn "Welcome to Zendesk classifier!"
     token <- readFile tokenPath  -- Zendesk token
