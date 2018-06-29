@@ -22,19 +22,18 @@ import           System.Directory (createDirectoryIfMissing)
 
 import           CLI (CLI (..), getCliArgs)
 import           DataSource (App, Attachment (..), AttachmentContent (..), Comment (..),
-                             CommentBody (..), Config (..), IOLayer (..),
-                             TicketId (..), TicketInfo (..), TicketStatus (..), TicketTag (..),
-                             TicketTags (..), User (..), UserId (..), ZendeskLayer (..),
-                             ZendeskResponse (..), asksIOLayer, asksZendeskLayer, assignToPath,
-                             defaultConfig, knowledgebasePath, renderTicketStatus,
-                             runApp, tokenPath)
+                             CommentBody (..), Config (..), IOLayer (..), TicketId (..),
+                             TicketInfo (..), TicketStatus (..), TicketTag (..), TicketTags (..),
+                             User (..), UserId (..), ZendeskLayer (..), ZendeskResponse (..),
+                             asksIOLayer, asksZendeskLayer, assignToPath, defaultConfig,
+                             knowledgebasePath, renderTicketStatus, runApp, tokenPath)
 import           LogAnalysis.Classifier (extractErrorCodes, extractIssuesFromLogs,
                                          prettyFormatAnalysis, prettyFormatLogReadError,
                                          prettyFormatNoIssues, prettyFormatNoLogs)
 import           LogAnalysis.KnowledgeCSVParser (parseKnowLedgeBase)
 import           LogAnalysis.Types (ErrorCode (..), Knowledge, renderErrorCode, setupAnalysis)
-import           Util (extractLogsFromZip)
 import           Statistics (showStatistics)
+import           Util (extractLogsFromZip)
 
 ------------------------------------------------------------
 -- Functions
@@ -66,7 +65,6 @@ runZendeskMain = do
         FetchTickets             -> runApp fetchTickets cfg
         (ProcessTicket ticketId) -> void $ runApp (processTicket (TicketId ticketId)) cfg
         ProcessTickets           -> void $ runApp processTickets cfg
-        FetchTickets             -> runApp fetchTickets cfg
         ShowStatistics           -> void $ runApp (getTickets >>= showStatistics) cfg
 
 -- TODO(hs): Remove this function since it's not used
@@ -108,7 +106,7 @@ processTicket tId = do
     -- We first fetch the function from the configuration
     getTicketInfo       <- asksZendeskLayer zlGetTicketInfo
     mTicketInfo         <- getTicketInfo tId
-    
+
     getTicketComments   <- asksZendeskLayer zlGetTicketComments
     comments            <- getTicketComments tId
     let attachments     = getAttachmentsFromComment comments
@@ -116,7 +114,7 @@ processTicket tId = do
     zendeskResponse     <- getZendeskResponses comments attachments ticketInfo
 
     postTicketComment   <- asksZendeskLayer zlPostTicketComment
-    
+
     whenJust zendeskResponse $ \response -> do
         let formattedTags = formatZendeskResponseTags response
         printText formattedTags
@@ -145,11 +143,6 @@ processTickets = do
 
     putTextLn "All the tickets has been processed."
 
-getTickets :: App [TicketInfo]
-getTickets = do
-    Config{..}  <- ask
-    let email   = cfgEmail
-    let userId  = UserId . fromIntegral $ cfgAgentId
 
 fetchTickets :: App ()
 fetchTickets = do
@@ -162,29 +155,19 @@ fetchTickets = do
     putTextLn "All the tickets has been processed."
 
 
-fetchTickets :: App ()
-fetchTickets = do
-    sortedTicketIds <- listAndSortTickets
-    mapM_ (putTextLn . show) sortedTicketIds
-    putTextLn "All the tickets has been processed."
-
-
 -- TODO(ks): Extract repeating code, generalize.
 listAndSortTickets :: App [TicketInfo]
 listAndSortTickets = do
-
     Config{..}  <- ask
 
-    listAgents <- asksZendeskLayer zlListAdminAgents
-    agents <- listAgents
+    let email   = cfgEmail
+    let userId  = UserId . fromIntegral $ cfgAgentId
 
-    let agentIds :: [UserId]
-        agentIds = map uId agents
     -- We first fetch the function from the configuration
     listTickets <- asksZendeskLayer zlListAssignedTickets
     printText   <- asksIOLayer iolPrintText
 
-    printText "Classifier is going to process tickets assigned to agents"
+    printText $ "Classifier is going to process tickets assign to: " <> email
 
     tickets     <- listTickets userId
     let filteredTicketIds = filterAnalyzedTickets tickets
@@ -235,6 +218,22 @@ extractEmailAddress ticketId = do
     liftIO $ guard ("@" `isInfixOf` emailAddress)
     liftIO $ appendFile "emailAddress.txt" (emailAddress <> "\n")
     liftIO $ putTextLn emailAddress
+
+getTickets :: App [TicketInfo]
+getTickets = do
+    Config{..}  <- ask
+    let email   = cfgEmail
+    let userId = UserId . fromIntegral $ cfgAgentId
+    -- We first fetch the function from the configuration
+    listTickets <- asksZendeskLayer zlListAssignedTickets
+    printText   <- asksIOLayer iolPrintText
+
+    printText $ "Classifier is going to process tickets assign to: " <> email
+    tickets     <- listTickets userId
+
+    printText $ "There are " <> show (length tickets) <> " tickets."
+
+    pure tickets
 
 -- | A pure function for fetching @Attachment@ from @Comment@.
 getAttachmentsFromComment :: [Comment] -> [Attachment]
