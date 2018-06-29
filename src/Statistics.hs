@@ -4,6 +4,7 @@ module Statistics
   , showTicketWithAttachments
   , filterTicketsByStatus
   , showAttachmentInfo
+  , showCommentAttachments
   ) where
 
 import           DataSource (App, Attachment (..), Comment (..), TicketInfo (..), TicketStatus (..),

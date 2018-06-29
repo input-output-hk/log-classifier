@@ -14,7 +14,7 @@ import           DataSource (App, Attachment (..), Comment (..), Config (..), IO
                              runApp, showURL)
 import           Lib (filterAnalyzedTickets, listAndSortTickets, processTicket)
 import           Statistics (filterTicketsByStatus, filterTicketsWithAttachments,
-                             showAttachmentInfo)
+                             showAttachmentInfo, showCommentAttachments)
 -- TODO(ks): What we are really missing is a realistic @Gen ZendeskLayer m@.
 
 main :: IO ()
@@ -32,8 +32,8 @@ spec =
             filterTicketsWithAttachmentsSpec
             filterTicketsByStatusSpec
             showAttachmentInfoSpec
-            -- TODO(rc): showCommentAttachmentsSpec
-            -- TODO(rc): showTicketCategoryCountSpec
+            showCommentAttachmentsSpec
+            showTicketCategoryCountSpec
             -- TODO(rc): showTicketWithAttachmentsSpec
             -- TODO(rc): showStatisticsSpec
 
@@ -349,6 +349,20 @@ showAttachmentInfoSpec =
         it "given an attachment, return  a Text describing the attachment" $ property $
             forAll (listOf1 arbitrary) $ \(listOfAttachments :: [Attachment]) ->
                 fmap showAttachmentInfo listOfAttachments == fmap (\attachment -> ("  Attachment: " <> (show $ aSize attachment) <> " - " <> aURL attachment :: Text)) listOfAttachments
+
+showCommentAttachmentsSpec :: Spec
+showCommentAttachmentsSpec =
+    describe "showCommentsAttachments" $ do
+        it "given an comment, return  a [Text] describing each comment` attachment" $ property $
+            forAll (listOf1 arbitrary) $ \(listOfComments :: [Comment]) ->
+                fmap showCommentAttachments listOfComments == fmap (\comment -> ( showAttachmentInfo <$> cAttachments comment)) listOfComments
+
+showTicketCategoryCountSpec :: Spec
+showTicketCategoryCountSpec =
+    describe "showTicketCategoryCount" $ do
+        it "Properly show  total/open/closed ticket count" $ property $
+            forAll (listOf1 arbitrary) $ \(listOfComments :: [Comment]) ->
+                fmap showCommentAttachments listOfComments == fmap (\comment -> ( showAttachmentInfo <$> cAttachments comment)) listOfComments
 
 filterAnalyzedTicketsSpec :: Spec
 filterAnalyzedTicketsSpec =
