@@ -14,9 +14,10 @@ import           Paths_log_classifier (version)
 -- use direct function calls.
 data CLI
     = CollectEmails     -- ^ Collect email addresses
+    | FetchAgents       -- ^ List agents
+    | FetchTickets      -- ^ Fetch all the tickets in Zendesk
     | ProcessTicket Int -- ^ Process ticket of an given ticket id
     | ProcessTickets    -- ^ Process all the tickets in Zendesk
-    | FetchTickets      -- ^ Fetch all the tickets in Zendesk
     | ShowStatistics    -- ^ Show statistics
     deriving (Show)
 
@@ -31,10 +32,12 @@ cli :: Parser CLI
 cli = hsubparser $ mconcat
     [ command "collect-emails" (info (pure CollectEmails)
         (progDesc "Collect emails requested by single user"))
-    , command "process-tickets" (info (pure ProcessTickets)
-        (progDesc "Process all the tickets i.e add comments, tags."))
+    , command "fetch-agents" (info (pure FetchAgents)
+        (progDesc "Fetch Zendesk agents"))
     , command "fetch-tickets" (info (pure FetchTickets)
         (progDesc "Fetch all the tickets that need to be analyzes."))
+    , command "process-tickets" (info (pure ProcessTickets)
+        (progDesc "Process all the tickets i.e add comments, tags."))
     , command "process-ticket" (info cmdProcessTicket
         (progDesc "Process Zendesk ticket of an given ticket id"))
     , command "show-stats" (info (pure ShowStatistics)

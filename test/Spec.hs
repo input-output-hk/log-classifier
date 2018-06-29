@@ -2,16 +2,17 @@ module Main where
 
 import           Universum
 
-import           Test.Hspec (Spec, describe, hspec, it, pending)
+import           Test.Hspec (Spec, describe, hspec, it, pending, shouldBe)
 import           Test.Hspec.QuickCheck (modifyMaxSuccess)
-import           Test.QuickCheck (Gen, arbitrary, elements, forAll, listOf1, property)
+import           Test.QuickCheck (Gen, arbitrary, elements, forAll, listOf, listOf1, property)
 import           Test.QuickCheck.Monadic (assert, monadicIO, pre, run)
 
 import           DataSource (App, Attachment (..), Comment (..), Config (..), IOLayer (..),
-                             TicketId (..), TicketInfo (..), TicketStatus (..), UserId (..),
-                             ZendeskAPIUrl (..), ZendeskLayer (..), ZendeskResponse (..),
-                             basicIOLayer, defaultConfig, emptyZendeskLayer, runApp, showURL)
-import           Lib (listAndSortTickets, processTicket)
+                             TicketId (..), TicketInfo (..), TicketStatus (..), TicketTags (..),
+                             User, UserId (..), ZendeskAPIUrl (..), ZendeskLayer (..),
+                             ZendeskResponse (..), basicIOLayer, defaultConfig, emptyZendeskLayer,
+                             runApp, showURL)
+import           Lib (filterAnalyzedTickets, listAndSortTickets, processTicket)
 import           Statistics (filterTicketsByStatus, filterTicketsWithAttachments,
                              showAttachmentInfo)
 -- TODO(ks): What we are really missing is a realistic @Gen ZendeskLayer m@.
@@ -66,6 +67,7 @@ listAndSortTicketsSpec =
                             emptyZendeskLayer
                                 { zlListAssignedTickets     = \_     -> pure []
                                 , zlGetTicketInfo           = \_     -> pure $ Just ticketInfo
+                                , zlListAdminAgents         =           pure []
                                 }
 
                     let stubbedConfig :: Config
@@ -78,31 +80,35 @@ listAndSortTicketsSpec =
 
                     assert $ length tickets == 0
 
-        it "returns sorted nonempty tickets" $ do
+        it "returns sorted nonempty tickets" $
             forAll arbitrary $ \(ticketInfo) ->
-                forAll (listOf1 arbitrary) $ \(listTickets) -> do
+                forAll (listOf1 arbitrary) $ \(listTickets) ->
+                    forAll (listOf1 arbitrary) $ \(agents :: [User]) ->
 
-                    monadicIO $ do
+                        monadicIO $ do
 
-                        let stubbedZendeskLayer :: ZendeskLayer App
-                            stubbedZendeskLayer =
-                                emptyZendeskLayer
-                                    { zlListAssignedTickets     = \_     -> pure listTickets
-                                    , zlGetTicketInfo           = \_     -> pure ticketInfo
-                                    }
+                            pre $ any (\TicketInfo{..} -> tiStatus /= TicketStatus "solved") listTickets
 
-                        let stubbedConfig :: Config
-                            stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
+                            let stubbedZendeskLayer :: ZendeskLayer App
+                                stubbedZendeskLayer =
+                                    emptyZendeskLayer
+                                        { zlListAssignedTickets     = \_     -> pure listTickets
+                                        , zlGetTicketInfo           = \_     -> pure ticketInfo
+                                        , zlListAdminAgents         =           pure agents
+                                        }
 
-                        let appExecution :: IO [TicketInfo]
-                            appExecution = runApp listAndSortTickets stubbedConfig
+                            let stubbedConfig :: Config
+                                stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
 
-                        tickets <- run appExecution
+                            let appExecution :: IO [TicketInfo]
+                                appExecution = runApp listAndSortTickets stubbedConfig
 
-                        -- Check we have some tickets.
-                        assert $ length tickets > 0
-                        -- Check the order is sorted.
-                        assert $ sortBy compare tickets == tickets
+                            tickets <- run appExecution
+
+                            -- Check we have some tickets.
+                            assert $ length tickets > 0
+                            -- Check the order is sorted.
+                            assert $ sortBy compare tickets == tickets
 
 processTicketSpec :: Spec
 processTicketSpec =
@@ -213,7 +219,7 @@ processTicketSpec =
                     assert $ not (isResponseTaggedWithNoLogs zendeskResponse)
 
 isResponseTaggedWithNoLogs :: Maybe ZendeskResponse -> Bool
-isResponseTaggedWithNoLogs (Just response) = "no-log-files" `elem` zrTags response
+isResponseTaggedWithNoLogs (Just response) = "no-log-files" `elem` getTicketTags (zrTags response)
 isResponseTaggedWithNoLogs Nothing         = False
 
 genCommentWithNoAttachment :: Gen Comment
@@ -261,6 +267,10 @@ validShowURLSpec =
                 let typedURL    = showURL $ UserAssignedTicketsURL userId
                     untypedURL  = "/users/" <> show (getUserId userId) <> "/tickets/assigned.json"
                 in  typedURL == untypedURL
+        it "returns valid UserUnassignedTicketsURL" $
+                let typedURL    = showURL $ UserUnassignedTicketsURL
+                    untypedURL  = "/search.json?query=type%3Aticket%20assignee%3Anone&sort_by=created_at&sort_order=asc"
+                in  typedURL == untypedURL
         it "returns valid TicketsURL" $ do
             property $ \ticketId ->
                 let typedURL    = showURL $ TicketsURL ticketId
@@ -276,7 +286,6 @@ validShowURLSpec =
                 let typedURL    = showURL $ TicketCommentsURL ticketId
                     untypedURL  = "/tickets/" <> show (getTicketId ticketId) <> "/comments.json"
                 in  typedURL == untypedURL
-
 
 filterTicketsWithAttachmentsSpec :: Spec
 filterTicketsWithAttachmentsSpec =
@@ -340,3 +349,44 @@ showAttachmentInfoSpec =
         it "given an attachment, return  a Text describing the attachment" $ property $
             forAll (listOf1 arbitrary) $ \(listOfAttachments :: [Attachment]) ->
                 fmap showAttachmentInfo listOfAttachments == fmap (\attachment -> ("  Attachment: " <> (show $ aSize attachment) <> " - " <> aURL attachment :: Text)) listOfAttachments
+
+filterAnalyzedTicketsSpec :: Spec
+filterAnalyzedTicketsSpec =
+    describe "filterAnalyzedTickets" $ modifyMaxSuccess (const 200) $ do
+        it "should not filter tickets with status 'open', 'hold', 'pending', and 'new'" $
+            forAll (listOf genTicketWithUnsolvedStatus) $ \(ticketInfos :: [TicketInfo]) ->
+                    length (filterAnalyzedTickets ticketInfos) `shouldBe` length ticketInfos
+
+        it "should filter solved tickets" $
+            forAll (listOf arbitrary) $ \(ticketInfos :: [TicketInfo]) ->
+                let filteredTickets :: [TicketInfo]
+                    filteredTickets = filterAnalyzedTickets ticketInfos
+                in all (\ticket -> tiStatus ticket /= TicketStatus "solved") filteredTickets
+
+        it "should filter goguen testnet tickets" $
+            forAll (listOf $ genTicketWithFilteredTags ["goguen_testnets"]) $
+                \(ticketInfos :: [TicketInfo]) ->
+                    length (filterAnalyzedTickets ticketInfos) `shouldBe` 0
+
+        it "should filter analyzed tickets" $
+            forAll (listOf $ genTicketWithFilteredTags ["analyzed-by-script-v1.0"]) $
+                \(ticketInfos :: [TicketInfo]) ->
+                    length (filterAnalyzedTickets ticketInfos) `shouldBe` 0
+
+genTicketWithFilteredTags :: [Text] -> Gen TicketInfo
+genTicketWithFilteredTags tagToBeFiltered = TicketInfo
+    <$> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> return (TicketTags tagToBeFiltered)
+    <*> arbitrary
+
+genTicketWithUnsolvedStatus :: Gen TicketInfo
+genTicketWithUnsolvedStatus = TicketInfo
+    <$> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> (TicketStatus <$> elements ["new", "hold", "open", "pending"])

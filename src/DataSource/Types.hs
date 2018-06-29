@@ -1,22 +1,19 @@
+{-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE DeriveGeneric              #-}
 
 module DataSource.Types
-    ( IOLayer (..)
-    , ZendeskLayer (..)
-    , ZendeskResponse (..)
+    ( Attachment (..)
+    , AttachmentId (..)
+    , AttachmentContent (..)
     , Comment (..)
     , CommentId (..)
     , CommentBody (..)
     , CommentOuter (..)
-    , Attachment (..)
-    , AttachmentId (..)
-    , AttachmentContent (..)
+    , PageResultList (..)
     , RequestType (..)
     , Ticket (..)
-    , TicketList (..)
     , TicketId (..)
     , TicketURL (..)
     , TicketTags (..)
@@ -28,32 +25,35 @@ module DataSource.Types
     , UserURL (..)
     , UserName (..)
     , UserEmail (..)
+    , ZendeskResponse (..)
+    , FromPageResultList (..)
     , parseComments
     , parseTicket
-    , parseTickets
     , renderTicketStatus
     -- * General configuration
+    , App
     , Config (..)
+    , IOLayer (..)
+    , ZendeskLayer (..)
+    , ZendeskAPIUrl (..)
     , knowledgebasePath
     , tokenPath
     , assignToPath
     , asksZendeskLayer
     , asksIOLayer
-    , ZendeskAPIUrl (..)
     , showURL
-    , App
     , runApp
     ) where
 
 import           Universum
 
-import           Data.Aeson (FromJSON, ToJSON, Value, object, parseJSON, toJSON, withObject, (.:),
-                             (.=))
+import           Data.Aeson (FromJSON, ToJSON, Value (Object), object, parseJSON, toJSON,
+                             withObject, (.:), (.=))
 import           Data.Aeson.Types (Parser)
-import           Data.Text (pack)
+import qualified Data.Text as T
 import           LogAnalysis.Types (Knowledge)
 
-import           Test.QuickCheck (Arbitrary (..), elements, vectorOf, listOf1)
+import           Test.QuickCheck (Arbitrary (..), elements, listOf1, vectorOf)
 
 ------------------------------------------------------------
 -- Configuration
@@ -131,19 +131,22 @@ assignToPath = "./tmp-secrets/assign_to"
 -- We don't want anything to leak out, so we expose only the most relevant information,
 -- anything relating to how it internaly works should NOT be exposed.
 data ZendeskLayer m = ZendeskLayer
-    { zlGetTicketInfo           :: TicketId         -> m (Maybe TicketInfo)
-    , zlListRequestedTickets    :: UserId           -> m [TicketInfo]
-    , zlListAssignedTickets     :: UserId           -> m [TicketInfo]
-    , zlGetTicketComments       :: TicketId         -> m [Comment]
-    , zlGetAttachment           :: Attachment       -> m (Maybe AttachmentContent)
-    , zlPostTicketComment       :: ZendeskResponse  -> m ()
+    { zlGetTicketInfo         :: TicketId         -> m (Maybe TicketInfo)
+    , zlListRequestedTickets  :: UserId           -> m [TicketInfo]
+    , zlListAssignedTickets   :: UserId           -> m [TicketInfo]
+    , zlListUnassignedTickets ::                     m [TicketInfo]
+    , zlListAdminAgents       ::                     m [User]
+    , zlGetTicketComments     :: TicketId         -> m [Comment]
+    , zlGetAttachment         :: Attachment       -> m (Maybe AttachmentContent)
+    , zlPostTicketComment     :: ZendeskResponse  -> m ()
     }
 
 -- | The IOLayer interface that we can expose.
 -- We want to do this since we want to be able to mock out any function tied to @IO@.
 data IOLayer m = IOLayer
-    { iolPrintText              :: Text -> m ()
-    , iolReadFile               :: FilePath -> m String
+    { iolAppendFile :: FilePath -> Text -> m ()
+    , iolPrintText  :: Text -> m ()
+    , iolReadFile   :: FilePath -> m String
     }
 
 ------------------------------------------------------------
@@ -163,8 +166,10 @@ instance ToURL TicketId where
     toURL (TicketId ticketId) = show ticketId
 
 data ZendeskAPIUrl
-    = UserRequestedTicketsURL UserId
+    = AgentGroupURL
+    | UserRequestedTicketsURL UserId
     | UserAssignedTicketsURL UserId
+    | UserUnassignedTicketsURL
     | TicketsURL TicketId
     | TicketAgentURL TicketId
     | UserInfoURL
@@ -172,12 +177,56 @@ data ZendeskAPIUrl
     deriving (Eq, Generic)
 
 showURL :: ZendeskAPIUrl -> Text
+showURL AgentGroupURL                       = "users.json?role%5B%5D=admin&role%5B%5D=agent"
 showURL (UserRequestedTicketsURL userId)    = "/users/" <> toURL userId <> "/tickets/requested.json"
 showURL (UserAssignedTicketsURL userId)     = "/users/" <> toURL userId <> "/tickets/assigned.json"
+showURL (UserUnassignedTicketsURL)          = "/search.json?query=" <> urlEncode "type:ticket assignee:none" <> "&sort_by=created_at&sort_order=asc"
 showURL (TicketsURL ticketId)               = "/tickets/" <> toURL ticketId <> ".json"
 showURL (TicketAgentURL ticketId)           = "https://iohk.zendesk.com/agent/tickets/" <> toURL ticketId
 showURL (UserInfoURL)                       = "/users/me.json"
 showURL (TicketCommentsURL ticketId)        = "/tickets/" <> toURL ticketId <> "/comments.json"
+
+-- | Plain @Text@ to @Text@ encoding.
+-- https://en.wikipedia.org/wiki/Percent-encoding
+urlEncode :: Text -> Text
+urlEncode url = T.concatMap encodeChar url
+  where
+    encodeChar :: Char -> Text
+    encodeChar '!'  = T.pack "%21"
+    encodeChar '#'  = T.pack "%23"
+    encodeChar '$'  = T.pack "%24"
+    encodeChar '&'  = T.pack "%26"
+    encodeChar '\'' = T.pack "%27"
+    encodeChar '('  = T.pack "%28"
+    encodeChar ')'  = T.pack "%29"
+    encodeChar '*'  = T.pack "%2A"
+    encodeChar '+'  = T.pack "%2B"
+    encodeChar ','  = T.pack "%2C"
+    encodeChar '/'  = T.pack "%2F"
+    encodeChar ':'  = T.pack "%3A"
+    encodeChar ';'  = T.pack "%3B"
+    encodeChar '='  = T.pack "%3D"
+    encodeChar '?'  = T.pack "%3F"
+    encodeChar '@'  = T.pack "%40"
+    encodeChar '['  = T.pack "%5B"
+    encodeChar ']'  = T.pack "%5D"
+    encodeChar '\n' = T.pack "%0A"
+    encodeChar ' '  = T.pack "%20"
+    encodeChar '"'  = T.pack "%22"
+    encodeChar '%'  = T.pack "%25"
+    encodeChar '-'  = T.pack "%2D"
+    encodeChar '.'  = T.pack "%2E"
+    encodeChar '<'  = T.pack "%3C"
+    encodeChar '>'  = T.pack "%3E"
+    encodeChar '\\' = T.pack "%5C"
+    encodeChar '^'  = T.pack "%5E"
+    encodeChar '_'  = T.pack "%5F"
+    encodeChar '`'  = T.pack "%60"
+    encodeChar '{'  = T.pack "%7B"
+    encodeChar '|'  = T.pack "%7C"
+    encodeChar '}'  = T.pack "%7D"
+    encodeChar '~'  = T.pack "%7E"
+    encodeChar char = T.singleton char
 
 ------------------------------------------------------------
 -- Types
@@ -186,9 +235,6 @@ showURL (TicketCommentsURL ticketId)        = "/tickets/" <> toURL ticketId <> "
 newtype AttachmentId = AttachmentId
     { getAttachmentId :: Int
     } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
-
-instance Arbitrary AttachmentId where
-    arbitrary = AttachmentId <$> arbitrary
 
 -- TODO(ks): Arbitrary log contents?
 newtype AttachmentContent = AttachmentContent
@@ -207,17 +253,6 @@ data Attachment = Attachment
     -- ^ Attachment size
     } deriving (Eq, Show)
 
-instance Ord Attachment where
-    compare a1 a2 = compare (aId a1) (aId a2)
-
-instance Arbitrary Attachment where
-    arbitrary = Attachment
-        <$> arbitrary
-        <*> pure "http://attach.com"
-        <*> pure "application/zip"  -- TODO(ks): More random...
-        <*> arbitrary
-
-
 -- | Request type of the ticket
 data RequestType
     = Requested
@@ -227,7 +262,7 @@ data RequestType
 data ZendeskResponse = ZendeskResponse
     { zrTicketId :: !TicketId
     , zrComment  :: !Text
-    , zrTags     :: ![Text] -- TODO(ks): This should be wrapped
+    , zrTags     :: !TicketTags
     , zrIsPublic :: !Bool
     }
 
@@ -235,16 +270,9 @@ newtype CommentId = CommentId
     { getCommentId :: Int
     } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
 
-instance Arbitrary CommentId where
-    arbitrary = CommentId <$> arbitrary
-
 newtype CommentBody = CommentBody
     { getCommentBody :: Text
     } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
-
-instance Arbitrary CommentBody where
-    arbitrary = CommentBody . fromString <$> arbitrary
-
 
 -- | Comments
 data Comment = Comment
@@ -260,18 +288,6 @@ data Comment = Comment
     -- ^ Author of comment
     } deriving (Eq, Show)
 
-instance Ord Comment where
-    compare c1 c2 = compare (cId c1) (cId c2)
-
-instance Arbitrary Comment where
-    arbitrary = Comment
-        <$> arbitrary
-        <*> arbitrary
-        <*> arbitrary
-        <*> arbitrary
-        <*> arbitrary
-
-
 -- | Outer comment ??
 newtype CommentOuter = CommentOuter {
       coComment :: Comment
@@ -279,20 +295,10 @@ newtype CommentOuter = CommentOuter {
 
 -- | Zendesk ticket
 data Ticket = Ticket
-    { tComment  :: !Comment
+    { tComment :: !Comment
     -- ^ Ticket comment
-    , tAssignee :: !Integer
-    -- ^ Assignee of the ticket
-    , tTag      :: ![Text]
+    , tTag      :: !TicketTags
     -- ^ Tags attached to ticket
-    }
-
--- | List of zendesk ticket
-data TicketList = TicketList
-    { tlTickets :: ![TicketInfo]
-    -- ^ Information of tickets
-    , nextPage  :: Maybe Text
-    -- ^ Next page
     }
 
 -- TODO(ks): We need to verify this still works, we don't have any
@@ -300,9 +306,6 @@ data TicketList = TicketList
 newtype TicketId = TicketId
     { getTicketId :: Int
     } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
-
-instance Arbitrary TicketId where
-    arbitrary = TicketId <$> arbitrary
 
 newtype TicketURL = TicketURL
     { getTicketURL :: Text
@@ -316,7 +319,6 @@ newtype TicketStatus = TicketStatus
     { getTicketStatus :: Text
     } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
 
-
 data TicketInfo = TicketInfo
     { tiId          :: !TicketId        -- ^ Id of an ticket
     , tiRequesterId :: !UserId          -- ^ Id of the requester
@@ -326,13 +328,19 @@ data TicketInfo = TicketInfo
     , tiStatus      :: !TicketStatus    -- ^ The status of the ticket
     } deriving (Eq, Show, Generic)
 
+-- | Ticket tag
+-- TODO(ks): @Generic@ type migrations. Also possible to provide the version from runtime,
+-- we need to weigh these options later on.
+data TicketTag
+    = AnalyzedByScript      -- ^ Ticket has been analyzed
+    | AnalyzedByScriptV1_0  -- ^ Ticket has been analyzed by the version 1.0
+    | AnalyzedByScriptV1_1  -- ^ Ticket has been analyzed by the version 1.1
+    | NoKnownIssue          -- ^ Ticket had no known issue
+    | NoLogAttached         -- ^ Log file not attached
 
 newtype UserId = UserId
     { getUserId :: Int
     } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
-
-instance Arbitrary UserId where
-    arbitrary = UserId <$> arbitrary
 
 newtype UserURL = UserURL
     { getUserURL :: Text
@@ -346,34 +354,51 @@ newtype UserEmail = UserEmail
     { getUserEmail :: Text
     } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
 
-
 data User = User
-    { uId       :: !UserId      -- ^ Id of the user
-    , uURL      :: !UserURL     -- ^ URL of the user
-    , uName     :: !UserName    -- ^ Name of the user
-    , uEmail    :: !UserEmail   -- ^ Email of the user
+    { uId    :: !UserId      -- ^ Id of the user
+    , uURL   :: !UserURL     -- ^ URL of the user
+    , uName  :: !UserName    -- ^ Name of the user
+    , uEmail :: !UserEmail   -- ^ Email of the user
     } deriving (Eq, Show, Generic)
 
-instance FromJSON User where
-    parseJSON = withObject "user" $ \o -> do
-        userId        <- o .: "id"
-        userUrl       <- o .: "url"
-        userName      <- o .: "name"
-        userEmail     <- o .: "email"
+data PageResultList a = PageResultList
+    { prlResults  :: ![a]
+    , prlNextPage :: !(Maybe Text)
+    }
 
-        pure User
-            { uId       = userId
-            , uURL      = userUrl
-            , uName     = userName
-            , uEmail    = userEmail
-            }
+------------------------------------------------------------
+-- Arbitrary instances
+------------------------------------------------------------
 
-instance Arbitrary TicketURL where
-    arbitrary = do
-        protocol    <- elements ["http://", "https://"]
-        name        <- listOf1 $ elements ['a'..'z']
-        domain      <- elements [".com",".com.br",".net",".io"]
-        pure . TicketURL . pack $ protocol ++ name ++ domain
+instance Arbitrary AttachmentId where
+    arbitrary = AttachmentId <$> arbitrary
+
+instance Arbitrary Attachment where
+    arbitrary = Attachment
+        <$> arbitrary
+        <*> pure "http://attach.com"
+        <*> pure "application/zip"  -- TODO(ks): More random...
+        <*> arbitrary
+
+instance Arbitrary CommentBody where
+    arbitrary = CommentBody . fromString <$> arbitrary
+
+instance Arbitrary CommentId where
+    arbitrary = CommentId <$> arbitrary
+
+instance Arbitrary Comment where
+    arbitrary = Comment
+        <$> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+
+instance Arbitrary TicketId where
+    arbitrary = TicketId <$> arbitrary
+
+instance Arbitrary TicketStatus where
+    arbitrary = TicketStatus <$> elements ["new", "hold", "open","solved", "pending"]
 
 instance Arbitrary TicketTags where
     arbitrary = do
@@ -381,9 +406,12 @@ instance Arbitrary TicketTags where
         tagsList    <- map fromString <$> vectorOf numberOfTag arbitrary
         pure . TicketTags $ tagsList
 
--- TODO(ks): Just "open" for now, enumerate with @elements@ later.
-instance Arbitrary TicketStatus where
-    arbitrary = pure $ TicketStatus "open"
+instance Arbitrary TicketURL where
+    arbitrary = do
+        protocol    <- elements ["http://", "https://"]
+        name        <- listOf1 $ elements ['a'..'z']
+        domain      <- elements [".com",".com.br",".net",".io"]
+        pure . TicketURL . T.pack $ protocol ++ name ++ domain
 
 instance Arbitrary TicketInfo where
     arbitrary = do
@@ -403,25 +431,56 @@ instance Arbitrary TicketInfo where
             , tiStatus      = ticketStatus
             }
 
-instance Ord TicketInfo where
-    compare t1 t2 = compare (tiId t1) (tiId t2)
+instance Arbitrary UserId where
+    arbitrary = UserId <$> arbitrary
 
 
--- | Ticket tag
--- TODO(ks): @Generic@ type migrations. Also possible to provide the version from runtime,
--- we need to weigh these options later on.
-data TicketTag
-    = AnalyzedByScript      -- ^ Ticket has been analyzed
-    | AnalyzedByScriptV1_0  -- ^ Ticket has been analyzed by the version 1.0
-    | NoKnownIssue          -- ^ Ticket had no known issue
-    | NoLogAttached         -- ^ Log file not attached
+instance Arbitrary UserEmail where
+    arbitrary = do
+        address     <- listOf1 $ elements ['a'..'z']
+        domain      <- elements ["gmail.com", "yahoo.com", "hotmail.com"]
+        pure . UserEmail . T.pack $ address <> "@" <> domain
 
--- | Defining it's own show instance to use it as tags
-renderTicketStatus :: TicketTag -> Text
-renderTicketStatus AnalyzedByScript     = "analyzed-by-script"
-renderTicketStatus AnalyzedByScriptV1_0 = "analyzed-by-script-v1.0"
-renderTicketStatus NoKnownIssue         = "no-known-issues"
-renderTicketStatus NoLogAttached        = "no-log-files"
+instance Arbitrary UserName where
+    arbitrary = UserName . fromString <$> arbitrary
+
+instance Arbitrary UserURL where
+    arbitrary = do
+        protocol    <- elements ["http://", "https://"]
+        name        <- listOf1 $ elements ['a'..'z']
+        domain      <- elements [".com",".com.br",".net",".io"]
+        pure . UserURL . T.pack $ protocol ++ name ++ domain
+
+instance Arbitrary User where
+    arbitrary = do
+        userId    <- arbitrary
+        userUrl   <- arbitrary
+        userName  <- arbitrary
+        userEmail <- arbitrary
+
+        pure User
+            { uId = userId
+            , uURL = userUrl
+            , uName = userName
+            , uEmail = userEmail
+            }
+------------------------------------------------------------
+-- FromJSON instances
+------------------------------------------------------------
+
+instance FromJSON Attachment where
+    parseJSON = withObject "attachment" $ \o -> do
+        attachmentId     <- o .: "id"
+        attachmentUrl    <- o .: "content_url"
+        attachmentType   <- o .: "content_type"
+        attachmentSize   <- o .: "size"
+
+        pure Attachment
+            { aId           = attachmentId
+            , aURL          = attachmentUrl
+            , aContentType  = attachmentType
+            , aSize         = attachmentSize
+            }
 
 -- | JSON Parsing
 instance FromJSON Comment where
@@ -440,20 +499,39 @@ instance FromJSON Comment where
             , cAuthor      = commentAuthorId
             }
 
-instance FromJSON Attachment where
-    parseJSON = withObject "attachment" $ \o -> do
-        attachmentId     <- o .: "id"
-        attachmentUrl    <- o .: "content_url"
-        attachmentType   <- o .: "content_type"
-        attachmentSize   <- o .: "size"
+class FromPageResultList a where
+    fromPageResult :: Value -> Parser (PageResultList a)
 
-        pure Attachment
-            { aId           = attachmentId
-            , aURL          = attachmentUrl
-            , aContentType  = attachmentType
-            , aSize         = attachmentSize
-            }
+instance FromPageResultList TicketInfo where
+    fromPageResult obj = asum
+        [ ticketListParser obj
+        , resultsTicketsParser obj
+        ]
+      where
+          -- | The case when we have the simple parser from tickets.
+        ticketListParser :: Value -> Parser (PageResultList TicketInfo)
+        ticketListParser = withObject "ticketList" $ \o ->
+            PageResultList
+                <$> o .: "tickets"
+                <*> o .: "next_page"
 
+        -- | The case when we get results back from a query using the
+        -- search API.
+        resultsTicketsParser :: Value -> Parser (PageResultList TicketInfo)
+        resultsTicketsParser (Object o) =
+            PageResultList
+                <$> o .: "results"
+                <*> o .: "next_page"
+        resultsTicketsParser _ = fail "Cannot parse PageResultList from search API."
+
+instance FromPageResultList User where
+    fromPageResult = withObject "userList" $ \o ->
+            PageResultList
+                <$> o .: "users"
+                <*> o .: "next_page"
+
+instance (FromPageResultList a) => FromJSON (PageResultList a) where
+    parseJSON = fromPageResult
 
 instance FromJSON TicketInfo where
     parseJSON = withObject "ticket" $ \o -> do
@@ -473,21 +551,23 @@ instance FromJSON TicketInfo where
             , tiStatus      = ticketStatus
             }
 
-instance FromJSON TicketList where
-    parseJSON = withObject "ticketList" $ \o ->
-        TicketList
-            <$> o .: "tickets"
-            <*> o .: "next_page"
+instance FromJSON User where
+    parseJSON = withObject "user" $ \o -> do
+        userId        <- o .: "id"
+        userUrl       <- o .: "url"
+        userName      <- o .: "name"
+        userEmail     <- o .: "email"
 
+        pure User
+            { uId       = userId
+            , uURL      = userUrl
+            , uName     = userName
+            , uEmail    = userEmail
+            }
 
-instance ToJSON Ticket where
-    toJSON (Ticket comment assignee tags) =
-        object  [ "ticket" .= object
-                    [ "comment"     .= comment
-                    , "assignee_id" .= assignee
-                    , "tags"        .= tags
-                    ]
-                ]
+------------------------------------------------------------
+-- ToJSON instances
+------------------------------------------------------------
 
 instance ToJSON Attachment where
     toJSON (Attachment _ url contenttype size) =
@@ -504,23 +584,53 @@ instance ToJSON Comment where
                 , "author_id"       .= author
                 ]
 
+-- TODO (hs): Erase ths since it's not used
 instance ToJSON CommentOuter where
     toJSON (CommentOuter c) =
         object  [ "comment"         .= c
                 ]
 
+instance ToJSON Ticket where
+    toJSON (Ticket comment tags) =
+        object  [ "ticket" .= object
+                    [ "comment"     .= comment
+                    , "tags"        .= tags
+                    ]
+                ]
+
+------------------------------------------------------------
+-- Ord instances
+------------------------------------------------------------
+
+instance Ord Attachment where
+    compare a1 a2 = compare (aId a1) (aId a2)
+
+instance Ord Comment where
+    compare c1 c2 = compare (cId c1) (cId c2)
+
+instance Ord TicketInfo where
+    compare t1 t2 = compare (tiId t1) (tiId t2)
+
+------------------------------------------------------------
+-- JSON parsers
+------------------------------------------------------------
 
 parseTicket :: Value -> Parser TicketInfo
 parseTicket = withObject "ticket" $ \o -> o .: "ticket"
-
--- | Parse tickets
-parseTickets :: Value -> Parser TicketList
-parseTickets = withObject "tickets" $ \o ->
-    TicketList
-        <$> o .: "tickets"
-        <*> o .: "next_page"
 
 -- | TODO(ks): This seems like it's not required.
 -- Parse comments
 parseComments :: Value -> Parser [ Comment ]
 parseComments = withObject "comments" $ \o -> o .: "comments"
+
+------------------------------------------------------------
+-- Auxiliary functions
+------------------------------------------------------------
+
+-- | Defining it's own show instance to use it as tags
+renderTicketStatus :: TicketTag -> Text
+renderTicketStatus AnalyzedByScript     = "analyzed-by-script"
+renderTicketStatus AnalyzedByScriptV1_0 = "analyzed-by-script-v1.0"
+renderTicketStatus AnalyzedByScriptV1_1 = "analyzed-by-script-v1.1"
+renderTicketStatus NoKnownIssue         = "no-known-issues"
+renderTicketStatus NoLogAttached        = "no-log-files"
