@@ -14,7 +14,8 @@ import           DataSource (App, Attachment (..), Comment (..), Config (..), IO
                              runApp, showURL)
 import           Lib (filterAnalyzedTickets, listAndSortTickets, processTicket)
 import           Statistics (filterTicketsByStatus, filterTicketsWithAttachments,
-                             showAttachmentInfo, showCommentAttachments)
+                             showAttachmentInfo, showCommentAttachments, showTicketAttachments,
+                             showTicketWithAttachments)
 -- TODO(ks): What we are really missing is a realistic @Gen ZendeskLayer m@.
 
 main :: IO ()
@@ -34,7 +35,8 @@ spec =
             showAttachmentInfoSpec
             showCommentAttachmentsSpec
             showTicketCategoryCountSpec
-            -- TODO(rc): showTicketWithAttachmentsSpec
+            showTicketWithAttachmentsSpec
+            -- TODO(rc): showTicketAttachmentsSpec
             -- TODO(rc): showStatisticsSpec
 
 -- | A utility function for testing which stubs IO and returns
@@ -381,8 +383,6 @@ showTicketCategoryCountSpec =
         it "Properly show  total/open/closed ticket count" $ property $
             forAll (listOf1 arbitrary) $ \(listOfComments :: [Comment]) ->
                 fmap showCommentAttachments listOfComments == fmap (\comment -> ( showAttachmentInfo <$> cAttachments comment)) listOfComments
-
-showTicketWithAttachmentsSpec
 
 filterAnalyzedTicketsSpec :: Spec
 filterAnalyzedTicketsSpec =
