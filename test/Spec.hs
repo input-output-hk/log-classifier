@@ -247,6 +247,24 @@ genTicketWithStatus = TicketInfo
     <*> arbitrary
     <*> elements [TicketStatus "open", TicketStatus "closed"]
 
+genTicketWithFilteredTags :: [Text] -> Gen TicketInfo
+genTicketWithFilteredTags tagToBeFiltered = TicketInfo
+    <$> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> return (TicketTags tagToBeFiltered)
+    <*> arbitrary
+
+genTicketWithUnsolvedStatus :: Gen TicketInfo
+genTicketWithUnsolvedStatus = TicketInfo
+    <$> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> (TicketStatus <$> elements ["new", "hold", "open", "pending"])
+
 processTicketsSpec :: Spec
 processTicketsSpec =
     describe "processTickets" $ do
@@ -364,6 +382,8 @@ showTicketCategoryCountSpec =
             forAll (listOf1 arbitrary) $ \(listOfComments :: [Comment]) ->
                 fmap showCommentAttachments listOfComments == fmap (\comment -> ( showAttachmentInfo <$> cAttachments comment)) listOfComments
 
+showTicketWithAttachmentsSpec
+
 filterAnalyzedTicketsSpec :: Spec
 filterAnalyzedTicketsSpec =
     describe "filterAnalyzedTickets" $ modifyMaxSuccess (const 200) $ do
@@ -386,21 +406,3 @@ filterAnalyzedTicketsSpec =
             forAll (listOf $ genTicketWithFilteredTags ["analyzed-by-script-v1.0"]) $
                 \(ticketInfos :: [TicketInfo]) ->
                     length (filterAnalyzedTickets ticketInfos) `shouldBe` 0
-
-genTicketWithFilteredTags :: [Text] -> Gen TicketInfo
-genTicketWithFilteredTags tagToBeFiltered = TicketInfo
-    <$> arbitrary
-    <*> arbitrary
-    <*> arbitrary
-    <*> arbitrary
-    <*> return (TicketTags tagToBeFiltered)
-    <*> arbitrary
-
-genTicketWithUnsolvedStatus :: Gen TicketInfo
-genTicketWithUnsolvedStatus = TicketInfo
-    <$> arbitrary
-    <*> arbitrary
-    <*> arbitrary
-    <*> arbitrary
-    <*> arbitrary
-    <*> (TicketStatus <$> elements ["new", "hold", "open", "pending"])
