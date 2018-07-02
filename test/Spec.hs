@@ -14,8 +14,7 @@ import           DataSource (App, Attachment (..), Comment (..), Config (..), IO
                              runApp, showURL)
 import           Lib (filterAnalyzedTickets, listAndSortTickets, processTicket)
 import           Statistics (filterTicketsByStatus, filterTicketsWithAttachments,
-                             showAttachmentInfo, showCommentAttachments, showTicketAttachments,
-                             showTicketWithAttachments)
+                             showAttachmentInfo, showCommentAttachments)
 -- TODO(ks): What we are really missing is a realistic @Gen ZendeskLayer m@.
 
 main :: IO ()

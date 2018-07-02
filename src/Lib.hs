@@ -158,19 +158,23 @@ fetchTickets = do
 -- TODO(ks): Extract repeating code, generalize.
 listAndSortTickets :: App [TicketInfo]
 listAndSortTickets = do
+
     Config{..}  <- ask
 
-    let email   = cfgEmail
-    let userId  = UserId . fromIntegral $ cfgAgentId
+    listAgents <- asksZendeskLayer zlListAdminAgents
+    agents <- listAgents
 
+    let agentIds :: [UserId]
+        agentIds = map uId agents
     -- We first fetch the function from the configuration
     listTickets <- asksZendeskLayer zlListAssignedTickets
     printText   <- asksIOLayer iolPrintText
 
-    printText $ "Classifier is going to process tickets assign to: " <> email
+    printText "Classifier is going to process tickets assigned to agents"
 
-    tickets     <- listTickets userId
-    let filteredTicketIds = filterAnalyzedTickets tickets
+    ticketInfos     <- map concat $ traverse listTickets agentIds
+
+    let filteredTicketIds = filterAnalyzedTickets ticketInfos
     let sortedTicketIds   = sortBy compare filteredTicketIds
 
     printText $ "There are " <> show (length sortedTicketIds) <> " unanalyzed tickets."
