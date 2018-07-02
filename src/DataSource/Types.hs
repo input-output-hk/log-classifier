@@ -14,6 +14,9 @@ module DataSource.Types
     , PageResultList (..)
     , RequestType (..)
     , Ticket (..)
+    , TicketField (..)
+    , TicketFieldId (..)
+    , TicketFieldValue (..)
     , TicketId (..)
     , TicketURL (..)
     , TicketTags (..)
@@ -131,14 +134,14 @@ assignToPath = "./tmp-secrets/assign_to"
 -- We don't want anything to leak out, so we expose only the most relevant information,
 -- anything relating to how it internaly works should NOT be exposed.
 data ZendeskLayer m = ZendeskLayer
-    { zlGetTicketInfo         :: TicketId         -> m (Maybe TicketInfo)
-    , zlListRequestedTickets  :: UserId           -> m [TicketInfo]
-    , zlListAssignedTickets   :: UserId           -> m [TicketInfo]
-    , zlListUnassignedTickets ::                     m [TicketInfo]
-    , zlListAdminAgents       ::                     m [User]
-    , zlGetTicketComments     :: TicketId         -> m [Comment]
-    , zlGetAttachment         :: Attachment       -> m (Maybe AttachmentContent)
-    , zlPostTicketComment     :: ZendeskResponse  -> m ()
+    { zlGetTicketInfo         :: TicketId                       -> m (Maybe TicketInfo)
+    , zlListRequestedTickets  :: UserId                         -> m [TicketInfo]
+    , zlListAssignedTickets   :: UserId                         -> m [TicketInfo]
+    , zlListUnassignedTickets ::                                   m [TicketInfo]
+    , zlListAdminAgents       ::                                   m [User]
+    , zlGetTicketComments     :: TicketId                       -> m [Comment]
+    , zlGetAttachment         :: Attachment                     -> m (Maybe AttachmentContent)
+    , zlPostTicketComment     :: TicketInfo -> ZendeskResponse  -> m ()
     }
 
 -- | The IOLayer interface that we can expose.
@@ -264,7 +267,7 @@ data ZendeskResponse = ZendeskResponse
     , zrComment  :: !Text
     , zrTags     :: !TicketTags
     , zrIsPublic :: !Bool
-    }
+    } deriving (Eq, Show)
 
 newtype CommentId = CommentId
     { getCommentId :: Int
@@ -295,11 +298,26 @@ newtype CommentOuter = CommentOuter {
 
 -- | Zendesk ticket
 data Ticket = Ticket
-    { tComment :: !Comment
+    { tComment     :: !Comment
     -- ^ Ticket comment
-    , tTag      :: !TicketTags
+    , tTag         :: !TicketTags
+    , tField       :: ![TicketField]
+    , tCustomField :: ![TicketField]
     -- ^ Tags attached to ticket
     }
+
+newtype TicketFieldId = TicketFieldId
+    { getTicketFieldId :: Integer
+    } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
+
+newtype TicketFieldValue = TicketFieldValue
+    { getTicketFieldValue :: Text
+    } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
+
+data TicketField = TicketField
+    { tfId    :: TicketFieldId
+    , tfValue :: Maybe TicketFieldValue
+    } deriving (Eq, Show, Ord)
 
 -- TODO(ks): We need to verify this still works, we don't have any
 -- regression tests...
@@ -326,6 +344,8 @@ data TicketInfo = TicketInfo
     , tiUrl         :: !TicketURL       -- ^ The ticket URL
     , tiTags        :: !TicketTags      -- ^ Tags associated with ticket
     , tiStatus      :: !TicketStatus    -- ^ The status of the ticket
+    , tiField       :: ![TicketField]   -- ^ Custom field (e.g. Priority, Category)
+    , tiCustomField :: ![TicketField]   -- ^ No idea why but there's two fields..
     } deriving (Eq, Show, Generic)
 
 -- | Ticket tag
@@ -394,6 +414,17 @@ instance Arbitrary Comment where
         <*> arbitrary
         <*> arbitrary
 
+instance Arbitrary TicketFieldId where
+    arbitrary = TicketFieldId <$> arbitrary
+
+instance Arbitrary TicketFieldValue where
+    arbitrary = TicketFieldValue . fromString <$> arbitrary
+
+instance Arbitrary TicketField where
+    arbitrary = TicketField
+        <$> arbitrary
+        <*> arbitrary
+
 instance Arbitrary TicketId where
     arbitrary = TicketId <$> arbitrary
 
@@ -421,6 +452,9 @@ instance Arbitrary TicketInfo where
         ticketUrl           <- arbitrary
         ticketTags          <- arbitrary
         ticketStatus        <- arbitrary
+        ticketField         <- arbitrary
+        ticketCustomField   <- arbitrary
+
 
         pure TicketInfo
             { tiId          = ticketId
@@ -429,6 +463,8 @@ instance Arbitrary TicketInfo where
             , tiUrl         = ticketUrl
             , tiTags        = ticketTags
             , tiStatus      = ticketStatus
+            , tiField       = ticketField
+            , tiCustomField = ticketCustomField
             }
 
 instance Arbitrary UserId where
@@ -464,6 +500,21 @@ instance Arbitrary User where
             , uName = userName
             , uEmail = userEmail
             }
+    
+instance Arbitrary ZendeskResponse where
+    arbitrary = do
+        zendeskResponseTicketId <- arbitrary
+        zendeskResponseComment  <- fromString <$> arbitrary
+        zendeskResponseTags     <- arbitrary
+        zendeskResponseIsPublic <- arbitrary
+
+        pure ZendeskResponse
+            { zrTicketId = zendeskResponseTicketId
+            , zrComment  = zendeskResponseComment
+            , zrTags     = zendeskResponseTags
+            , zrIsPublic = zendeskResponseIsPublic
+            }
+
 ------------------------------------------------------------
 -- FromJSON instances
 ------------------------------------------------------------
@@ -497,6 +548,16 @@ instance FromJSON Comment where
             , cAttachments = commentAttachments
             , cPublic      = commentIsPublic
             , cAuthor      = commentAuthorId
+            }
+
+instance FromJSON TicketField where
+    parseJSON = withObject "ticket field" $ \o -> do
+        ticketFieldId    <- o .: "id"
+        ticketFieldValue <- o .: "value"
+        
+        pure TicketField
+            { tfId    = ticketFieldId
+            , tfValue = ticketFieldValue
             }
 
 class FromPageResultList a where
@@ -541,6 +602,8 @@ instance FromJSON TicketInfo where
         ticketUrl           <- o .: "url"
         ticketTags          <- o .: "tags"
         ticketStatus        <- o .: "status"
+        ticketField         <- o .: "fields"
+        ticketCustomField   <- o .: "custom_fields"
 
         pure TicketInfo
             { tiId          = ticketId
@@ -549,6 +612,8 @@ instance FromJSON TicketInfo where
             , tiUrl         = ticketUrl
             , tiTags        = ticketTags
             , tiStatus      = ticketStatus
+            , tiField       = ticketField
+            , tiCustomField = ticketCustomField
             }
 
 instance FromJSON User where
@@ -590,11 +655,19 @@ instance ToJSON CommentOuter where
         object  [ "comment"         .= c
                 ]
 
+instance ToJSON TicketField where
+    toJSON (TicketField fid fvalue) =
+        object [ "id"               .= fid
+               , "value"            .= fvalue
+               ]
+
 instance ToJSON Ticket where
-    toJSON (Ticket comment tags) =
+    toJSON (Ticket comment tags fields customField) =
         object  [ "ticket" .= object
-                    [ "comment"     .= comment
-                    , "tags"        .= tags
+                    [ "comment"       .= comment
+                    , "tags"          .= tags
+                    , "fields"        .= fields
+                    , "custom_fields" .= customField
                     ]
                 ]
 

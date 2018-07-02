@@ -111,25 +111,18 @@ processTicket tId = do
     let attachments     = getAttachmentsFromComment comments
     let ticketInfo      = fromMaybe (error "No ticket info") mTicketInfo
     zendeskResponse     <- getZendeskResponses comments attachments ticketInfo
-
     postTicketComment   <- asksZendeskLayer zlPostTicketComment
     
     whenJust zendeskResponse $ \response -> do
-        let formattedTags = formatZendeskResponseTags response
-        printText formattedTags
-        appendF <- asksIOLayer iolAppendFile
-        appendF "logs/analysis-result.log" (show (getTicketId tId) <> " " <> formattedTags <> "\n")
-        postTicketComment response
+        postTicketComment ticketInfo response
+        let tags = getTicketTags $ zrTags response
+        forM_ tags $ \tag -> do
+            let formattedTicketIdAndTag = show (getTicketId tId) <> " " <> tag
+            printText formattedTicketIdAndTag
+            appendF <- asksIOLayer iolAppendFile
+            appendF "logs/analysis-result.log" (formattedTicketIdAndTag <> "\n")
 
     pure zendeskResponse
-
-formatZendeskResponseTags :: ZendeskResponse -> Text
-formatZendeskResponseTags zendeskResponse = do
-    let ticketTags = zrTags zendeskResponse
-    formatTags ticketTags
-  where
-    formatTags :: TicketTags -> Text
-    formatTags tags = foldr (\tag acc -> tag <> ";" <> acc) "" (getTicketTags tags)
 
 processTickets :: App ()
 processTickets = do
@@ -369,4 +362,3 @@ filterAnalyzedTickets ticketsInfo =
 
     isTicketInGoguenTestnet :: TicketInfo -> Bool
     isTicketInGoguenTestnet TicketInfo{..} = "goguen_testnets" `notElem` getTicketTags tiTags
-
