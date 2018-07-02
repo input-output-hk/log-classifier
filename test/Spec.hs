@@ -35,7 +35,7 @@ spec =
             showAttachmentInfoSpec
             showCommentAttachmentsSpec
             showTicketCategoryCountSpec
-            showTicketWithAttachmentsSpec
+            -- TODO(rc): showTicketWithAttachmentsSpec
             -- TODO(rc): showTicketAttachmentsSpec
             -- TODO(rc): showStatisticsSpec
 
