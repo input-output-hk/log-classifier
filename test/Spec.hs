@@ -7,11 +7,12 @@ import           Test.Hspec.QuickCheck (modifyMaxSuccess)
 import           Test.QuickCheck (Gen, arbitrary, elements, forAll, listOf, listOf1, property)
 import           Test.QuickCheck.Monadic (assert, monadicIO, pre, run)
 
-import           DataSource (App, Attachment (..), Comment (..), Config (..), IOLayer (..),
-                             TicketId (..), TicketInfo (..), TicketStatus (..), TicketTags (..),
-                             User, UserId (..), ZendeskAPIUrl (..), ZendeskLayer (..),
-                             ZendeskResponse (..), basicIOLayer, defaultConfig, emptyZendeskLayer,
-                             runApp, showURL)
+
+import           DataSource (App, Attachment (..), Comment (..), Config (..), IOLayer (..), TicketId (..), Ticket(..),
+                             TicketInfo (..), TicketStatus (..), TicketTags (..), User, UserId (..),
+                             ZendeskAPIUrl (..), ZendeskLayer (..), ZendeskResponse (..),
+                             basicIOLayer, defaultConfig, emptyZendeskLayer, runApp, showURL, createResponseTicket)
+
 import           Lib (filterAnalyzedTickets, listAndSortTickets, processTicket)
 import           Statistics (filterTicketsByStatus, filterTicketsWithAttachments,
                              showAttachmentInfo, showCommentAttachments)
@@ -24,10 +25,6 @@ main = hspec spec
 spec :: Spec
 spec =
     describe "Log Classifier Tests" $ do
-        describe "Zendesk" $ do
-            validShowURLSpec
-            listAndSortTicketsSpec
-            processTicketSpec
         describe "Statistics" $ do
             filterTicketsWithAttachmentsSpec
             filterTicketsByStatusSpec
@@ -37,6 +34,12 @@ spec =
             -- TODO(rc): showTicketWithAttachmentsSpec
             -- TODO(rc): showTicketAttachmentsSpec
             -- TODO(rc): showStatisticsSpec
+        describe "Zendesk" $ do
+            validShowURLSpec
+            listAndSortTicketsSpec
+            processTicketSpec
+            filterAnalyzedTicketsSpec
+            createResponseTicketSpec
 
 -- | A utility function for testing which stubs IO and returns
 -- | A utility function for testing which stubs IO and returns
@@ -58,8 +61,8 @@ withStubbedIOAndZendeskLayer stubbedZendeskLayer =
 listAndSortTicketsSpec :: Spec
 listAndSortTicketsSpec =
     describe "listAndSortTickets" $ modifyMaxSuccess (const 200) $ do
-        it "doesn't return tickets since there are none" $ do
-            forAll arbitrary $ \(ticketInfo :: TicketInfo) -> do
+        it "doesn't return tickets since there are none" $
+            forAll arbitrary $ \(ticketInfo :: TicketInfo) ->
 
                 monadicIO $ do
 
@@ -125,7 +128,7 @@ processTicketSpec =
                                 emptyZendeskLayer
                                     { zlListAssignedTickets     = \_     -> pure listTickets
                                     , zlGetTicketInfo           = \_     -> pure $ Just ticketInfo
-                                    , zlPostTicketComment       = \_     -> pure ()
+                                    , zlPostTicketComment       = \_ _   -> pure ()
                                     , zlGetTicketComments       = \_     -> pure []
                                     }
 
@@ -152,7 +155,7 @@ processTicketSpec =
                                 emptyZendeskLayer
                                     { zlListAssignedTickets     = \_     -> pure listTickets
                                     , zlGetTicketInfo           = \_     -> pure $ Just ticketInfo
-                                    , zlPostTicketComment       = \_     -> pure ()
+                                    , zlPostTicketComment       = \_ _    -> pure ()
                                     , zlGetTicketComments       = \_     -> pure comments
                                     , zlGetAttachment           = \_     -> pure $ Just mempty
                                     }
@@ -176,9 +179,9 @@ processTicketSpec =
                     let stubbedZendeskLayer :: ZendeskLayer App
                         stubbedZendeskLayer =
                             emptyZendeskLayer
-                                { zlGetTicketComments = \_ -> pure commentsWithoutAttachment
-                                , zlGetTicketInfo     = \_ -> pure $ Just ticketInfo
-                                , zlPostTicketComment = \_ -> pure ()
+                                { zlGetTicketComments = \_   -> pure commentsWithoutAttachment
+                                , zlGetTicketInfo     = \_   -> pure $ Just ticketInfo
+                                , zlPostTicketComment = \_ _ -> pure ()
                                 }
 
                     let stubbedConfig :: Config
@@ -202,10 +205,10 @@ processTicketSpec =
                     let stubbedZendeskLayer :: ZendeskLayer App
                         stubbedZendeskLayer =
                             emptyZendeskLayer
-                                { zlGetTicketComments = \_ -> pure comments
-                                , zlGetTicketInfo     = \_ -> pure $ Just ticketInfo
-                                , zlPostTicketComment = \_ -> pure ()
-                                , zlGetAttachment     = \_ -> pure $ Just mempty
+                                { zlGetTicketComments = \_   -> pure comments
+                                , zlGetTicketInfo     = \_   -> pure $ Just ticketInfo
+                                , zlPostTicketComment = \_ _ -> pure ()
+                                , zlGetAttachment     = \_   -> pure $ Just mempty
                                 }
 
                     let stubbedConfig :: Config
@@ -405,3 +408,42 @@ filterAnalyzedTicketsSpec =
             forAll (listOf $ genTicketWithFilteredTags ["analyzed-by-script-v1.0"]) $
                 \(ticketInfos :: [TicketInfo]) ->
                     length (filterAnalyzedTickets ticketInfos) `shouldBe` 0
+
+genTicketWithFilteredTags :: [Text] -> Gen TicketInfo
+genTicketWithFilteredTags tagToBeFiltered = TicketInfo
+    <$> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> return (TicketTags tagToBeFiltered)
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+
+genTicketWithUnsolvedStatus :: Gen TicketInfo
+genTicketWithUnsolvedStatus = TicketInfo
+    <$> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> (TicketStatus <$> elements ["new", "hold", "open", "pending"])
+    <*> arbitrary
+    <*> arbitrary
+
+createResponseTicketSpec :: Spec
+createResponseTicketSpec = 
+    describe "createResponseTicket" $ modifyMaxSuccess (const 200) $ do
+        it "should preserve ticket field and custom field from ticketInfo" $
+            property $ \agentId ticketInfo zendeskResponse -> 
+                let responseTicket = createResponseTicket agentId ticketInfo zendeskResponse
+                in tiField ticketInfo == tField responseTicket
+                && tiCustomField ticketInfo == tCustomField responseTicket
+        it "should preserve tags from ticketinfo and zendeskresponse" $
+            property $ \agentId ticketInfo zendeskResponse ->
+                let responseTicket      = createResponseTicket agentId ticketInfo zendeskResponse
+                    ticketInfoTags      = getTicketTags (tiTags ticketInfo)
+                    zendeskResponseTags = getTicketTags (zrTags zendeskResponse)
+                    mergedTags          = ticketInfoTags <> zendeskResponseTags
+                    responseTags        = getTicketTags $ tTag responseTicket
+                in all (`elem` responseTags) mergedTags
