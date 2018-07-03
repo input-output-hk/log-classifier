@@ -145,7 +145,8 @@ fetchTickets = do
 
 fetchAndShowTickets :: App ()
 fetchAndShowTickets = do
-    fetchTickets >>= mapM_ (putTextLn . show)
+    tickets <- fetchTickets
+    mapM_ (putTextLn . show) tickets
     putTextLn "All the tickets has been processed."
 
 -- TODO(ks): Extract repeating code, generalize.
