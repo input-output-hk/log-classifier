@@ -10,7 +10,6 @@ module Lib
     , fetchTickets
     , showStatistics
     , listAndSortTickets
-    , getTickets
     , filterAnalyzedTickets
     ) where
 
@@ -62,10 +61,10 @@ runZendeskMain = do
     case args of
         CollectEmails            -> runApp collectEmails cfg
         FetchAgents              -> void $ runApp fetchAgents cfg
-        FetchTickets             -> runApp fetchTickets cfg
+        FetchTickets             -> runApp fetchAndShowTickets cfg
         (ProcessTicket ticketId) -> void $ runApp (processTicket (TicketId ticketId)) cfg
         ProcessTickets           -> void $ runApp processTickets cfg
-        ShowStatistics           -> void $ runApp (getTickets >>= showStatistics) cfg
+        ShowStatistics           -> void $ runApp (fetchTickets >>= showStatistics) cfg
 
 -- TODO(hs): Remove this function since it's not used
 collectEmails :: App ()
@@ -136,17 +135,18 @@ processTickets = do
 
     putTextLn "All the tickets has been processed."
 
-
-fetchTickets :: App ()
+fetchTickets :: App [TicketInfo]
 fetchTickets = do
     sortedTicketIds             <- listAndSortTickets
     sortedUnassignedTicketIds   <- listAndSortUnassignedTickets
 
     let allTickets = sortedTicketIds <> sortedUnassignedTicketIds
+    return allTickets
 
-    mapM_ (putTextLn . show) allTickets
+fetchAndShowTickets :: App ()
+fetchAndShowTickets = do
+    fetchTickets >>= mapM_ (putTextLn . show)
     putTextLn "All the tickets has been processed."
-
 
 -- TODO(ks): Extract repeating code, generalize.
 listAndSortTickets :: App [TicketInfo]
@@ -215,22 +215,6 @@ extractEmailAddress ticketId = do
     liftIO $ guard ("@" `isInfixOf` emailAddress)
     liftIO $ appendFile "emailAddress.txt" (emailAddress <> "\n")
     liftIO $ putTextLn emailAddress
-
-getTickets :: App [TicketInfo]
-getTickets = do
-    Config{..}  <- ask
-    let email   = cfgEmail
-    let userId = UserId . fromIntegral $ cfgAgentId
-    -- We first fetch the function from the configuration
-    listTickets <- asksZendeskLayer zlListAssignedTickets
-    printText   <- asksIOLayer iolPrintText
-
-    printText $ "Classifier is going to process tickets assign to: " <> email
-    tickets     <- listTickets userId
-
-    printText $ "There are " <> show (length tickets) <> " tickets."
-
-    pure tickets
 
 -- | A pure function for fetching @Attachment@ from @Comment@.
 getAttachmentsFromComment :: [Comment] -> [Attachment]

@@ -8,10 +8,12 @@ import           Test.QuickCheck (Gen, arbitrary, elements, forAll, listOf, list
 import           Test.QuickCheck.Monadic (assert, monadicIO, pre, run)
 
 
-import           DataSource (App, Attachment (..), Comment (..), Config (..), IOLayer (..), TicketId (..), Ticket(..),
-                             TicketInfo (..), TicketStatus (..), TicketTags (..), User, UserId (..),
-                             ZendeskAPIUrl (..), ZendeskLayer (..), ZendeskResponse (..),
-                             basicIOLayer, defaultConfig, emptyZendeskLayer, runApp, showURL, createResponseTicket)
+import           DataSource (App, Attachment (..), Comment (..), Config (..), IOLayer (..),
+                             Ticket (..), TicketId (..), TicketInfo (..), TicketStatus (..),
+                             TicketTags (..), User, UserId (..), ZendeskAPIUrl (..),
+                             ZendeskLayer (..), ZendeskResponse (..), basicIOLayer,
+                             createResponseTicket, defaultConfig, emptyZendeskLayer, runApp,
+                             showURL)
 
 import           Lib (filterAnalyzedTickets, listAndSortTickets, processTicket)
 import           Statistics (filterTicketsByStatus, filterTicketsWithAttachments,
@@ -41,7 +43,6 @@ spec =
             filterAnalyzedTicketsSpec
             createResponseTicketSpec
 
--- | A utility function for testing which stubs IO and returns
 -- | A utility function for testing which stubs IO and returns
 -- the @Config@ with the @ZendeskLayer@ that was passed into it.
 withStubbedIOAndZendeskLayer :: ZendeskLayer App -> Config
@@ -249,7 +250,9 @@ genTicketWithStatus = TicketInfo
     <*> arbitrary
     <*> arbitrary
     <*> arbitrary
-    <*> elements [TicketStatus "open", TicketStatus "closed"]
+    <*> (TicketStatus <$> elements ["open", "closed"])
+    <*> arbitrary
+    <*> arbitrary
 
 genTicketWithFilteredTags :: [Text] -> Gen TicketInfo
 genTicketWithFilteredTags tagToBeFiltered = TicketInfo
@@ -258,6 +261,8 @@ genTicketWithFilteredTags tagToBeFiltered = TicketInfo
     <*> arbitrary
     <*> arbitrary
     <*> return (TicketTags tagToBeFiltered)
+    <*> arbitrary
+    <*> arbitrary
     <*> arbitrary
 
 genTicketWithUnsolvedStatus :: Gen TicketInfo
@@ -268,6 +273,8 @@ genTicketWithUnsolvedStatus = TicketInfo
     <*> arbitrary
     <*> arbitrary
     <*> (TicketStatus <$> elements ["new", "hold", "open", "pending"])
+    <*> arbitrary
+    <*> arbitrary
 
 processTicketsSpec :: Spec
 processTicketsSpec =
@@ -409,33 +416,11 @@ filterAnalyzedTicketsSpec =
                 \(ticketInfos :: [TicketInfo]) ->
                     length (filterAnalyzedTickets ticketInfos) `shouldBe` 0
 
-genTicketWithFilteredTags :: [Text] -> Gen TicketInfo
-genTicketWithFilteredTags tagToBeFiltered = TicketInfo
-    <$> arbitrary
-    <*> arbitrary
-    <*> arbitrary
-    <*> arbitrary
-    <*> return (TicketTags tagToBeFiltered)
-    <*> arbitrary
-    <*> arbitrary
-    <*> arbitrary
-
-genTicketWithUnsolvedStatus :: Gen TicketInfo
-genTicketWithUnsolvedStatus = TicketInfo
-    <$> arbitrary
-    <*> arbitrary
-    <*> arbitrary
-    <*> arbitrary
-    <*> arbitrary
-    <*> (TicketStatus <$> elements ["new", "hold", "open", "pending"])
-    <*> arbitrary
-    <*> arbitrary
-
 createResponseTicketSpec :: Spec
-createResponseTicketSpec = 
+createResponseTicketSpec =
     describe "createResponseTicket" $ modifyMaxSuccess (const 200) $ do
         it "should preserve ticket field and custom field from ticketInfo" $
-            property $ \agentId ticketInfo zendeskResponse -> 
+            property $ \agentId ticketInfo zendeskResponse ->
                 let responseTicket = createResponseTicket agentId ticketInfo zendeskResponse
                 in tiField ticketInfo == tField responseTicket
                 && tiCustomField ticketInfo == tCustomField responseTicket
