@@ -21,17 +21,17 @@ import           System.Directory (createDirectoryIfMissing)
 
 import           CLI (CLI (..), getCliArgs)
 import           DataSource (App, Attachment (..), AttachmentContent (..), Comment (..),
-                             CommentBody (..), Config (..), IOLayer (..),
-                             TicketId (..), TicketInfo (..), TicketStatus (..), TicketTag (..),
-                             TicketTags (..), User (..), UserId (..), ZendeskLayer (..),
-                             ZendeskResponse (..), asksIOLayer, asksZendeskLayer, assignToPath,
-                             defaultConfig, knowledgebasePath, renderTicketStatus,
-                             runApp, tokenPath)
+                             CommentBody (..), Config (..), IOLayer (..), TicketId (..),
+                             TicketInfo (..), TicketStatus (..), TicketTag (..), TicketTags (..),
+                             User (..), UserId (..), ZendeskLayer (..), ZendeskResponse (..),
+                             asksIOLayer, asksZendeskLayer, assignToPath, defaultConfig,
+                             knowledgebasePath, renderTicketStatus, runApp, tokenPath)
 import           LogAnalysis.Classifier (extractErrorCodes, extractIssuesFromLogs,
                                          prettyFormatAnalysis, prettyFormatLogReadError,
                                          prettyFormatNoIssues, prettyFormatNoLogs)
 import           LogAnalysis.KnowledgeCSVParser (parseKnowLedgeBase)
 import           LogAnalysis.Types (ErrorCode (..), Knowledge, renderErrorCode, setupAnalysis)
+import           Statistics (showStatistics)
 import           Util (extractLogsFromZip)
 
 ------------------------------------------------------------
@@ -61,10 +61,10 @@ runZendeskMain = do
     case args of
         CollectEmails            -> runApp collectEmails cfg
         FetchAgents              -> void $ runApp fetchAgents cfg
-        FetchTickets             -> runApp fetchTickets cfg
+        FetchTickets             -> runApp fetchAndShowTickets cfg
         (ProcessTicket ticketId) -> void $ runApp (processTicket (TicketId ticketId)) cfg
         ProcessTickets           -> void $ runApp processTickets cfg
-        ShowStatistics           -> runApp showStatistics cfg
+        ShowStatistics           -> void $ runApp (fetchTickets >>= showStatistics) cfg
 
 -- TODO(hs): Remove this function since it's not used
 collectEmails :: App ()
@@ -105,14 +105,14 @@ processTicket tId = do
     -- We first fetch the function from the configuration
     getTicketInfo       <- asksZendeskLayer zlGetTicketInfo
     mTicketInfo         <- getTicketInfo tId
-    
+
     getTicketComments   <- asksZendeskLayer zlGetTicketComments
     comments            <- getTicketComments tId
     let attachments     = getAttachmentsFromComment comments
     let ticketInfo      = fromMaybe (error "No ticket info") mTicketInfo
     zendeskResponse     <- getZendeskResponses comments attachments ticketInfo
     postTicketComment   <- asksZendeskLayer zlPostTicketComment
-    
+
     whenJust zendeskResponse $ \response -> do
         postTicketComment ticketInfo response
         let tags = getTicketTags $ zrTags response
@@ -135,33 +135,19 @@ processTickets = do
 
     putTextLn "All the tickets has been processed."
 
-
-fetchTickets :: App ()
+fetchTickets :: App [TicketInfo]
 fetchTickets = do
     sortedTicketIds             <- listAndSortTickets
     sortedUnassignedTicketIds   <- listAndSortUnassignedTickets
 
     let allTickets = sortedTicketIds <> sortedUnassignedTicketIds
+    return allTickets
 
-    mapM_ (putTextLn . show) allTickets
+fetchAndShowTickets :: App ()
+fetchAndShowTickets = do
+    tickets <- fetchTickets
+    mapM_ (putTextLn . show) tickets
     putTextLn "All the tickets has been processed."
-
-
-showStatistics :: App ()
-showStatistics = do
-    cfg <- ask
-
-    let email   = cfgEmail cfg
-    let userId  = UserId . fromIntegral $ cfgAgentId cfg
-
-    -- We first fetch the function from the configuration
-    listTickets <- asksZendeskLayer zlListAssignedTickets
-
-    putTextLn $ "Classifier is going to gather ticket information assigned to: " <> email
-
-    tickets     <- listTickets userId
-    pure () -- TODO(ks): Implement anew.
-
 
 -- TODO(ks): Extract repeating code, generalize.
 listAndSortTickets :: App [TicketInfo]

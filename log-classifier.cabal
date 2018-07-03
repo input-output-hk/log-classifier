@@ -22,6 +22,7 @@ library
                        LogAnalysis.KnowledgeCSVParser
                        LogAnalysis.Types
                        Regex
+                       Statistics
                        Util
                        DataSource
   other-modules:       Paths_log_classifier
