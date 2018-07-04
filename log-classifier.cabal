@@ -22,6 +22,7 @@ library
                        LogAnalysis.KnowledgeCSVParser
                        LogAnalysis.Types
                        Regex
+                       Statistics
                        Util
                        DataSource
   other-modules:       Paths_log_classifier
@@ -35,6 +36,7 @@ library
                      , base >=4.7 && <5
                      , bytestring
                      , containers
+                     , directory
                      , http-conduit
                      , mtl
                      , optparse-applicative

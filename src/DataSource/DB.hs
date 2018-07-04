@@ -32,6 +32,7 @@ import           Database.SQLite.Simple.ToField (ToField (..))
 
 import           DataSource.Types (Attachment (..), AttachmentContent (..), AttachmentId (..),
                                    Comment (..), CommentBody (..), CommentId (..), Config,
+                                   TicketField (..), TicketFieldId (..), TicketFieldValue (..),
                                    TicketId (..), TicketInfo (..), TicketStatus (..),
                                    TicketTags (..), TicketURL (..), UserId (..), ZendeskLayer (..))
 
@@ -57,6 +58,18 @@ cachedZendeskLayer = ZendeskLayer
 -- Database instances
 -- FROM
 
+instance FromField TicketFieldId where
+    fromField (Field (SQLInteger tfId) _)   = Ok . TicketFieldId . fromIntegral $ tfId
+    fromField f                             = returnError ConversionFailed f "need a text, ticket status"
+
+instance FromField TicketFieldValue where
+    fromField (Field (SQLText tfValue) _)   = Ok . TicketFieldValue $ tfValue
+    fromField f                             = returnError ConversionFailed f "need a text, ticket status"
+
+-- TODO(ks): Separate table!
+instance FromField [TicketField] where
+    fromField _                             = empty
+
 instance FromField TicketId where
     fromField (Field (SQLInteger tId) _)    = Ok . TicketId . fromIntegral $ tId
     fromField f                             = returnError ConversionFailed f "need an integer, ticket id"
@@ -79,7 +92,7 @@ instance FromField TicketStatus where
     fromField f                             = returnError ConversionFailed f "need a text, ticket status"
 
 instance FromRow TicketInfo where
-    fromRow = TicketInfo <$> field <*> field <*> field <*> field <*> field <*> field
+    fromRow = TicketInfo <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
 
 instance FromField CommentId where
     fromField (Field (SQLInteger commId) _) = Ok . CommentId . fromIntegral $ commId
@@ -184,7 +197,9 @@ getTicketComments ticketId = do
   where
     getTicketIdComments :: TicketId -> m [(CommentId, CommentBody, Bool, Integer)]
     getTicketIdComments ticketId' = withProdDatabase $ \conn ->
-        queryNamed conn "SELECT tc.id, tc.body, tc.is_public, tc.author_id FROM ticket_comment tc WHERE tc.ticket_id = :id" [":id" := ticketId']
+        queryNamed conn "SELECT tc.id, tc.body, tc.is_public, tc.author_id \
+            \FROM ticket_comment tc \
+            \WHERE tc.ticket_id = :id" [":id" := ticketId']
 
     getCommentAttachments :: CommentId -> m [Attachment]
     getCommentAttachments commentId = withProdDatabase $ \conn ->

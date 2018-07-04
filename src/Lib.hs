@@ -30,11 +30,14 @@ import           DataSource (App, Attachment (..), AttachmentContent (..), Comme
                              assignToPath, defaultConfig, deleteAllData, insertCommentAttachments,
                              insertTicketComments, insertTicketInfo, knowledgebasePath,
                              renderTicketStatus, runApp, tokenPath)
+import           System.Directory (createDirectoryIfMissing)
+
 import           LogAnalysis.Classifier (extractErrorCodes, extractIssuesFromLogs,
                                          prettyFormatAnalysis, prettyFormatLogReadError,
                                          prettyFormatNoIssues, prettyFormatNoLogs)
 import           LogAnalysis.KnowledgeCSVParser (parseKnowLedgeBase)
 import           LogAnalysis.Types (ErrorCode (..), Knowledge, renderErrorCode, setupAnalysis)
+import           Statistics (showStatistics)
 import           Util (extractLogsFromZip)
 
 ------------------------------------------------------------
@@ -43,6 +46,7 @@ import           Util (extractLogsFromZip)
 
 runZendeskMain :: IO ()
 runZendeskMain = do
+    createDirectoryIfMissing True "logs"
     args <- getCliArgs
     putTextLn "Welcome to Zendesk classifier!"
     token <- readFile tokenPath  -- Zendesk token
@@ -63,10 +67,10 @@ runZendeskMain = do
     case args of
         CollectEmails            -> runApp collectEmails cfg
         FetchAgents              -> void $ runApp fetchAgents cfg
-        FetchTickets             -> runApp fetchTickets cfg
+        FetchTickets             -> runApp fetchAndShowTickets cfg
         (ProcessTicket ticketId) -> void $ runApp (processTicket (TicketId ticketId)) cfg
         ProcessTickets           -> void $ runApp processTickets cfg
-        ShowStatistics           -> runApp showStatistics cfg
+        ShowStatistics           -> void $ runApp (fetchTickets >>= showStatistics) cfg
         ExportData               -> runApp exportZendeskDataToLocalDB cfg
 
 -- | The function for exporting Zendesk data to our local DB so
@@ -166,27 +170,32 @@ fetchAgents = do
 
 processTicket :: TicketId -> App (Maybe ZendeskResponse)
 processTicket tId = do
+    printText <- asksIOLayer iolPrintText
+    -- Printing id before inspecting the ticket so that when the process stops by the
+    -- corrupted log file, we know which id to blacklist.
+    printText $ "Analyzing ticket id: " <> show (getTicketId tId)
 
     -- We first fetch the function from the configuration
     getTicketInfo       <- asksZendeskLayer zlGetTicketInfo
-    printText           <- asksIOLayer iolPrintText
-
-    printText $ "Processing a ticket: " <> show (getTicketId tId)
-
     mTicketInfo         <- getTicketInfo tId
+
     getTicketComments   <- asksZendeskLayer zlGetTicketComments
     comments            <- getTicketComments tId
     let attachments     = getAttachmentsFromComment comments
     let ticketInfo      = fromMaybe (error "No ticket info") mTicketInfo
     zendeskResponse     <- getZendeskResponses comments attachments ticketInfo
     postTicketComment   <- asksZendeskLayer zlPostTicketComment
-    whenJust zendeskResponse postTicketComment
 
-    printText "Process finished, please see the following url"
-    printText $ "https://iohk.zendesk.com/agent/tickets/" <> show (getTicketId tId)
+    whenJust zendeskResponse $ \response -> do
+        postTicketComment ticketInfo response
+        let tags = getTicketTags $ zrTags response
+        forM_ tags $ \tag -> do
+            let formattedTicketIdAndTag = show (getTicketId tId) <> " " <> tag
+            printText formattedTicketIdAndTag
+            appendF <- asksIOLayer iolAppendFile
+            appendF "logs/analysis-result.log" (formattedTicketIdAndTag <> "\n")
 
     pure zendeskResponse
-
 
 processTickets :: App ()
 processTickets = do
@@ -199,33 +208,19 @@ processTickets = do
 
     putTextLn "All the tickets has been processed."
 
-
-fetchTickets :: App ()
+fetchTickets :: App [TicketInfo]
 fetchTickets = do
     sortedTicketIds             <- listAndSortTickets
     sortedUnassignedTicketIds   <- listAndSortUnassignedTickets
 
     let allTickets = sortedTicketIds <> sortedUnassignedTicketIds
+    return allTickets
 
-    mapM_ (putTextLn . show) allTickets
+fetchAndShowTickets :: App ()
+fetchAndShowTickets = do
+    tickets <- fetchTickets
+    mapM_ (putTextLn . show) tickets
     putTextLn "All the tickets has been processed."
-
-
-showStatistics :: App ()
-showStatistics = do
-    cfg <- ask
-
-    let email   = cfgEmail cfg
-    let userId  = UserId . fromIntegral $ cfgAgentId cfg
-
-    -- We first fetch the function from the configuration
-    listTickets <- asksZendeskLayer zlListAssignedTickets
-
-    putTextLn $ "Classifier is going to gather ticket information assigned to: " <> email
-
-    tickets     <- listTickets userId
-    pure () -- TODO(ks): Implement anew.
-
 
 -- TODO(ks): Extract repeating code, generalize.
 listAndSortTickets :: App [TicketInfo]
@@ -357,7 +352,7 @@ inspectAttachment Config{..} ticketInfo@TicketInfo{..} attContent = do
             ZendeskResponse
                 { zrTicketId    = tiId
                 , zrComment     = prettyFormatLogReadError ticketInfo
-                , zrTags        = [renderErrorCode SentLogCorrupted]
+                , zrTags        = TicketTags [renderErrorCode SentLogCorrupted]
                 , zrIsPublic    = cfgIsCommentPublic
                 }
         Right result -> do
@@ -372,7 +367,7 @@ inspectAttachment Config{..} ticketInfo@TicketInfo{..} attContent = do
                     ZendeskResponse
                         { zrTicketId    = tiId
                         , zrComment     = commentRes
-                        , zrTags        = errorCodes
+                        , zrTags        = TicketTags errorCodes
                         , zrIsPublic    = cfgIsCommentPublic
                         }
 
@@ -381,7 +376,7 @@ inspectAttachment Config{..} ticketInfo@TicketInfo{..} attContent = do
                     ZendeskResponse
                         { zrTicketId    = tiId
                         , zrComment     = prettyFormatNoIssues ticketInfo
-                        , zrTags        = [renderTicketStatus NoKnownIssue]
+                        , zrTags        = TicketTags [renderTicketStatus NoKnownIssue]
                         , zrIsPublic    = cfgIsCommentPublic
                         }
 
@@ -391,7 +386,7 @@ responseNoLogs TicketInfo{..} = do
     pure ZendeskResponse
              { zrTicketId = tiId
              , zrComment  = prettyFormatNoLogs
-             , zrTags     = [renderTicketStatus NoLogAttached]
+             , zrTags     = TicketTags [renderTicketStatus NoLogAttached]
              , zrIsPublic = cfgIsCommentPublic
              }
 
@@ -426,4 +421,3 @@ filterAnalyzedTickets ticketsInfo =
 
     isTicketInGoguenTestnet :: TicketInfo -> Bool
     isTicketInGoguenTestnet TicketInfo{..} = "goguen_testnets" `notElem` getTicketTags tiTags
-

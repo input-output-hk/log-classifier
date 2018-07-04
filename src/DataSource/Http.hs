@@ -7,6 +7,7 @@ module DataSource.Http
     , emptyZendeskLayer
     , basicIOLayer
     , defaultConfig
+    , createResponseTicket
     ) where
 
 import           Universum
@@ -17,6 +18,7 @@ import           Control.Monad.Reader (ask)
 import           Data.Aeson (FromJSON, ToJSON, Value, encode, parseJSON)
 import           Data.Aeson.Text (encodeToLazyText)
 import           Data.Aeson.Types (Parser, parseEither)
+import           Data.List (nub)
 import           Network.HTTP.Simple (Request, addRequestHeader, getResponseBody, httpJSON, httpLBS,
                                       parseRequest_, setRequestBasicAuth, setRequestBodyJSON,
                                       setRequestMethod, setRequestPath)
@@ -25,7 +27,7 @@ import           DataSource.Types (Attachment (..), AttachmentContent (..), Comm
                                    CommentBody (..), CommentId (..), Config (..),
                                    DeletedTicket (..), ExportFromTime (..), FromPageResultList (..),
                                    IOLayer (..), PageResultList (..), Ticket (..), TicketId (..),
-                                   TicketInfo (..), TicketTag (..), User, UserId (..),
+                                   TicketInfo (..), TicketTag (..), TicketTags (..), User, UserId (..),
                                    ZendeskAPIUrl (..), ZendeskLayer (..), ZendeskResponse (..),
                                    parseComments, parseTicket, renderTicketStatus, showURL)
 
@@ -68,7 +70,8 @@ basicZendeskLayer = ZendeskLayer
 
 basicIOLayer :: (MonadIO m, MonadReader Config m) => IOLayer m
 basicIOLayer = IOLayer
-    { iolPrintText              = putTextLn
+    { iolAppendFile             = appendFile
+    , iolPrintText              = putTextLn
     , iolReadFile               = \_ -> error "Not implemented readFile!"
     -- ^ TODO(ks): We need to implement this!
     }
@@ -240,24 +243,33 @@ iteratePagesWithDelay seconds req = do
 -- | Send API request to post comment
 postTicketComment
     :: (MonadIO m, MonadReader Config m)
-    => ZendeskResponse
+    => TicketInfo
+    -> ZendeskResponse
     -> m ()
-postTicketComment ZendeskResponse{..} = do
+postTicketComment ticketInfo zendeskResponse = do
     cfg <- ask
+    let responseTicket = createResponseTicket (cfgAgentId cfg) ticketInfo zendeskResponse
+    let url  = showURL $ TicketsURL (zrTicketId zendeskResponse)
+    let req = addJsonBody responseTicket (apiRequest cfg url)
+    void $ liftIO $ apiCall (pure . encodeToLazyText) req
 
-    let url  = showURL $ TicketsURL zrTicketId
-    let req1 = apiRequest cfg url
-    let req2 = addJsonBody
-                   (Ticket
-                       (Comment (CommentId 0)
-                           (CommentBody zrComment)
-                           []
-                           zrIsPublic
-                           (cfgAgentId cfg))
-                       (renderTicketStatus AnalyzedByScriptV1_1:zrTags)
-                   )
-                   req1
-    void $ liftIO $ apiCall (pure . encodeToLazyText) req2
+-- | Create response ticket
+createResponseTicket :: Integer -> TicketInfo -> ZendeskResponse -> Ticket
+createResponseTicket agentId TicketInfo{..} ZendeskResponse{..} =
+    let analyzedTag = renderTicketStatus AnalyzedByScriptV1_1
+    -- Nub so it won't post duplicate tags
+        mergedTags = TicketTags . nub $ [analyzedTag] <> getTicketTags tiTags <> getTicketTags zrTags
+    in (Ticket
+            (Comment (CommentId 0)
+                (CommentBody zrComment)
+                []
+                zrIsPublic
+                agentId
+            )
+            mergedTags
+            tiField
+            tiCustomField
+        )
 
 -- | Get user information.
 _getUser

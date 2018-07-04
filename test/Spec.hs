@@ -7,13 +7,16 @@ import           Test.Hspec.QuickCheck (modifyMaxSuccess)
 import           Test.QuickCheck (Gen, arbitrary, elements, forAll, listOf, listOf1, property)
 import           Test.QuickCheck.Monadic (assert, monadicIO, pre, run)
 
-import           DataSource (App, Comment (..), Config (..), ExportFromTime (..), IOLayer (..),
-                             TicketId (..), TicketInfo (..), TicketStatus (..), TicketTags (..),
-                             User, UserId (..), ZendeskAPIUrl (..), ZendeskLayer (..),
-                             ZendeskResponse (..), basicIOLayer, defaultConfig, emptyZendeskLayer,
-                             runApp, showURL)
-import           Lib (filterAnalyzedTickets, listAndSortTickets, processTicket)
+import           DataSource (App, Attachment (..), Comment (..), Config (..), IOLayer (..),
+                             Ticket (..), TicketId (..), TicketInfo (..), TicketStatus (..),
+                             TicketTags (..), User, UserId (..), ZendeskAPIUrl (..),
+                             ZendeskLayer (..), ZendeskResponse (..), basicIOLayer,
+                             createResponseTicket, defaultConfig, emptyZendeskLayer, runApp,
+                             showURL)
 
+import           Lib (filterAnalyzedTickets, listAndSortTickets, processTicket)
+import           Statistics (filterTicketsByStatus, filterTicketsWithAttachments,
+                             showAttachmentInfo, showCommentAttachments)
 -- TODO(ks): What we are really missing is a realistic @Gen ZendeskLayer m@.
 
 main :: IO ()
@@ -22,12 +25,22 @@ main = hspec spec
 -- stack test log-classifier --fast --test-arguments "-m Zendesk"
 spec :: Spec
 spec =
-    describe "Zendesk" $ do
-        validShowURLSpec
-        listAndSortTicketsSpec
-        processTicketSpec
-        filterAnalyzedTicketsSpec
-
+    describe "Log Classifier Tests" $ do
+        describe "Statistics" $ do
+            filterTicketsWithAttachmentsSpec
+            filterTicketsByStatusSpec
+            showAttachmentInfoSpec
+            showCommentAttachmentsSpec
+            showTicketCategoryCountSpec
+            -- TODO(rc): showTicketWithAttachmentsSpec
+            -- TODO(rc): showTicketAttachmentsSpec
+            -- TODO(rc): showStatisticsSpec
+        describe "Zendesk" $ do
+            validShowURLSpec
+            listAndSortTicketsSpec
+            processTicketSpec
+            filterAnalyzedTicketsSpec
+            createResponseTicketSpec
 
 -- | A utility function for testing which stubs IO and returns
 -- the @Config@ with the @ZendeskLayer@ that was passed into it.
@@ -48,8 +61,8 @@ withStubbedIOAndZendeskLayer stubbedZendeskLayer =
 listAndSortTicketsSpec :: Spec
 listAndSortTicketsSpec =
     describe "listAndSortTickets" $ modifyMaxSuccess (const 200) $ do
-        it "doesn't return tickets since there are none" $ do
-            forAll arbitrary $ \(ticketInfo :: TicketInfo) -> do
+        it "doesn't return tickets since there are none" $
+            forAll arbitrary $ \(ticketInfo :: TicketInfo) ->
 
                 monadicIO $ do
 
@@ -101,7 +114,6 @@ listAndSortTicketsSpec =
                             -- Check the order is sorted.
                             assert $ sortBy compare tickets == tickets
 
-
 processTicketSpec :: Spec
 processTicketSpec =
     describe "processTicket" $ modifyMaxSuccess (const 200) $ do
@@ -116,7 +128,7 @@ processTicketSpec =
                                 emptyZendeskLayer
                                     { zlListAssignedTickets     = \_     -> pure listTickets
                                     , zlGetTicketInfo           = \_     -> pure $ Just ticketInfo
-                                    , zlPostTicketComment       = \_     -> pure ()
+                                    , zlPostTicketComment       = \_ _   -> pure ()
                                     , zlGetTicketComments       = \_     -> pure []
                                     }
 
@@ -143,7 +155,7 @@ processTicketSpec =
                                 emptyZendeskLayer
                                     { zlListAssignedTickets     = \_     -> pure listTickets
                                     , zlGetTicketInfo           = \_     -> pure $ Just ticketInfo
-                                    , zlPostTicketComment       = \_     -> pure ()
+                                    , zlPostTicketComment       = \_ _    -> pure ()
                                     , zlGetTicketComments       = \_     -> pure comments
                                     , zlGetAttachment           = \_     -> pure $ Just mempty
                                     }
@@ -167,9 +179,9 @@ processTicketSpec =
                     let stubbedZendeskLayer :: ZendeskLayer App
                         stubbedZendeskLayer =
                             emptyZendeskLayer
-                                { zlGetTicketComments = \_ -> pure commentsWithoutAttachment
-                                , zlGetTicketInfo     = \_ -> pure $ Just ticketInfo
-                                , zlPostTicketComment = \_ -> pure ()
+                                { zlGetTicketComments = \_   -> pure commentsWithoutAttachment
+                                , zlGetTicketInfo     = \_   -> pure $ Just ticketInfo
+                                , zlPostTicketComment = \_ _ -> pure ()
                                 }
 
                     let stubbedConfig :: Config
@@ -193,10 +205,10 @@ processTicketSpec =
                     let stubbedZendeskLayer :: ZendeskLayer App
                         stubbedZendeskLayer =
                             emptyZendeskLayer
-                                { zlGetTicketComments = \_ -> pure comments
-                                , zlGetTicketInfo     = \_ -> pure $ Just ticketInfo
-                                , zlPostTicketComment = \_ -> pure ()
-                                , zlGetAttachment     = \_ -> pure $ Just mempty
+                                { zlGetTicketComments = \_   -> pure comments
+                                , zlGetTicketInfo     = \_   -> pure $ Just ticketInfo
+                                , zlPostTicketComment = \_ _ -> pure ()
+                                , zlGetAttachment     = \_   -> pure $ Just mempty
                                 }
 
                     let stubbedConfig :: Config
@@ -211,7 +223,7 @@ processTicketSpec =
                     assert $ not (isResponseTaggedWithNoLogs zendeskResponse)
 
 isResponseTaggedWithNoLogs :: Maybe ZendeskResponse -> Bool
-isResponseTaggedWithNoLogs (Just response) = "no-log-files" `elem` zrTags response
+isResponseTaggedWithNoLogs (Just response) = "no-log-files" `elem` getTicketTags (zrTags response)
 isResponseTaggedWithNoLogs Nothing         = False
 
 genCommentWithNoAttachment :: Gen Comment
@@ -219,6 +231,47 @@ genCommentWithNoAttachment = Comment
     <$> arbitrary
     <*> arbitrary
     <*> return mempty
+    <*> arbitrary
+    <*> arbitrary
+
+genCommentWithAttachment :: Gen Comment
+genCommentWithAttachment = Comment
+    <$> arbitrary
+    <*> arbitrary
+    <*> listOf1 arbitrary
+    <*> arbitrary
+    <*> arbitrary
+
+genTicketWithStatus :: Gen TicketInfo
+genTicketWithStatus = TicketInfo
+    <$> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> (TicketStatus <$> elements ["open", "closed"])
+    <*> arbitrary
+    <*> arbitrary
+
+genTicketWithFilteredTags :: [Text] -> Gen TicketInfo
+genTicketWithFilteredTags tagToBeFiltered = TicketInfo
+    <$> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> return (TicketTags tagToBeFiltered)
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+
+genTicketWithUnsolvedStatus :: Gen TicketInfo
+genTicketWithUnsolvedStatus = TicketInfo
+    <$> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> (TicketStatus <$> elements ["new", "hold", "open", "pending"])
     <*> arbitrary
     <*> arbitrary
 
@@ -268,6 +321,83 @@ validShowURLSpec =
                 in  typedURL == untypedURL
 
 
+filterTicketsWithAttachmentsSpec :: Spec
+filterTicketsWithAttachmentsSpec =
+    describe "filterTicketsWithAttachments" $ do
+        it "filtered/unfiltered tickets return same length if all tickets have attachments" $ do
+            forAll (listOf1 arbitrary) $ \(listTickets) ->
+                forAll (listOf1 genCommentWithAttachment) $ \(comments) ->
+
+                    monadicIO $ do
+
+                        let stubbedZendeskLayer :: ZendeskLayer App
+                            stubbedZendeskLayer =
+                                emptyZendeskLayer
+                                    {
+                                      zlGetTicketComments       = \_     -> pure comments
+                                    }
+                        let stubbedConfig :: Config
+                            stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
+
+                        let appExecution :: IO [TicketInfo]
+                            appExecution = runApp (filterTicketsWithAttachments listTickets) stubbedConfig
+
+                        tickets <- run appExecution
+                        -- Check we have some tickets.
+                        assert $ (length tickets) == (length listTickets)
+
+        it "filtered tickets length is zero if no tickets have attachments" $ do
+            forAll (listOf1 arbitrary) $ \(listTickets) ->
+                forAll (listOf1 genCommentWithNoAttachment) $ \(comments) ->
+
+                    monadicIO $ do
+
+                        let stubbedZendeskLayer :: ZendeskLayer App
+                            stubbedZendeskLayer =
+                                emptyZendeskLayer
+                                    { zlGetTicketComments       = \_     -> pure comments
+                                    }
+                        let stubbedConfig :: Config
+                            stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
+
+                        let appExecution :: IO [TicketInfo]
+                            appExecution = runApp (filterTicketsWithAttachments listTickets) stubbedConfig
+
+                        tickets <- run appExecution
+                        -- Check we have some tickets.
+                        assert $ (length tickets) == 0
+
+filterTicketsByStatusSpec :: Spec
+filterTicketsByStatusSpec =
+    describe "filterTicketsByStatus" $ do
+        it "a TicketInfo array with x open tickets should filter to length x" $ property $
+            forAll (listOf1 genTicketWithStatus) $ \tickets -> do
+                length (filterTicketsByStatus tickets "open") == length (filter ((== TicketStatus "open") . tiStatus) tickets)
+        it "a TicketInfo array with x closed tickets should filter to length x" $ property $
+            forAll (listOf1 genTicketWithStatus) $ \tickets -> do
+                length (filterTicketsByStatus tickets "closed") == length (filter ((== TicketStatus "closed") . tiStatus) tickets)
+
+showAttachmentInfoSpec :: Spec
+showAttachmentInfoSpec =
+    describe "showAttachmentInfo" $ do
+        it "given an attachment, return  a Text describing the attachment" $ property $
+            forAll (listOf1 arbitrary) $ \(listOfAttachments :: [Attachment]) ->
+                fmap showAttachmentInfo listOfAttachments == fmap (\attachment -> ("  Attachment: " <> (show $ aSize attachment) <> " - " <> aURL attachment :: Text)) listOfAttachments
+
+showCommentAttachmentsSpec :: Spec
+showCommentAttachmentsSpec =
+    describe "showCommentsAttachments" $ do
+        it "given an comment, return  a [Text] describing each comment` attachment" $ property $
+            forAll (listOf1 arbitrary) $ \(listOfComments :: [Comment]) ->
+                fmap showCommentAttachments listOfComments == fmap (\comment -> ( showAttachmentInfo <$> cAttachments comment)) listOfComments
+
+showTicketCategoryCountSpec :: Spec
+showTicketCategoryCountSpec =
+    describe "showTicketCategoryCount" $ do
+        it "Properly show  total/open/closed ticket count" $ property $
+            forAll (listOf1 arbitrary) $ \(listOfComments :: [Comment]) ->
+                fmap showCommentAttachments listOfComments == fmap (\comment -> ( showAttachmentInfo <$> cAttachments comment)) listOfComments
+
 filterAnalyzedTicketsSpec :: Spec
 filterAnalyzedTicketsSpec =
     describe "filterAnalyzedTickets" $ modifyMaxSuccess (const 200) $ do
@@ -291,20 +421,19 @@ filterAnalyzedTicketsSpec =
                 \(ticketInfos :: [TicketInfo]) ->
                     length (filterAnalyzedTickets ticketInfos) `shouldBe` 0
 
-genTicketWithFilteredTags :: [Text] -> Gen TicketInfo
-genTicketWithFilteredTags tagToBeFiltered = TicketInfo
-    <$> arbitrary
-    <*> arbitrary
-    <*> arbitrary
-    <*> arbitrary
-    <*> return (TicketTags tagToBeFiltered)
-    <*> arbitrary
-
-genTicketWithUnsolvedStatus :: Gen TicketInfo
-genTicketWithUnsolvedStatus = TicketInfo
-    <$> arbitrary
-    <*> arbitrary
-    <*> arbitrary
-    <*> arbitrary
-    <*> arbitrary
-    <*> (TicketStatus <$> elements ["new", "hold", "open", "pending"])
+createResponseTicketSpec :: Spec
+createResponseTicketSpec =
+    describe "createResponseTicket" $ modifyMaxSuccess (const 200) $ do
+        it "should preserve ticket field and custom field from ticketInfo" $
+            property $ \agentId ticketInfo zendeskResponse ->
+                let responseTicket = createResponseTicket agentId ticketInfo zendeskResponse
+                in tiField ticketInfo == tField responseTicket
+                && tiCustomField ticketInfo == tCustomField responseTicket
+        it "should preserve tags from ticketinfo and zendeskresponse" $
+            property $ \agentId ticketInfo zendeskResponse ->
+                let responseTicket      = createResponseTicket agentId ticketInfo zendeskResponse
+                    ticketInfoTags      = getTicketTags (tiTags ticketInfo)
+                    zendeskResponseTags = getTicketTags (zrTags zendeskResponse)
+                    mergedTags          = ticketInfoTags <> zendeskResponseTags
+                    responseTags        = getTicketTags $ tTag responseTicket
+                in all (`elem` responseTags) mergedTags
