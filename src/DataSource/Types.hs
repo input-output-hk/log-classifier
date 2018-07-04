@@ -13,6 +13,7 @@ module DataSource.Types
     , CommentOuter (..)
     , PageResultList (..)
     , RequestType (..)
+    , DeletedTicket (..)
     , Ticket (..)
     , TicketId (..)
     , TicketURL (..)
@@ -27,6 +28,7 @@ module DataSource.Types
     , UserEmail (..)
     , ZendeskResponse (..)
     , FromPageResultList (..)
+    , ExportFromTime (..)
     , parseComments
     , parseTicket
     , renderTicketStatus
@@ -48,9 +50,10 @@ module DataSource.Types
 import           Universum
 
 import           Data.Aeson (FromJSON, ToJSON, Value (Object), object, parseJSON, toJSON,
-                             withObject, (.:), (.=))
+                             withObject, (.:), (.:?), (.=))
 import           Data.Aeson.Types (Parser)
 import qualified Data.Text as T
+import           Data.Time.Clock.POSIX (POSIXTime)
 import           LogAnalysis.Types (Knowledge)
 
 import           Test.QuickCheck (Arbitrary (..), elements, listOf1, vectorOf)
@@ -127,11 +130,13 @@ tokenPath = "./tmp-secrets/token"
 assignToPath :: FilePath
 assignToPath = "./tmp-secrets/assign_to"
 
+
 -- | The Zendesk API interface that we want to expose.
 -- We don't want anything to leak out, so we expose only the most relevant information,
 -- anything relating to how it internaly works should NOT be exposed.
 data ZendeskLayer m = ZendeskLayer
     { zlGetTicketInfo         :: TicketId         -> m (Maybe TicketInfo)
+    , zlListDeletedTickets    ::                     m [DeletedTicket]
     , zlListRequestedTickets  :: UserId           -> m [TicketInfo]
     , zlListAssignedTickets   :: UserId           -> m [TicketInfo]
     , zlListUnassignedTickets ::                     m [TicketInfo]
@@ -139,6 +144,7 @@ data ZendeskLayer m = ZendeskLayer
     , zlGetTicketComments     :: TicketId         -> m [Comment]
     , zlGetAttachment         :: Attachment       -> m (Maybe AttachmentContent)
     , zlPostTicketComment     :: ZendeskResponse  -> m ()
+    , zlExportTickets         :: ExportFromTime   -> m [TicketInfo]
     }
 
 -- | The IOLayer interface that we can expose.
@@ -164,8 +170,12 @@ instance ToURL UserId where
 instance ToURL TicketId where
     toURL (TicketId ticketId) = show ticketId
 
+instance ToURL ExportFromTime where
+    toURL (ExportFromTime time) = show . floor . toRational $ time
+
 data ZendeskAPIUrl
     = AgentGroupURL
+    | DeletedTicketsURL
     | UserRequestedTicketsURL UserId
     | UserAssignedTicketsURL UserId
     | UserUnassignedTicketsURL
@@ -173,10 +183,12 @@ data ZendeskAPIUrl
     | TicketAgentURL TicketId
     | UserInfoURL
     | TicketCommentsURL TicketId
+    | ExportDataByTimestamp ExportFromTime
     deriving (Eq, Generic)
 
 showURL :: ZendeskAPIUrl -> Text
-showURL AgentGroupURL                       = "users.json?role%5B%5D=admin&role%5B%5D=agent"
+showURL AgentGroupURL                       = "/users.json?role%5B%5D=admin&role%5B%5D=agent"
+showURL DeletedTicketsURL                   = "/deleted_tickets.json"
 showURL (UserRequestedTicketsURL userId)    = "/users/" <> toURL userId <> "/tickets/requested.json"
 showURL (UserAssignedTicketsURL userId)     = "/users/" <> toURL userId <> "/tickets/assigned.json"
 showURL (UserUnassignedTicketsURL)          = "/search.json?query=" <> urlEncode "type:ticket assignee:none" <> "&sort_by=created_at&sort_order=asc"
@@ -184,6 +196,7 @@ showURL (TicketsURL ticketId)               = "/tickets/" <> toURL ticketId <> "
 showURL (TicketAgentURL ticketId)           = "https://iohk.zendesk.com/agent/tickets/" <> toURL ticketId
 showURL (UserInfoURL)                       = "/users/me.json"
 showURL (TicketCommentsURL ticketId)        = "/tickets/" <> toURL ticketId <> "/comments.json"
+showURL (ExportDataByTimestamp time)        = "https://iohk.zendesk.com/api/v2/incremental/tickets.json?start_time=" <> toURL time
 
 -- | Plain @Text@ to @Text@ encoding.
 -- https://en.wikipedia.org/wiki/Percent-encoding
@@ -360,10 +373,20 @@ data User = User
     , uEmail :: !UserEmail   -- ^ Email of the user
     } deriving (Eq, Show, Generic)
 
+-- Ideally, we might add more fields here, for now it's good enough.
+data DeletedTicket = DeletedTicket
+    { dtId      :: !TicketId
+    } deriving (Eq, Show, Generic)
+
 data PageResultList a = PageResultList
     { prlResults  :: ![a]
     , prlNextPage :: !(Maybe Text)
+    , prlCount    :: !(Maybe Int)
     }
+
+newtype ExportFromTime = ExportFromTime
+    { getExportFromTime :: POSIXTime
+    } deriving (Eq, Show, Ord, Generic)
 
 ------------------------------------------------------------
 -- Arbitrary instances
@@ -463,6 +486,18 @@ instance Arbitrary User where
             , uName = userName
             , uEmail = userEmail
             }
+
+instance Arbitrary POSIXTime where
+    arbitrary = do
+        randomInt <- arbitrary
+        pure . abs . fromInteger $ randomInt
+
+instance Arbitrary ExportFromTime where
+    arbitrary = ExportFromTime <$> arbitrary
+
+instance Arbitrary DeletedTicket where
+    arbitrary = DeletedTicket <$> arbitrary
+
 ------------------------------------------------------------
 -- FromJSON instances
 ------------------------------------------------------------
@@ -501,33 +536,58 @@ instance FromJSON Comment where
 class FromPageResultList a where
     fromPageResult :: Value -> Parser (PageResultList a)
 
+-- TODO(ks): Okey, we should probably move this into separate types...
+-- The confusing thing is - they _ARE_ the same type, I would say ZenDesk API
+-- is not properly constructed.
 instance FromPageResultList TicketInfo where
     fromPageResult obj = asum
         [ ticketListParser obj
         , resultsTicketsParser obj
+        , exportTicketsParser obj
         ]
       where
           -- | The case when we have the simple parser from tickets.
         ticketListParser :: Value -> Parser (PageResultList TicketInfo)
         ticketListParser = withObject "ticketList" $ \o ->
             PageResultList
-                <$> o .: "tickets"
-                <*> o .: "next_page"
+                <$> o .:    "tickets"
+                <*> o .:    "next_page"
+                <*> o .:?   "count"
 
         -- | The case when we get results back from a query using the
         -- search API.
         resultsTicketsParser :: Value -> Parser (PageResultList TicketInfo)
         resultsTicketsParser (Object o) =
             PageResultList
-                <$> o .: "results"
-                <*> o .: "next_page"
+                <$> o .:    "results"
+                <*> o .:    "next_page"
+                <*> o .:?   "count"
         resultsTicketsParser _ = fail "Cannot parse PageResultList from search API."
+
+        -- | The case when we get results back from a query using the
+        -- export API.
+        exportTicketsParser :: Value -> Parser (PageResultList TicketInfo)
+        exportTicketsParser (Object o) =
+            PageResultList
+                <$> o .:    "tickets"
+                <*> o .:    "next_page"
+                <*> o .:?   "count"
+        exportTicketsParser _ = fail "Cannot parse PageResultList from search API."
+
 
 instance FromPageResultList User where
     fromPageResult = withObject "userList" $ \o ->
             PageResultList
-                <$> o .: "users"
-                <*> o .: "next_page"
+                <$> o .:    "users"
+                <*> o .:    "next_page"
+                <*> o .:?   "count"
+
+instance FromPageResultList DeletedTicket where
+    fromPageResult = withObject "deleted_tickets" $ \o ->
+            PageResultList
+                <$> o .:    "deleted_tickets"
+                <*> o .:    "next_page"
+                <*> o .:?   "count"
 
 instance (FromPageResultList a) => FromJSON (PageResultList a) where
     parseJSON = fromPageResult
@@ -563,6 +623,10 @@ instance FromJSON User where
             , uName     = userName
             , uEmail    = userEmail
             }
+
+instance FromJSON DeletedTicket where
+    parseJSON (Object o) = DeletedTicket <$> o .: "id"
+    parseJSON _          = fail "Cannot parse deleted ticket API."
 
 ------------------------------------------------------------
 -- ToJSON instances
@@ -633,3 +697,4 @@ renderTicketStatus AnalyzedByScriptV1_0 = "analyzed-by-script-v1.0"
 renderTicketStatus AnalyzedByScriptV1_1 = "analyzed-by-script-v1.1"
 renderTicketStatus NoKnownIssue         = "no-known-issues"
 renderTicketStatus NoLogAttached        = "no-log-files"
+

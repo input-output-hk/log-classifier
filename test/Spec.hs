@@ -4,13 +4,14 @@ import           Universum
 
 import           Test.Hspec (Spec, describe, hspec, it, pending, shouldBe)
 import           Test.Hspec.QuickCheck (modifyMaxSuccess)
-import           Test.QuickCheck (Gen, arbitrary, forAll, listOf, listOf1, property, elements)
+import           Test.QuickCheck (Gen, arbitrary, elements, forAll, listOf, listOf1, property)
 import           Test.QuickCheck.Monadic (assert, monadicIO, pre, run)
 
-import           DataSource (App, Comment (..), Config (..), IOLayer (..), TicketId (..),
-                             TicketInfo (..), TicketStatus (..), TicketTags (..), User, UserId (..),
-                             ZendeskAPIUrl (..), ZendeskLayer (..), ZendeskResponse (..),
-                             basicIOLayer, defaultConfig, emptyZendeskLayer, runApp, showURL)
+import           DataSource (App, Comment (..), Config (..), ExportFromTime (..), IOLayer (..),
+                             TicketId (..), TicketInfo (..), TicketStatus (..), TicketTags (..),
+                             User, UserId (..), ZendeskAPIUrl (..), ZendeskLayer (..),
+                             ZendeskResponse (..), basicIOLayer, defaultConfig, emptyZendeskLayer,
+                             runApp, showURL)
 import           Lib (filterAnalyzedTickets, listAndSortTickets, processTicket)
 
 -- TODO(ks): What we are really missing is a realistic @Gen ZendeskLayer m@.
@@ -260,6 +261,12 @@ validShowURLSpec =
                 let typedURL    = showURL $ TicketCommentsURL ticketId
                     untypedURL  = "/tickets/" <> show (getTicketId ticketId) <> "/comments.json"
                 in  typedURL == untypedURL
+        it "returns valid ExportDataByTimestamp" $ do
+            property $ \timestamp ->
+                let typedURL    = showURL $ ExportDataByTimestamp timestamp
+                    untypedURL  = "/incremental/tickets.json?start_time=" <> (show . floor . toRational $ getExportFromTime timestamp)
+                in  typedURL == untypedURL
+
 
 filterAnalyzedTicketsSpec :: Spec
 filterAnalyzedTicketsSpec =
