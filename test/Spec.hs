@@ -7,13 +7,12 @@ import           Test.Hspec.QuickCheck (modifyMaxSuccess)
 import           Test.QuickCheck (Gen, arbitrary, elements, forAll, listOf, listOf1, property)
 import           Test.QuickCheck.Monadic (assert, monadicIO, pre, run)
 
-
-import           DataSource (App, Attachment (..), Comment (..), Config (..), IOLayer (..),
-                             Ticket (..), TicketId (..), TicketInfo (..), TicketStatus (..),
-                             TicketTags (..), User, UserId (..), ZendeskAPIUrl (..),
-                             ZendeskLayer (..), ZendeskResponse (..), basicIOLayer,
-                             createResponseTicket, defaultConfig, emptyZendeskLayer, runApp,
-                             showURL)
+import           DataSource (App, Attachment (..), Comment (..), Config (..), ExportFromTime (..),
+                             IOLayer (..), Ticket (..), TicketId (..), TicketInfo (..),
+                             TicketStatus (..), TicketTags (..), User, UserId (..),
+                             ZendeskAPIUrl (..), ZendeskLayer (..), ZendeskResponse (..),
+                             basicIOLayer, createResponseTicket, defaultConfig, emptyZendeskLayer,
+                             runApp, showURL)
 
 import           Lib (filterAnalyzedTickets, listAndSortTickets, processTicket)
 import           Statistics (filterTicketsByStatus, filterTicketsWithAttachments,
@@ -315,6 +314,13 @@ validShowURLSpec =
                 let typedURL    = showURL $ TicketCommentsURL ticketId
                     untypedURL  = "/tickets/" <> show (getTicketId ticketId) <> "/comments.json"
                 in  typedURL == untypedURL
+        it "returns valid ExportDataByTimestamp" $ do
+            property $ \timestamp ->
+                let typedURL    = showURL $ ExportDataByTimestamp timestamp
+                    untypedURL  = "https://iohk.zendesk.com/api/v2/incremental/tickets.json?start_time="
+                        <> (show . floor . toRational $ getExportFromTime timestamp)
+                in  typedURL == untypedURL
+
 
 filterTicketsWithAttachmentsSpec :: Spec
 filterTicketsWithAttachmentsSpec =

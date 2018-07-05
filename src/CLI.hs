@@ -19,6 +19,7 @@ data CLI
     | ProcessTicket Int -- ^ Process ticket of an given ticket id
     | ProcessTickets    -- ^ Process all the tickets in Zendesk
     | ShowStatistics    -- ^ Show statistics
+    | ExportData        -- ^ Export data. TODO(ks): From N days before!
     deriving (Show)
 
 -- | Parser for ProcessTicket
@@ -41,6 +42,8 @@ cli = hsubparser $ mconcat
     , command "process-ticket" (info cmdProcessTicket
         (progDesc "Process Zendesk ticket of an given ticket id"))
     , command "show-stats" (info (pure ShowStatistics)
+        (progDesc "Print list of ticket Ids that agent has been assigned"))
+    , command "export-data" (info (pure ExportData)
         (progDesc "Print list of ticket Ids that agent has been assigned"))
     ]
 

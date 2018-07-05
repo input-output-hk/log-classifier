@@ -12,7 +12,9 @@ module DataSource.Http
 
 import           Universum
 
+import           Control.Concurrent (threadDelay)
 import           Control.Monad.Reader (ask)
+
 import           Data.Aeson (FromJSON, ToJSON, Value, encode, parseJSON)
 import           Data.Aeson.Text (encodeToLazyText)
 import           Data.Aeson.Types (Parser, parseEither)
@@ -23,12 +25,13 @@ import           Network.HTTP.Simple (Request, addRequestHeader, getResponseBody
 
 import           DataSource.Types (Attachment (..), AttachmentContent (..), Comment (..),
                                    CommentBody (..), CommentId (..), Config (..),
-                                   FromPageResultList (..), IOLayer (..), PageResultList (..),
-                                   Ticket (..), TicketId (..), TicketInfo (..), TicketTag (..), TicketTags(..),
-                                   User, UserId (..), ZendeskAPIUrl (..), ZendeskLayer (..),
-                                   ZendeskResponse (..), parseComments, parseTicket,
-                                   renderTicketStatus, showURL)
+                                   DeletedTicket (..), ExportFromTime (..), FromPageResultList (..),
+                                   IOLayer (..), PageResultList (..), Ticket (..), TicketId (..),
+                                   TicketInfo (..), TicketTag (..), TicketTags (..), User, UserId (..),
+                                   ZendeskAPIUrl (..), ZendeskLayer (..), ZendeskResponse (..),
+                                   parseComments, parseTicket, renderTicketStatus, showURL)
 
+-- ./mitmproxy --mode reverse:https://iohk.zendesk.com -p 4001
 
 -- | The default configuration.
 defaultConfig :: Config
@@ -47,9 +50,14 @@ defaultConfig =
         }
 
 -- | The basic Zendesk layer.
+-- The convention:
+--   - get returns a single result (wrapped in @Maybe@)
+--   - list returns multiple results
+--   - post submits a result (maybe PUT?!)
 basicZendeskLayer :: (MonadIO m, MonadReader Config m) => ZendeskLayer m
 basicZendeskLayer = ZendeskLayer
     { zlGetTicketInfo           = getTicketInfo
+    , zlListDeletedTickets      = listDeletedTickets
     , zlListRequestedTickets    = listRequestedTickets
     , zlListAssignedTickets     = listAssignedTickets
     , zlListUnassignedTickets   = listUnassignedTickets
@@ -57,6 +65,7 @@ basicZendeskLayer = ZendeskLayer
     , zlPostTicketComment       = postTicketComment
     , zlGetAttachment           = getAttachment
     , zlGetTicketComments       = getTicketComments
+    , zlExportTickets           = getExportedTickets
     }
 
 basicIOLayer :: (MonadIO m, MonadReader Config m) => IOLayer m
@@ -71,6 +80,7 @@ basicIOLayer = IOLayer
 emptyZendeskLayer :: forall m. (Monad m) => ZendeskLayer m
 emptyZendeskLayer = ZendeskLayer
     { zlGetTicketInfo           = \_     -> error "Not implemented zlGetTicketInfo!"
+    , zlListDeletedTickets      =           pure []
     , zlListRequestedTickets    = \_     -> error "Not implemented zlListRequestedTickets!"
     , zlListAssignedTickets     = \_     -> error "Not implemented zlListAssignedTickets!"
     , zlListUnassignedTickets   =           pure []
@@ -78,6 +88,7 @@ emptyZendeskLayer = ZendeskLayer
     , zlPostTicketComment       = \_     -> error "Not implemented zlPostTicketComment!"
     , zlGetAttachment           = \_     -> error "Not implemented zlGetAttachment!"
     , zlGetTicketComments       = \_     -> error "Not implemented zlGetTicketComments!"
+    , zlExportTickets           = \_     -> error "Not implemented zlExportTickets!"
     }
 
 -- | Get single ticket info.
@@ -91,6 +102,18 @@ getTicketInfo ticketId = do
     let url = showURL $ TicketsURL ticketId
     let req = apiRequest cfg url
     liftIO $ Just <$> apiCall parseTicket req
+
+-- | Return list of deleted tickets.
+listDeletedTickets
+    :: forall m. (MonadIO m, MonadReader Config m)
+    => m [DeletedTicket]
+listDeletedTickets = do
+    cfg <- ask
+
+    let url = showURL $ DeletedTicketsURL
+    let req = apiRequest cfg url
+
+    iteratePages req
 
 -- | Return list of ticketIds that has been requested by config user.
 listRequestedTickets
@@ -130,7 +153,9 @@ listUnassignedTickets = do
 
     iteratePages req
 
-listAdminAgents :: forall m. (MonadIO m, MonadReader Config m) => m [User]
+listAdminAgents
+    :: forall m. (MonadIO m, MonadReader Config m)
+    => m [User]
 listAdminAgents = do
     cfg <- ask
     let url = showURL AgentGroupURL
@@ -138,26 +163,78 @@ listAdminAgents = do
 
     iteratePages req
 
+-- | Export tickets from Zendesk - https://developer.zendesk.com/rest_api/docs/core/incremental_export
+-- NOTE: If count is less than 1000, then stop paginating.
+-- Otherwise, use the next_page URL to get the next page of results.
+getExportedTickets
+    :: forall m. (MonadIO m, MonadReader Config m)
+    => ExportFromTime
+    -> m [TicketInfo]
+getExportedTickets time = do
+    cfg <- ask
+    let url = showURL $ ExportDataByTimestamp time
+    let req = apiRequestAbsolute cfg url
+    iterateExportedTicketsWithDelay req
+  where
+
+    iterateExportedTicketsWithDelay
+        :: Request
+        -> m [TicketInfo]
+    iterateExportedTicketsWithDelay req = do
+        cfg <- ask
+
+        let go :: [TicketInfo] -> Text -> IO [TicketInfo]
+            go list' nextPage' = do
+                threadDelay $ 10 * 1000000 -- Wait, Zendesk allows for 10 per minute.
+
+                let req'      = apiRequestAbsolute cfg nextPage'
+                (PageResultList pagen nextPagen count) <- apiCall parseJSON req'
+                case nextPagen of
+                    Just nextUrl -> if maybe False (>= 1000) count
+                                        then go (list' <> pagen) nextUrl
+                                        else pure (list' <> pagen)
+
+                    Nothing      -> pure (list' <> pagen)
+
+
+        (PageResultList page0 nextPage _) <- liftIO $ apiCall parseJSON req
+        case nextPage of
+            Just nextUrl -> liftIO $ go page0 nextUrl
+            Nothing      -> pure page0
+
 -- | Iterate all the ticket pages and combine into a result.
 iteratePages
     :: forall m a. (MonadIO m, MonadReader Config m, FromPageResultList a)
     => Request
     -> m [a]
-iteratePages req = do
+iteratePages req = iteratePagesWithDelay 0 req
+
+-- | Iterate all the ticket pages and combine into a result. Wait for
+-- some time in-between the requests.
+iteratePagesWithDelay
+    :: forall m a. (MonadIO m, MonadReader Config m, FromPageResultList a)
+    => Int
+    -> Request
+    -> m [a]
+iteratePagesWithDelay seconds req = do
     cfg <- ask
 
     let go :: [a] -> Text -> IO [a]
         go list' nextPage' = do
-          let req'      = apiRequestAbsolute cfg nextPage'
-          (PageResultList pagen nextPagen) <- apiCall parseJSON req'
-          case nextPagen of
-              Just nextUrl -> go (list' <> pagen) nextUrl
-              Nothing      -> pure (list' <> pagen)
+            -- Wait for @Int@ seconds.
+            threadDelay $ seconds * 1000000
 
-    (PageResultList page0 nextPage) <- liftIO $ apiCall parseJSON req
+            let req'      = apiRequestAbsolute cfg nextPage'
+            (PageResultList pagen nextPagen _) <- apiCall parseJSON req'
+            case nextPagen of
+                Just nextUrl -> go (list' <> pagen) nextUrl
+                Nothing      -> pure (list' <> pagen)
+
+    (PageResultList page0 nextPage _) <- liftIO $ apiCall parseJSON req
     case nextPage of
         Just nextUrl -> liftIO $ go page0 nextUrl
         Nothing      -> pure page0
+
 
 -- | Send API request to post comment
 postTicketComment
@@ -223,7 +300,13 @@ getTicketComments tId = do
     let url = showURL $ TicketCommentsURL tId
     let req = apiRequest cfg url
 
-    liftIO $ apiCall parseComments req
+    result  <- apiCallSafe parseComments req
+
+    -- TODO(ks): For now return empty if there is an exception.
+    -- After we have exception handling, we propagate this up.
+    case result of
+        Left _  -> pure []
+        Right r -> pure r
 
 ------------------------------------------------------------
 -- HTTP utility
@@ -234,13 +317,26 @@ addJsonBody :: ToJSON a => a -> Request -> Request
 addJsonBody body req = setRequestBodyJSON body $ setRequestMethod "PUT" req
 
 -- | Make an api call
+-- TODO(ks): Switch to @Either@.
 apiCall :: FromJSON a => (Value -> Parser a) -> Request -> IO a
 apiCall parser req = do
+    putTextLn $ show req
     v <- getResponseBody <$> httpJSON req
     case parseEither parser v of
         Right o -> pure o
         Left e -> error $ "couldn't parse response "
             <> toText e <> "\n" <> decodeUtf8 (encode v)
+
+-- | Make a safe api call.
+apiCallSafe
+    :: forall m a. (MonadIO m, FromJSON a)
+    => (Value -> Parser a)
+    -> Request
+    -> m (Either String a)
+apiCallSafe parser req = do
+    putTextLn $ show req
+    v <- getResponseBody <$> httpJSON req
+    pure $ parseEither parser v
 
 -- | General api request function
 apiRequest :: Config -> Text -> Request
@@ -252,7 +348,7 @@ apiRequest Config{..} u = setRequestPath (encodeUtf8 path) $
                           parseRequest_ (toString (cfgZendesk <> path))
                         where
                           path :: Text
-                          path = "/api/v2/" <> u
+                          path = "/api/v2" <> u
 
 -- | Api request but use absolute path
 apiRequestAbsolute :: Config -> Text -> Request

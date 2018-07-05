@@ -43,6 +43,7 @@ library
                      , reflection
                      , regex-tdfa
                      , text
+                     , time
                      , universum
                      , zip-archive
                      , QuickCheck
@@ -70,6 +71,7 @@ library
                       MonadFailDesugaring
                       TupleSections
                       StrictData
+                      ExplicitForAll
 
 executable log-classifier-exe
   hs-source-dirs:      app

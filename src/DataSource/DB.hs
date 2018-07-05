@@ -8,14 +8,23 @@ module DataSource.DB
     ( withDatabase
     , withProdDatabase
     , cachedZendeskLayer
+    -- * For updating local database
+    , insertTicketInfo
+    , insertTicketComments
+    , insertCommentAttachments
+    -- * Delete data
+    , deleteAllData
+    , deleteCommentAttachments
+    , deleteTicketComments
+    , deleteTickets
     ) where
 
 import           Universum
 
 import           Data.Text (split)
 
-import           Database.SQLite.Simple (FromRow (..), NamedParam (..), SQLData (..), close, field,
-                                         open, queryNamed, query_)
+import           Database.SQLite.Simple (FromRow (..), NamedParam (..), SQLData (..), close,
+                                         executeNamed, execute_, field, open, queryNamed, query_)
 import           Database.SQLite.Simple.FromField (FromField (..), ResultError (..), returnError)
 import           Database.SQLite.Simple.Internal (Connection, Field (..))
 import           Database.SQLite.Simple.Ok (Ok (..))
@@ -34,29 +43,32 @@ import           DataSource.Types (Attachment (..), AttachmentContent (..), Atta
 -- that we need to sync occasionaly.
 cachedZendeskLayer :: (MonadIO m, MonadReader Config m) => ZendeskLayer m
 cachedZendeskLayer = ZendeskLayer
-    { zlGetTicketInfo           = liftIO . getTicketInfoByTicketId
-    , zlListAssignedTickets     = liftIO . getAllAssignedTicketsByUser
-    , zlListRequestedTickets    = liftIO . getAllRequestedTicketsByUser
-    , zlListUnassignedTickets   = error "We won't use this for now!"
+    { zlGetTicketInfo           = getTicketInfoByTicketId
+    , zlListDeletedTickets      = error "We won't use this for now."
+    , zlListAssignedTickets     = getAllAssignedTicketsByUser
+    , zlListRequestedTickets    = getAllRequestedTicketsByUser
+    , zlListUnassignedTickets   = getAllUnassignedTicketsByUser
     , zlListAdminAgents         = error "We won't use this for now!"
-    , zlGetAttachment           = liftIO . DataSource.DB.getAttachmentContent
-    , zlGetTicketComments       = liftIO . getTicketComments
+    , zlGetAttachment           = DataSource.DB.getAttachmentContent
+    , zlGetTicketComments       = getTicketComments
     , zlPostTicketComment       = error "We won't use this for now!"
+    , zlExportTickets           = error "This is redundant since we mostly require it for caching!"
     }
 
 -- Database instances
 -- FROM
 
 instance FromField TicketFieldId where
-    fromField (Field (SQLInteger tfId) _)     = Ok . TicketFieldId . fromIntegral $ tfId
+    fromField (Field (SQLInteger tfId) _)   = Ok . TicketFieldId . fromIntegral $ tfId
     fromField f                             = returnError ConversionFailed f "need a text, ticket status"
 
 instance FromField TicketFieldValue where
-    fromField (Field (SQLText tfValue) _)     = Ok . TicketFieldValue $ tfValue
+    fromField (Field (SQLText tfValue) _)   = Ok . TicketFieldValue $ tfValue
     fromField f                             = returnError ConversionFailed f "need a text, ticket status"
 
+-- TODO(ks): Separate table!
 instance FromField [TicketField] where
-    fromField _ = undefined
+    fromField _                             = empty
 
 instance FromField TicketId where
     fromField (Field (SQLInteger tId) _)    = Ok . TicketId . fromIntegral $ tId
@@ -112,11 +124,24 @@ instance ToField UserId where
 instance ToField CommentId where
     toField (CommentId commentId)           = SQLInteger . fromIntegral $ commentId
 
+instance ToField CommentBody where
+    toField (CommentBody commentBody)       = SQLText $ commentBody
+
 instance ToField AttachmentId where
     toField (AttachmentId attachmentId)     = SQLInteger . fromIntegral $ attachmentId
 
+instance ToField TicketURL where
+    toField (TicketURL tiUrl)               = SQLText $ tiUrl
+
+instance ToField TicketTags where
+    toField (TicketTags tiTags)             = SQLText . fromString $ intercalate "," $ map toString tiTags
+
+instance ToField TicketStatus where
+    toField (TicketStatus tiStatus)         = SQLText $ tiStatus
 
 -- | A general resource closing function.
+-- The issue with this is that we currently can't use any concurrency
+-- primitives, but that will be fixed in the future.
 withDatabase :: forall a. String -> (Connection -> IO a) -> IO a
 withDatabase dbName dbOperation =
     bracket
@@ -125,28 +150,36 @@ withDatabase dbName dbOperation =
         dbOperation
 
 -- | A production resource closing function.
-withProdDatabase :: forall a. (Connection -> IO a) -> IO a
-withProdDatabase = withDatabase "./prod.db"
+withProdDatabase :: forall m a. (MonadIO m) => (Connection -> IO a) -> m a
+withProdDatabase = liftIO . withDatabase "./prod.db"
 
-_getTicketsInfo :: IO [TicketInfo]
+------------------------------------------------------------
+-- Query
+------------------------------------------------------------
+
+_getTicketsInfo :: forall m. (MonadIO m) => m [TicketInfo]
 _getTicketsInfo = withProdDatabase $ \conn ->
     query_ conn "SELECT * FROM ticket_info"
 
-getTicketInfoByTicketId :: TicketId -> IO (Maybe TicketInfo)
+getTicketInfoByTicketId :: forall m. (MonadIO m) => TicketId -> m (Maybe TicketInfo)
 getTicketInfoByTicketId ticketId = withProdDatabase $ \conn ->
-    safeHead <$> queryNamed conn "SELECT * FROM ticket_info WHERE ticket_id = :id" [":id" := ticketId]
+    safeHead <$> queryNamed conn "SELECT * FROM ticket_info WHERE tId = :id" [":id" := ticketId]
 
-getAllAssignedTicketsByUser :: UserId -> IO [TicketInfo]
+getAllAssignedTicketsByUser :: forall m. (MonadIO m) => UserId -> m [TicketInfo]
 getAllAssignedTicketsByUser userId = withProdDatabase $ \conn ->
     queryNamed conn "SELECT * FROM ticket_info WHERE assignee_id = :id" [":id" := userId]
 
-getAllRequestedTicketsByUser :: UserId -> IO [TicketInfo]
+getAllUnassignedTicketsByUser :: forall m. (MonadIO m) => m [TicketInfo]
+getAllUnassignedTicketsByUser = withProdDatabase $ \conn ->
+    query_ conn "SELECT * FROM ticket_info WHERE assignee_id = NULL"
+
+getAllRequestedTicketsByUser :: forall m. (MonadIO m) => UserId -> m [TicketInfo]
 getAllRequestedTicketsByUser userId = withProdDatabase $ \conn ->
     queryNamed conn "SELECT * FROM ticket_info WHERE requester_id = :id" [":id" := userId]
 
 
--- | A join would be more performance, but KISS for now.
-getTicketComments :: TicketId -> IO [Comment]
+-- | A join would be more performant, but KISS for now.
+getTicketComments :: forall m. (MonadIO m) => TicketId -> m [Comment]
 getTicketComments ticketId = do
     commentsInfo <- getTicketIdComments ticketId
 
@@ -162,15 +195,82 @@ getTicketComments ticketId = do
             , cAuthor      = commentAuthorId
             }
   where
-    getTicketIdComments :: TicketId -> IO [(CommentId, CommentBody, Bool, Integer)]
+    getTicketIdComments :: TicketId -> m [(CommentId, CommentBody, Bool, Integer)]
     getTicketIdComments ticketId' = withProdDatabase $ \conn ->
-        queryNamed conn "SELECT tc.id, tc.body, tc.is_public, tc.author_id FROM ticket_comment tc WHERE tc.ticket_id = :id" [":id" := ticketId']
+        queryNamed conn "SELECT tc.id, tc.body, tc.is_public, tc.author_id \
+            \FROM ticket_comment tc \
+            \WHERE tc.ticket_id = :id" [":id" := ticketId']
 
-    getCommentAttachments :: CommentId -> IO [Attachment]
+    getCommentAttachments :: CommentId -> m [Attachment]
     getCommentAttachments commentId = withProdDatabase $ \conn ->
         queryNamed conn "SELECT * FROM comment_attachments WHERE comment_id = :id" [":id" := commentId]
 
-getAttachmentContent :: Attachment -> IO (Maybe AttachmentContent)
+-- | We use a different database here since a simple calculation shows that
+-- this database will be huge. If an average log takes around 10Mb, saving
+-- 1000's or 10000's logs in a database is very space intensive.
+-- Since most of the time we want to deal with the regular information not
+-- relating to attachments, it makes sense to separate the DB's. Another option
+-- is to use another database (KV storage/database) for this.
+-- TODO(ks): For now, let's delay this decision for a bit.
+getAttachmentContent :: forall m. (MonadIO m) => Attachment -> m (Maybe AttachmentContent)
 getAttachmentContent Attachment{..} = withProdDatabase $ \conn ->
     safeHead <$> queryNamed conn "SELECT * FROM attachment_content WHERE attachment_id = :id" [":id" := aId]
+
+------------------------------------------------------------
+-- DML
+------------------------------------------------------------
+
+-- TODO(ks): withTransaction
+
+insertTicketInfo :: forall m. (MonadIO m) => TicketInfo -> m ()
+insertTicketInfo TicketInfo{..} = withProdDatabase $ \conn ->
+    executeNamed conn "INSERT INTO ticket_info (tiId, tiRequesterId, tiAssigneeId, tiUrl, tiTags, tiStatus) VALUES (:tiId, :tiRequesterId, :tiAssigneeId, :tiUrl, :tiTags, :tiStatus)"
+        [ ":tiId"           := tiId
+        , ":tiRequesterId"  := tiRequesterId
+        , ":tiAssigneeId"   := tiAssigneeId
+        , ":tiUrl"          := tiUrl
+        , ":tiTags"         := tiTags
+        , ":tiStatus"       := tiStatus
+        ]
+
+insertTicketComments :: forall m. (MonadIO m) => TicketId -> Comment -> m ()
+insertTicketComments ticketId Comment{..} = withProdDatabase $ \conn ->
+    executeNamed conn "INSERT INTO ticket_comment (id, ticket_id, body, is_public, author_id) VALUES (:id, :ticket_id, :body, :is_public, :author_id)"
+        [ ":id"             := cId
+        , ":ticket_id"      := ticketId
+        , ":body"           := cBody
+        , ":is_public"      := cPublic
+        , ":author_id"      := cAuthor
+        ]
+
+insertCommentAttachments :: forall m. (MonadIO m) => Comment -> Attachment -> m ()
+insertCommentAttachments Comment{..} Attachment{..} = withProdDatabase $ \conn ->
+    executeNamed conn "INSERT INTO comment_attachment (aId, comment_id, aURL, aContentType, aSize) VALUES (:aId, :comment_id, :aURL, :aContentType, :aSize)"
+        [ ":aId"            := aId
+        , ":comment_id"     := cId
+        , ":aURL"           := aURL
+        , ":aContentType"   := aContentType
+        , ":aSize"          := aSize
+        ]
+
+deleteCommentAttachments :: forall m. (MonadIO m) => m ()
+deleteCommentAttachments = withProdDatabase $ \conn ->
+    execute_ conn "DELETE FROM comment_attachment"
+
+deleteTicketComments :: forall m. (MonadIO m) => m ()
+deleteTicketComments = withProdDatabase $ \conn ->
+    execute_ conn "DELETE FROM ticket_comment"
+
+deleteTickets :: forall m. (MonadIO m) => m ()
+deleteTickets = withProdDatabase $ \conn ->
+    execute_ conn "DELETE FROM ticket_info"
+
+-- | Delete all data.
+-- Here we can show that we lack composition, and the step we
+-- need to achive it.
+deleteAllData :: forall m. (MonadIO m) => m ()
+deleteAllData = withProdDatabase $ \conn -> do
+    execute_ conn "DELETE FROM comment_attachment"
+    execute_ conn "DELETE FROM ticket_comment"
+    execute_ conn "DELETE FROM ticket_info"
 

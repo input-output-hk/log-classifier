@@ -16,16 +16,22 @@ module Lib
 import           Universum
 
 import           Data.Attoparsec.Text.Lazy (eitherResult, parse)
+import           Data.List (nub)
 import           Data.Text (isInfixOf, stripEnd)
-import           System.Directory (createDirectoryIfMissing)
+import           Data.Time (UTCTime (..), fromGregorianValid)
+import           Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 
 import           CLI (CLI (..), getCliArgs)
 import           DataSource (App, Attachment (..), AttachmentContent (..), Comment (..),
-                             CommentBody (..), Config (..), IOLayer (..), TicketId (..),
-                             TicketInfo (..), TicketStatus (..), TicketTag (..), TicketTags (..),
-                             User (..), UserId (..), ZendeskLayer (..), ZendeskResponse (..),
-                             asksIOLayer, asksZendeskLayer, assignToPath, defaultConfig,
-                             knowledgebasePath, renderTicketStatus, runApp, tokenPath)
+                             CommentBody (..), Config (..), DeletedTicket (..), ExportFromTime (..),
+                             IOLayer (..), TicketId (..), TicketInfo (..), TicketStatus (..),
+                             TicketTag (..), TicketTags (..), User (..), UserId (..),
+                             ZendeskLayer (..), ZendeskResponse (..), asksIOLayer, asksZendeskLayer,
+                             assignToPath, defaultConfig, deleteAllData, insertCommentAttachments,
+                             insertTicketComments, insertTicketInfo, knowledgebasePath,
+                             renderTicketStatus, runApp, tokenPath)
+import           System.Directory (createDirectoryIfMissing)
+
 import           LogAnalysis.Classifier (extractErrorCodes, extractIssuesFromLogs,
                                          prettyFormatAnalysis, prettyFormatLogReadError,
                                          prettyFormatNoIssues, prettyFormatNoLogs)
@@ -65,6 +71,73 @@ runZendeskMain = do
         (ProcessTicket ticketId) -> void $ runApp (processTicket (TicketId ticketId)) cfg
         ProcessTickets           -> void $ runApp processTickets cfg
         ShowStatistics           -> void $ runApp (fetchTickets >>= showStatistics) cfg
+        ExportData               -> runApp exportZendeskDataToLocalDB cfg
+
+-- | The function for exporting Zendesk data to our local DB so
+-- we can have faster analysis and runs.
+-- Test scenarios:
+--   - Zendesk returns duplicate issues (yeah, that happens)
+--   - Check termination on count <= 1000
+exportZendeskDataToLocalDB :: App ()
+exportZendeskDataToLocalDB = do
+
+    let day         = fromMaybe (error "Invalid date!") $ fromGregorianValid 2017 6 28
+    let utctime     = UTCTime day 0
+    let posixTime   = utcTimeToPOSIXSeconds utctime
+
+    let exportFromTime :: ExportFromTime
+        exportFromTime = ExportFromTime posixTime
+
+    getTicketComments   <- asksZendeskLayer zlGetTicketComments
+    listDeletedTickets  <- asksZendeskLayer zlListDeletedTickets
+
+    exportTickets       <- asksZendeskLayer zlExportTickets
+    -- Yeah, not sure why this happens. Very weird.
+    exportedTickets     <- nub <$> exportTickets exportFromTime
+
+    -- Yeah, there is a strange behaviour when we export tickets,
+    -- we might get deleted tickets as well.
+    deletedTickets      <- listDeletedTickets
+
+    -- Yep, some more strange behaviour. Not deleted, just not found.
+    -- TODO(ks): We can remove this once we have exception handling.
+    let deletedAndMissingTickets =
+            deletedTickets <>
+                [ DeletedTicket { dtId = TicketId 18317 }
+                , DeletedTicket { dtId = TicketId 18316 }
+                , DeletedTicket { dtId = TicketId 18263 }
+                , DeletedTicket { dtId = TicketId 18258 }
+                , DeletedTicket { dtId = TicketId 18256 }
+                ]
+
+    let notDeletedExportedTickets =
+            sort $ filter (not . isDeletedTicket deletedAndMissingTickets) exportedTickets
+
+    -- first, let's delete any data that's left here
+    deleteAllData
+
+    void $ forM notDeletedExportedTickets $ \exportedTicket -> do
+        let ticketId = tiId exportedTicket
+
+        -- First fetch comments, FAIL-FAST
+        ticketComments <- getTicketComments ticketId
+        insertTicketInfo exportedTicket
+
+        -- For all the ticket comments
+        forM ticketComments $ \ticketComment -> do
+            insertTicketComments ticketId ticketComment
+
+            -- For all the ticket comment attachments
+            forM (cAttachments ticketComment) $ \ticketAttachment ->
+                insertCommentAttachments ticketComment ticketAttachment
+
+    -- TODO(ks): We currently don't download the attachment since that
+    -- would take a ton of time and would require probably up to 100Gb of space!
+  where
+    -- Filter for deleted tickets.
+    isDeletedTicket :: [DeletedTicket] -> TicketInfo -> Bool
+    isDeletedTicket dTickets TicketInfo{..} =
+        tiId `elem` map dtId dTickets
 
 -- TODO(hs): Remove this function since it's not used
 collectEmails :: App ()
