@@ -40,7 +40,7 @@ defaultConfig =
         { cfgAgentId            = 0
         , cfgZendesk            = "https://iohk.zendesk.com"
         , cfgToken              = ""
-        , cfgEmail              = "kristijan.saric@iohk.io"
+        , cfgEmail              = "daedalus-bug-reports@iohk.io"
         , cfgAssignTo           = 0
         , cfgKnowledgebase      = []
         , cfgNumOfLogsToAnalyze = 5
@@ -173,9 +173,7 @@ getExportedTickets
 getExportedTickets time = do
     cfg <- ask
     let url = showURL $ ExportDataByTimestamp time
-    putTextLn $ "/api/v2" <> url
     let req = apiRequestAbsolute cfg url
-    putTextLn "OUT!"
     iterateExportedTicketsWithDelay req
   where
 
@@ -200,8 +198,6 @@ getExportedTickets time = do
 
 
         (PageResultList page0 nextPage _) <- liftIO $ apiCall parseJSON req
-        putTextLn $ show page0
-        putTextLn $ show nextPage
         case nextPage of
             Just nextUrl -> liftIO $ go page0 nextUrl
             Nothing      -> pure page0

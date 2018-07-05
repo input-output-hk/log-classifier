@@ -18,8 +18,8 @@ import           Universum
 import           Data.Attoparsec.Text.Lazy (eitherResult, parse)
 import           Data.List (nub)
 import           Data.Text (isInfixOf, stripEnd)
-import           Data.Time
-import           Data.Time.Clock.POSIX
+import           Data.Time (UTCTime (..), fromGregorianValid)
+import           Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 
 import           CLI (CLI (..), getCliArgs)
 import           DataSource (App, Attachment (..), AttachmentContent (..), Comment (..),
