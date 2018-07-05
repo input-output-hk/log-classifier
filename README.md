@@ -13,6 +13,9 @@ The purpose of this project is to analyze Cardano log file and provide a solutio
 - This is a Haskell program so the agent will need [stack](https://docs.haskellstack.org/en/stable/README/) and [Nix](https://nixos.org/) in order to use the classifier. Instruction on how to use it will be documented on different file.
 - The classifier cannot find any unknown/unique issues.
 
+## Build Instructions
+Please read the instructions available at [INSTALL.md](./install.md)
+
 ## How it works
 
 ![system architecture](https://user-images.githubusercontent.com/15665039/40042756-5d92611e-585d-11e8-80b4-72677c451dd1.png)<br/>
