@@ -59,6 +59,7 @@ withStubbedIOAndZendeskLayer stubbedZendeskLayer =
     stubbedIOLayer =
         basicIOLayer
             { iolPrintText      = \_     -> pure ()
+            , iolAppendFile     = \_ _   -> pure ()
             -- ^ Do nothing with the output
             }
 
