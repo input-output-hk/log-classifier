@@ -13,7 +13,7 @@ The purpose of this project is to analyze Cardano log file and provide a solutio
 - This is a Haskell program so the agent will need [stack](https://docs.haskellstack.org/en/stable/README/) and [Nix](https://nixos.org/) in order to use the classifier. Instruction on how to use it will be documented on different file.
 - The classifier cannot find any unknown/unique issues.
 
-## Build Instructions
+## Installation and Configuration Instructions
 Please read the instructions available at [INSTALL.md](./install.md)
 
 ## How it works
@@ -31,7 +31,7 @@ This is a use case diagram. Use case diagrams overview the usage requirements fo
 
 ## Requirements
 
-In order to use this, the user must be IOHK Zendesk agent and be able to provide email and password to the classifier.
+In order to use this, the user must be possess an IOHK Zendesk agent ID and API key.
 
 ## Features
 
