@@ -80,6 +80,8 @@ newtype App a = App { runAppBase :: ReaderT Config IO a }
              , MonadIO
              , MonadBase IO
              , MonadUnliftIO
+             , MonadCatch
+             , MonadThrow
              )
 
 instance MonadBaseControl IO App where
@@ -409,6 +411,7 @@ data TicketTag
     | AnalyzedByScriptV1_2  -- ^ Ticket has been analyzed by the version 1.2
     | NoKnownIssue          -- ^ Ticket had no known issue
     | NoLogAttached         -- ^ Log file not attached
+    | CannotReadZipFile
 
 newtype UserId = UserId
     { getUserId :: Int
@@ -809,4 +812,5 @@ renderTicketStatus AnalyzedByScriptV1_0 = "analyzed-by-script-v1.0"
 renderTicketStatus AnalyzedByScriptV1_1 = "analyzed-by-script-v1.1"
 renderTicketStatus AnalyzedByScriptV1_2 = "analyzed-by-script-v1.2"
 renderTicketStatus NoKnownIssue         = "no-known-issues"
+renderTicketStatus CannotReadZipFile    = "cannot-read-zip-file"
 renderTicketStatus NoLogAttached        = "no-log-files"
