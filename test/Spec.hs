@@ -7,16 +7,18 @@ import           Test.Hspec.QuickCheck (modifyMaxSuccess)
 import           Test.QuickCheck (Gen, arbitrary, elements, forAll, listOf, listOf1, property)
 import           Test.QuickCheck.Monadic (assert, monadicIO, pre, run)
 
-import           DataSource (App, Attachment (..), Comment (..), Config (..), ExportFromTime (..),
-                             IOLayer (..), Ticket (..), TicketId (..), TicketInfo (..),
-                             TicketStatus (..), TicketTags (..), User, UserId (..),
+import           DataSource (App, Attachment (..), Comment (..), Config (..), DeletedTicket (..),
+                             ExportFromTime (..), IOLayer (..), Ticket (..), TicketId (..),
+                             TicketInfo (..), TicketStatus (..), TicketTags (..), User, UserId (..),
                              ZendeskAPIUrl (..), ZendeskLayer (..), ZendeskResponse (..),
-                             basicIOLayer, createResponseTicket, defaultConfig, emptyZendeskLayer,
-                             runApp, showURL)
+                             basicIOLayer, createResponseTicket, defaultConfig, emptyDBLayer,
+                             emptyZendeskLayer, runApp, showURL)
 
-import           Lib (filterAnalyzedTickets, listAndSortTickets, processTicket)
+import           Lib (exportZendeskDataToLocalDB, filterAnalyzedTickets, listAndSortTickets,
+                      processTicket)
 import           Statistics (filterTicketsByStatus, filterTicketsWithAttachments,
                              showAttachmentInfo, showCommentAttachments)
+
 -- TODO(ks): What we are really missing is a realistic @Gen ZendeskLayer m@.
 
 main :: IO ()
@@ -41,6 +43,7 @@ spec =
             processTicketSpec
             filterAnalyzedTicketsSpec
             createResponseTicketSpec
+            exportZendeskDataToLocalDBSpec
 
 -- | A utility function for testing which stubs IO and returns
 -- the @Config@ with the @ZendeskLayer@ that was passed into it.
@@ -49,6 +52,7 @@ withStubbedIOAndZendeskLayer stubbedZendeskLayer =
     defaultConfig
         { cfgZendeskLayer   = stubbedZendeskLayer
         , cfgIOLayer        = stubbedIOLayer
+        , cfgDBLayer        = emptyDBLayer
         }
   where
     stubbedIOLayer :: IOLayer App
@@ -155,7 +159,7 @@ processTicketSpec =
                                 emptyZendeskLayer
                                     { zlListAssignedTickets     = \_     -> pure listTickets
                                     , zlGetTicketInfo           = \_     -> pure $ Just ticketInfo
-                                    , zlPostTicketComment       = \_ _    -> pure ()
+                                    , zlPostTicketComment       = \_ _   -> pure ()
                                     , zlGetTicketComments       = \_     -> pure comments
                                     , zlGetAttachment           = \_     -> pure $ Just mempty
                                     }
@@ -438,3 +442,112 @@ createResponseTicketSpec =
                     mergedTags          = ticketInfoTags <> zendeskResponseTags
                     responseTags        = getTicketTags $ tTag responseTicket
                 in all (`elem` responseTags) mergedTags
+
+
+exportZendeskDataToLocalDBSpec :: Spec
+exportZendeskDataToLocalDBSpec =
+    describe "exportZendeskDataToLocalDB" $ modifyMaxSuccess (const 200) $ do
+        it "should export no data since there is nothing new" $
+            forAll arbitrary $ \(exportFromTime) ->
+
+               monadicIO $ do
+
+                   let stubbedZendeskLayer :: ZendeskLayer App
+                       stubbedZendeskLayer =
+                           emptyZendeskLayer
+                               { zlExportTickets           = \_     -> pure []
+                               , zlListDeletedTickets      =           pure []
+                               , zlGetTicketComments       = \_     -> pure []
+                               }
+
+                   let stubbedConfig :: Config
+                       stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
+
+                   let appExecution :: IO [TicketInfo]
+                       appExecution = runApp (exportZendeskDataToLocalDB exportFromTime) stubbedConfig
+
+                   ticketsToExport <- run appExecution
+
+                   -- Check we don't have any tickets.
+                   assert . null $ ticketsToExport
+
+        it "should export a list of tickets since there are new tickets" $
+             forAll (listOf1 arbitrary) $ \(listTickets) ->
+                forAll arbitrary $ \(exportFromTime) ->
+
+                    monadicIO $ do
+
+                        let stubbedZendeskLayer :: ZendeskLayer App
+                            stubbedZendeskLayer =
+                                emptyZendeskLayer
+                                    { zlExportTickets           = \_     -> pure listTickets
+                                    , zlListDeletedTickets      =           pure []
+                                    , zlGetTicketComments       = \_     -> pure []
+                                    }
+
+                        let stubbedConfig :: Config
+                            stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
+
+                        let appExecution :: IO [TicketInfo]
+                            appExecution = runApp (exportZendeskDataToLocalDB exportFromTime) stubbedConfig
+
+                        ticketsToExport <- run appExecution
+
+                        -- Check that we have tickets.
+                        assert . not . null $ ticketsToExport
+                        assert $ length ticketsToExport == length listTickets
+
+        it "should not return deleted tickets" $
+             forAll (listOf1 arbitrary) $ \(listTickets) ->
+                forAll arbitrary $ \(exportFromTime) ->
+
+                    monadicIO $ do
+
+                        let stubbedZendeskLayer :: ZendeskLayer App
+                            stubbedZendeskLayer =
+                                emptyZendeskLayer
+                                    { zlExportTickets           = \_     -> pure listTickets
+                                    , zlListDeletedTickets      =           pure $ map (DeletedTicket . tiId) listTickets
+                                    , zlGetTicketComments       = \_     -> pure []
+                                    }
+
+                        let stubbedConfig :: Config
+                            stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
+
+                        let appExecution :: IO [TicketInfo]
+                            appExecution = runApp (exportZendeskDataToLocalDB exportFromTime) stubbedConfig
+
+                        ticketsToExport <- run appExecution
+
+                        -- Check we don't have any tickets.
+                        assert . null $ ticketsToExport
+
+        it "should not return duplicated tickets" $
+             forAll (listOf1 arbitrary) $ \(listTickets) ->
+                forAll arbitrary $ \(exportFromTime) ->
+
+                    monadicIO $ do
+
+                        -- Here we duplicate them to check if the function works.
+                        let duplicatedListTickets = concat $ replicate 10 listTickets
+
+                        let stubbedZendeskLayer :: ZendeskLayer App
+                            stubbedZendeskLayer =
+                                emptyZendeskLayer
+                                    { zlExportTickets           = \_     -> pure duplicatedListTickets
+                                    , zlListDeletedTickets      =           pure []
+                                    , zlGetTicketComments       = \_     -> pure []
+                                    }
+
+                        let stubbedConfig :: Config
+                            stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
+
+                        let appExecution :: IO [TicketInfo]
+                            appExecution = runApp (exportZendeskDataToLocalDB exportFromTime) stubbedConfig
+
+                        ticketsToExport <- run appExecution
+
+                        -- Check that we have tickets.
+                        assert . not . null $ ticketsToExport
+                        assert $ length ticketsToExport == length listTickets
+

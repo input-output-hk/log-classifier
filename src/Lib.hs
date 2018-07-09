@@ -11,6 +11,7 @@ module Lib
     , showStatistics
     , listAndSortTickets
     , filterAnalyzedTickets
+    , exportZendeskDataToLocalDB
     ) where
 
 import           Universum
@@ -18,17 +19,17 @@ import           Universum
 import           Data.Attoparsec.Text.Lazy (eitherResult, parse)
 import           Data.List (nub)
 import           Data.Text (isInfixOf, stripEnd)
-import           Data.Time (UTCTime (..), fromGregorianValid)
+import           Data.Time (UTCTime (..), Day, fromGregorianValid)
 import           Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 
 import           CLI (CLI (..), getCliArgs)
 import           DataSource (App, Attachment (..), AttachmentContent (..), Comment (..),
-                             CommentBody (..), Config (..), DeletedTicket (..), ExportFromTime (..),
-                             IOLayer (..), TicketId (..), TicketInfo (..), TicketStatus (..),
-                             TicketTag (..), TicketTags (..), User (..), UserId (..),
-                             ZendeskLayer (..), ZendeskResponse (..), asksIOLayer, asksZendeskLayer,
-                             assignToPath, defaultConfig, deleteAllData, insertCommentAttachments,
-                             insertTicketComments, insertTicketInfo, knowledgebasePath,
+                             CommentBody (..), Config (..), DBLayer (..), DeletedTicket (..),
+                             ExportFromTime (..), IOLayer (..), TicketId (..), TicketInfo (..),
+                             TicketStatus (..), TicketTag (..), TicketTags (..), User (..),
+                             UserId (..), ZendeskLayer (..), ZendeskResponse (..), asksDBLayer,
+                             asksIOLayer, asksZendeskLayer, assignToPath, connPoolDBLayer,
+                             createProdConnectionPool, defaultConfig, knowledgebasePath,
                              renderTicketStatus, runApp, tokenPath)
 import           System.Directory (createDirectoryIfMissing)
 
@@ -47,20 +48,25 @@ import           Util (extractLogsFromZip)
 runZendeskMain :: IO ()
 runZendeskMain = do
     createDirectoryIfMissing True "logs"
-    args <- getCliArgs
+
+    args        <- getCliArgs
+
     putTextLn "Welcome to Zendesk classifier!"
-    token <- readFile tokenPath  -- Zendesk token
-    assignFile <- readFile assignToPath  -- Select assignee
-    knowledges <- setupKnowledgebaseEnv knowledgebasePath
-    assignTo <- case readEither assignFile of
+    token       <- readFile tokenPath  -- Zendesk token
+    assignFile  <- readFile assignToPath  -- Select assignee
+    knowledges  <- setupKnowledgebaseEnv knowledgebasePath
+    assignTo    <- case readEither assignFile of
         Right agentid -> return agentid
         Left  err     -> error err
+
+    connPool    <- createProdConnectionPool
 
     let cfg = defaultConfig
                    { cfgToken         = stripEnd token
                    , cfgAssignTo      = assignTo
                    , cfgAgentId       = assignTo
                    , cfgKnowledgebase = knowledges
+                   , cfgDBLayer       = connPoolDBLayer connPool
                    }
 
     -- At this point, the configuration is set up and there is no point in using a pure IO.
@@ -71,33 +77,34 @@ runZendeskMain = do
         (ProcessTicket ticketId) -> void $ runApp (processTicket (TicketId ticketId)) cfg
         ProcessTickets           -> void $ runApp processTickets cfg
         ShowStatistics           -> void $ runApp (fetchTickets >>= showStatistics) cfg
-        ExportData               -> runApp exportZendeskDataToLocalDB cfg
+        ExportData               -> void $ runApp (exportZendeskDataToLocalDB exportFromTime) cfg
+          where
+            -- | The day we want the export from.
+            day :: Day
+            day = fromMaybe (error "Invalid date!") $ fromGregorianValid 2018 6 28
+
+            utctime     = UTCTime day 0
+            posixTime   = utcTimeToPOSIXSeconds utctime
+
+            exportFromTime :: ExportFromTime
+            exportFromTime = ExportFromTime posixTime
+
+
 
 -- | The function for exporting Zendesk data to our local DB so
 -- we can have faster analysis and runs.
--- Test scenarios:
---   - Zendesk returns duplicate issues (yeah, that happens)
---   - Check termination on count <= 1000
-exportZendeskDataToLocalDB :: App ()
-exportZendeskDataToLocalDB = do
+exportZendeskDataToLocalDB :: ExportFromTime -> App [TicketInfo]
+exportZendeskDataToLocalDB exportFromTime = do
 
-    let day         = fromMaybe (error "Invalid date!") $ fromGregorianValid 2017 6 28
-    let utctime     = UTCTime day 0
-    let posixTime   = utcTimeToPOSIXSeconds utctime
+    listDeletedTickets          <- asksZendeskLayer zlListDeletedTickets
+    exportTickets               <- asksZendeskLayer zlExportTickets
 
-    let exportFromTime :: ExportFromTime
-        exportFromTime = ExportFromTime posixTime
-
-    getTicketComments   <- asksZendeskLayer zlGetTicketComments
-    listDeletedTickets  <- asksZendeskLayer zlListDeletedTickets
-
-    exportTickets       <- asksZendeskLayer zlExportTickets
     -- Yeah, not sure why this happens. Very weird.
-    exportedTickets     <- nub <$> exportTickets exportFromTime
+    exportedTickets             <- nub <$> exportTickets exportFromTime
 
     -- Yeah, there is a strange behaviour when we export tickets,
     -- we might get deleted tickets as well.
-    deletedTickets      <- listDeletedTickets
+    deletedTickets              <- listDeletedTickets
 
     -- Yep, some more strange behaviour. Not deleted, just not found.
     -- TODO(ks): We can remove this once we have exception handling.
@@ -113,31 +120,42 @@ exportZendeskDataToLocalDB = do
     let notDeletedExportedTickets =
             sort $ filter (not . isDeletedTicket deletedAndMissingTickets) exportedTickets
 
-    -- first, let's delete any data that's left here
-    deleteAllData
-
-    void $ forM notDeletedExportedTickets $ \exportedTicket -> do
-        let ticketId = tiId exportedTicket
-
-        -- First fetch comments, FAIL-FAST
-        ticketComments <- getTicketComments ticketId
-        insertTicketInfo exportedTicket
-
-        -- For all the ticket comments
-        forM ticketComments $ \ticketComment -> do
-            insertTicketComments ticketId ticketComment
-
-            -- For all the ticket comment attachments
-            forM (cAttachments ticketComment) $ \ticketAttachment ->
-                insertCommentAttachments ticketComment ticketAttachment
+    void $ forM_ notDeletedExportedTickets saveTicketDataToLocalDB
 
     -- TODO(ks): We currently don't download the attachment since that
     -- would take a ton of time and would require probably up to 100Gb of space!
+    pure notDeletedExportedTickets
   where
     -- Filter for deleted tickets.
     isDeletedTicket :: [DeletedTicket] -> TicketInfo -> Bool
     isDeletedTicket dTickets TicketInfo{..} =
         tiId `elem` map dtId dTickets
+
+-- | Yep, we are missing an intermediate step here to test and separate.
+saveTicketDataToLocalDB :: TicketInfo -> App ()
+saveTicketDataToLocalDB ticket = do
+
+    getTicketComments           <- asksZendeskLayer zlGetTicketComments
+
+    insertTicketInfo            <- asksDBLayer dlInsertTicketInfo
+    insertTicketComments        <- asksDBLayer dlInsertTicketComments
+    insertCommentAttachments    <- asksDBLayer dlInsertCommentAttachments
+
+    let ticketId = tiId ticket
+
+    -- First fetch comments, FAIL-FAST
+    ticketComments <- getTicketComments ticketId
+    insertTicketInfo ticket
+
+    -- For all the ticket comments
+    void $ forM ticketComments $ \ticketComment -> do
+        insertTicketComments ticketId ticketComment
+
+        -- For all the ticket comment attachments
+        forM (cAttachments ticketComment) $ \ticketAttachment ->
+            insertCommentAttachments ticketComment ticketAttachment
+
+    pure ()
 
 -- TODO(hs): Remove this function since it's not used
 collectEmails :: App ()
@@ -170,7 +188,9 @@ fetchAgents = do
 
 processTicket :: TicketId -> App (Maybe ZendeskResponse)
 processTicket tId = do
-    printText <- asksIOLayer iolPrintText
+    printText           <- asksIOLayer iolPrintText
+    appendF             <- asksIOLayer iolAppendFile
+
     -- Printing id before inspecting the ticket so that when the process stops by the
     -- corrupted log file, we know which id to blacklist.
     printText $ "Analyzing ticket id: " <> show (getTicketId tId)
@@ -192,7 +212,6 @@ processTicket tId = do
         forM_ tags $ \tag -> do
             let formattedTicketIdAndTag = show (getTicketId tId) <> " " <> tag
             printText formattedTicketIdAndTag
-            appendF <- asksIOLayer iolAppendFile
             appendF "logs/analysis-result.log" (formattedTicketIdAndTag <> "\n")
 
     pure zendeskResponse

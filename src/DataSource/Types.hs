@@ -32,20 +32,22 @@ module DataSource.Types
     , ZendeskResponse (..)
     , FromPageResultList (..)
     , ExportFromTime (..)
+    , ZendeskAPIUrl (..)
     , parseComments
     , parseTicket
     , renderTicketStatus
     -- * General configuration
     , App
     , Config (..)
-    , IOLayer (..)
     , ZendeskLayer (..)
-    , ZendeskAPIUrl (..)
+    , IOLayer (..)
+    , DBLayer (..)
     , knowledgebasePath
     , tokenPath
     , assignToPath
     , asksZendeskLayer
     , asksIOLayer
+    , asksDBLayer
     , showURL
     , runApp
     ) where
@@ -59,19 +61,28 @@ import qualified Data.Text as T
 import           Data.Time.Clock.POSIX (POSIXTime)
 import           LogAnalysis.Types (Knowledge)
 
+import           Control.Monad.Base (MonadBase)
+import           Control.Monad.Trans.Control (MonadBaseControl (..))
+
 import           Test.QuickCheck (Arbitrary (..), elements, listOf1, vectorOf)
 
 ------------------------------------------------------------
 -- Configuration
 ------------------------------------------------------------
 
-newtype App a = App (ReaderT Config IO a)
+newtype App a = App { runAppBase :: ReaderT Config IO a }
     deriving ( Applicative
              , Functor
              , Monad
              , MonadReader Config
              , MonadIO
+             , MonadBase IO
              )
+
+instance MonadBaseControl IO App where
+    type StM App a = a
+    liftBaseWith f = App $ liftBaseWith $ \q -> f (q . runAppBase)
+    restoreM = App . restoreM
 
 runApp :: App a -> Config -> IO a
 runApp (App a) = runReaderT a
@@ -98,13 +109,14 @@ data Config = Config
     -- ^ The Zendesk API layer. We will ideally move this into a
     -- separate configuration containing all the layer (yes, there a couple of them).
     , cfgIOLayer            :: !(IOLayer App)
-    -- ^ The IO layer.
+    -- ^ The _IO@ layer. This is containing all the functions we have for IO.
+    , cfgDBLayer            :: !(DBLayer App)
+    -- ^ The _DB_ layer. This is containing all the modification functions.
+    -- TODO(ks): @Maybe@ db layer. It's not really required.
     }
 
 
 -- | Utility function for getting a function of the @ZendeskLayer@.
--- There are plenty of other alternatives, but this is the simplest
--- and most direct one.
 asksZendeskLayer :: forall m a. (MonadReader Config m) => (ZendeskLayer App -> a) -> m a
 asksZendeskLayer getter = do
     Config{..} <- ask
@@ -112,12 +124,17 @@ asksZendeskLayer getter = do
 
 
 -- | Utility function for getting a function of the @ZendeskLayer@.
--- There are plenty of other alternatives, but this is the simplest
--- and most direct one.
 asksIOLayer :: forall m a. (MonadReader Config m) => (IOLayer App -> a) -> m a
 asksIOLayer getter = do
     Config{..} <- ask
     pure $ getter cfgIOLayer
+
+
+-- | Utility function for getting a function of the @DBLayer@.
+asksDBLayer :: forall m a. (MonadReader Config m) => (DBLayer App -> a) -> m a
+asksDBLayer getter = do
+    Config{..} <- ask
+    pure $ getter cfgDBLayer
 
 
 -- TODO(ks): Move these three below to CLI!
@@ -157,7 +174,23 @@ data ZendeskLayer m = ZendeskLayer
 data IOLayer m = IOLayer
     { iolAppendFile :: FilePath -> Text -> m ()
     , iolPrintText  :: Text -> m ()
-    , iolReadFile   :: FilePath -> m String
+    , iolReadFile   :: FilePath -> m Text
+    , iolLogDebug   :: Text -> m ()
+    , iolLogInfo    :: Text -> m ()
+    }
+
+-- | The @DBLayer@ for the database modifications.
+-- TODO(ks): We should remove all these void functions with
+-- some return values we can test (and stub out).
+data DBLayer m = DBLayer
+    { dlInsertTicketInfo         :: TicketInfo -> m ()
+    , dlInsertTicketComments     :: TicketId -> Comment -> m ()
+    , dlInsertCommentAttachments :: Comment -> Attachment -> m ()
+    , dlDeleteCommentAttachments :: m ()
+    , dlDeleteTicketComments     :: m ()
+    , dlDeleteTickets            :: m ()
+    , dlDeleteAllData            :: m ()
+    , dlCreateSchema             :: m ()
     }
 
 ------------------------------------------------------------
@@ -177,7 +210,7 @@ instance ToURL TicketId where
     toURL (TicketId ticketId) = show ticketId
 
 instance ToURL ExportFromTime where
-    toURL (ExportFromTime time) = show . floor . toRational $ time
+    toURL (ExportFromTime time) = show @_ @Integer . floor . toRational $ time
 
 data ZendeskAPIUrl
     = AgentGroupURL
