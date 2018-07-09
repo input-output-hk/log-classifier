@@ -38,7 +38,11 @@ library
                      , containers
                      , directory
                      , http-conduit
+                     -- Effects & company
                      , mtl
+                     , monad-control
+                     , transformers-base
+                     -- 
                      , optparse-applicative
                      , reflection
                      , regex-tdfa
@@ -49,6 +53,7 @@ library
                      , QuickCheck
                      -- Database backend
                      , sqlite-simple 
+                     , resource-pool
                      , generics-sop
 
   default-language:    Haskell2010

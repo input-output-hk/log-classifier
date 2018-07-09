@@ -5,22 +5,26 @@
 -- This way, we have real separation.
 
 module DataSource.DB
-    ( withDatabase
+    ( DBConnPool
+    , withDatabase
     , withProdDatabase
-    , cachedZendeskLayer
-    -- * For updating local database
-    , insertTicketInfo
-    , insertTicketComments
-    , insertCommentAttachments
-    -- * Delete data
-    , deleteAllData
-    , deleteCommentAttachments
-    , deleteTicketComments
-    , deleteTickets
+    -- * Empty layer
+    , emptyDBLayer
+    -- * Single connection
+    , connZendeskLayer
+    , connPoolZendeskLayer
+    -- * Connection pool
+    , connDBLayer
+    , connPoolDBLayer
+    -- * Create connection pool
+    , createProdConnectionPool
     ) where
 
 import           Universum
 
+import           Control.Monad.Trans.Control (MonadBaseControl)
+
+import           Data.Pool (Pool, createPool, withResource)
 import           Data.Text (split)
 
 import           Database.SQLite.Simple (FromRow (..), NamedParam (..), SQLData (..), close,
@@ -30,33 +34,152 @@ import           Database.SQLite.Simple.Internal (Connection, Field (..))
 import           Database.SQLite.Simple.Ok (Ok (..))
 import           Database.SQLite.Simple.ToField (ToField (..))
 
+import           DataSource.Http (basicZendeskLayer)
 import           DataSource.Types (Attachment (..), AttachmentContent (..), AttachmentId (..),
                                    Comment (..), CommentBody (..), CommentId (..), Config,
-                                   TicketField (..), TicketFieldId (..), TicketFieldValue (..),
-                                   TicketId (..), TicketInfo (..), TicketStatus (..),
-                                   TicketTags (..), TicketURL (..), UserId (..), ZendeskLayer (..))
+                                   DBLayer (..), TicketField (..), TicketFieldId (..),
+                                   TicketFieldValue (..), TicketId (..), TicketInfo (..),
+                                   TicketStatus (..), TicketTags (..), TicketURL (..), UserId (..),
+                                   ZendeskLayer (..))
 
+------------------------------------------------------------
+-- Single connection, simple
+------------------------------------------------------------
 
--- https://ocharles.org.uk/blog/posts/2014-08-07-postgresql-simple-generic-sop.html
+-- | A general resource closing function.
+-- The issue with this is that we currently can't use any concurrency
+-- primitives, but that will be fixed in the future.
+withDatabase :: forall a. String -> (Connection -> IO a) -> IO a
+withDatabase dbName dbOperation =
+    bracket
+        (open dbName)
+        (close)
+        dbOperation
 
--- | The cached Zendesk layer. We are using a simple SQLite DB behind the scenes
--- that we need to sync occasionaly.
-cachedZendeskLayer :: (MonadIO m, MonadReader Config m) => ZendeskLayer m
-cachedZendeskLayer = ZendeskLayer
-    { zlGetTicketInfo           = getTicketInfoByTicketId
-    , zlListDeletedTickets      = error "We won't use this for now."
-    , zlListAssignedTickets     = getAllAssignedTicketsByUser
-    , zlListRequestedTickets    = getAllRequestedTicketsByUser
-    , zlListUnassignedTickets   = getAllUnassignedTicketsByUser
-    , zlListAdminAgents         = error "We won't use this for now!"
-    , zlGetAttachment           = DataSource.DB.getAttachmentContent
-    , zlGetTicketComments       = getTicketComments
-    , zlPostTicketComment       = error "We won't use this for now!"
-    , zlExportTickets           = error "This is redundant since we mostly require it for caching!"
+-- | A production resource closing function.
+withProdDatabase :: forall m a. (MonadIO m) => (Connection -> IO a) -> m a
+withProdDatabase = liftIO . withDatabase "./prod.db"
+
+------------------------------------------------------------
+-- Connection pool
+------------------------------------------------------------
+
+-- Export it, hide it inside the module so
+-- we have control over it.
+newtype DBConnPool = DBConnPool
+    { getDBConnectionPool :: Pool Connection
     }
 
+-- | The connection pool to enable concurrent work.
+-- TODO(ks): Newtype wrappers if we export.
+createConnectionPool :: forall m. (MonadIO m) => String -> Int -> m DBConnPool
+createConnectionPool dbName simulConns =
+    liftIO $ DBConnPool <$> createPool newConn delConn 1 10 simulConns
+  where
+    newConn :: IO Connection
+    newConn = open dbName
+
+    delConn :: Connection -> IO ()
+    delConn = close
+
+-- | Create production connection pool. By default a 100 connections.
+createProdConnectionPool :: forall m. (MonadIO m) => m DBConnPool
+createProdConnectionPool = createConnectionPool "prod.db" 100
+
+-- | A utility function for unwrapping the connections.
+withConnPool :: forall m a. (MonadBaseControl IO m) => DBConnPool -> (Connection -> m a) -> m a
+withConnPool dbConnPool dbFunc =
+    withResource (getDBConnectionPool dbConnPool) dbFunc
+
+------------------------------------------------------------
+-- Empty layer
+------------------------------------------------------------
+
+emptyDBLayer :: forall m. (Monad m) => DBLayer m
+emptyDBLayer = DBLayer
+    { dlInsertTicketInfo          = \_     -> pure ()
+    , dlInsertTicketComments      = \_ _   -> pure ()
+    , dlInsertCommentAttachments  = \_ _   -> pure ()
+    , dlDeleteCommentAttachments  = pure ()
+    , dlDeleteTicketComments      = pure ()
+    , dlDeleteTickets             = pure ()
+    , dlDeleteAllData             = pure ()
+    , dlCreateSchema              = pure ()
+    }
+
+------------------------------------------------------------
+-- Simple connection layer
+------------------------------------------------------------
+
+-- | The simple connection Zendesk layer. Used for database querying.
+-- We need to sync occasionaly.
+connZendeskLayer :: forall m. (MonadIO m, MonadReader Config m) => ZendeskLayer m
+connZendeskLayer = ZendeskLayer
+    { zlGetTicketInfo           = \tId -> withProdDatabase $ \conn -> getTicketInfoByTicketId conn tId
+    , zlListDeletedTickets      = zlListDeletedTickets basicZendeskLayer
+    , zlListAssignedTickets     = \uId -> withProdDatabase $ \conn -> getAllAssignedTicketsByUser conn uId
+    , zlListRequestedTickets    = \uId -> withProdDatabase $ \conn -> getAllRequestedTicketsByUser conn uId
+    , zlListUnassignedTickets   =         withProdDatabase getAllUnassignedTicketsByUser
+    , zlListAdminAgents         = zlListAdminAgents basicZendeskLayer
+    , zlGetAttachment           = \att -> withProdDatabase $ \conn -> DataSource.DB.getAttachmentContent conn att
+    , zlGetTicketComments       = \tId -> withProdDatabase $ \conn -> getTicketComments conn tId
+    , zlPostTicketComment       = zlPostTicketComment basicZendeskLayer
+    , zlExportTickets           = zlExportTickets basicZendeskLayer
+    }
+
+
+-- | The simple connection database layer. Used for database modification.
+connDBLayer :: forall m. (MonadIO m, MonadReader Config m) => DBLayer m
+connDBLayer = DBLayer
+    { dlInsertTicketInfo          = \tIn        -> withProdDatabase $ \conn -> insertTicketInfo conn tIn
+    , dlInsertTicketComments      = \tId comm   -> withProdDatabase $ \conn -> insertTicketComments conn tId comm
+    , dlInsertCommentAttachments  = \comm att   -> withProdDatabase $ \conn -> insertCommentAttachments conn comm att
+    , dlDeleteCommentAttachments  =                withProdDatabase $ \conn -> deleteCommentAttachments conn
+    , dlDeleteTicketComments      =                withProdDatabase $ \conn -> deleteTicketComments conn
+    , dlDeleteTickets             =                withProdDatabase $ \conn -> deleteTickets conn
+    , dlDeleteAllData             =                withProdDatabase $ \conn -> deleteAllData conn
+    , dlCreateSchema              =                withProdDatabase $ \conn -> createSchema conn
+    }
+
+------------------------------------------------------------
+-- Connection pool layer
+------------------------------------------------------------
+
+-- | The connection pooled Zendesk layer. Used for database querying.
+-- We need to sync occasionaly.
+connPoolZendeskLayer :: forall m. (MonadBaseControl IO m, MonadIO m, MonadReader Config m) => DBConnPool -> ZendeskLayer m
+connPoolZendeskLayer connPool = ZendeskLayer
+    { zlGetTicketInfo           = \tId -> withConnPool connPool $ \conn -> getTicketInfoByTicketId conn tId
+    , zlListDeletedTickets      = zlListDeletedTickets basicZendeskLayer
+    , zlListAssignedTickets     = \uId -> withConnPool connPool $ \conn -> getAllAssignedTicketsByUser conn uId
+    , zlListRequestedTickets    = \uId -> withConnPool connPool $ \conn -> getAllRequestedTicketsByUser conn uId
+    , zlListUnassignedTickets   =         withConnPool connPool getAllUnassignedTicketsByUser
+    , zlListAdminAgents         = zlListAdminAgents basicZendeskLayer
+    , zlGetAttachment           = \att -> withConnPool connPool $ \conn -> DataSource.DB.getAttachmentContent conn att
+    , zlGetTicketComments       = \tId -> withConnPool connPool $ \conn -> getTicketComments conn tId
+    , zlPostTicketComment       = zlPostTicketComment basicZendeskLayer
+    , zlExportTickets           = zlExportTickets basicZendeskLayer
+    }
+
+
+-- | The connection pooled database layer. Used for database modification.
+connPoolDBLayer :: forall m. (MonadBaseControl IO m, MonadIO m, MonadReader Config m) => DBConnPool -> DBLayer m
+connPoolDBLayer connPool = DBLayer
+    { dlInsertTicketInfo          = \tIn        -> withConnPool connPool $ \conn -> insertTicketInfo conn tIn
+    , dlInsertTicketComments      = \tId comm   -> withConnPool connPool $ \conn -> insertTicketComments conn tId comm
+    , dlInsertCommentAttachments  = \comm att   -> withConnPool connPool $ \conn -> insertCommentAttachments conn comm att
+    , dlDeleteCommentAttachments  =                withConnPool connPool $ \conn -> deleteCommentAttachments conn
+    , dlDeleteTicketComments      =                withConnPool connPool $ \conn -> deleteTicketComments conn
+    , dlDeleteTickets             =                withConnPool connPool $ \conn -> deleteTickets conn
+    , dlDeleteAllData             =                withConnPool connPool $ \conn -> deleteAllData conn
+    , dlCreateSchema              =                withConnPool connPool $ \conn -> createSchema conn
+    }
+
+------------------------------------------------------------
 -- Database instances
--- FROM
+------------------------------------------------------------
+
+-- https://ocharles.org.uk/blog/posts/2014-08-07-postgresql-simple-generic-sop.html
 
 instance FromField TicketFieldId where
     fromField (Field (SQLInteger tfId) _)   = Ok . TicketFieldId . fromIntegral $ tfId
@@ -79,8 +202,8 @@ instance FromField UserId where
     fromField f                             = returnError ConversionFailed f "need an integer, user id"
 
 instance FromField TicketURL where
-    fromField (Field (SQLText tURL) _) = Ok . TicketURL $ tURL
-    fromField f                        = returnError ConversionFailed f "need a text, ticket url"
+    fromField (Field (SQLText tURL) _)      = Ok . TicketURL $ tURL
+    fromField f                             = returnError ConversionFailed f "need a text, ticket url"
 
 -- | TODO(ks): Yes, yes, normal form...
 instance FromField TicketTags where
@@ -92,7 +215,15 @@ instance FromField TicketStatus where
     fromField f                             = returnError ConversionFailed f "need a text, ticket status"
 
 instance FromRow TicketInfo where
-    fromRow = TicketInfo <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+    fromRow = TicketInfo
+        <$> field
+        <*> field
+        <*> field
+        <*> field
+        <*> field
+        <*> field
+        <*> field
+        <*> field
 
 instance FromField CommentId where
     fromField (Field (SQLInteger commId) _) = Ok . CommentId . fromIntegral $ commId
@@ -110,7 +241,11 @@ instance FromField AttachmentId where
 -- TO
 
 instance FromRow Attachment where
-    fromRow = Attachment <$> field <*> field <*> field <*> field
+    fromRow = Attachment
+        <$> field
+        <*> field
+        <*> field
+        <*> field
 
 instance FromRow AttachmentContent where
     fromRow = AttachmentContent <$> field
@@ -139,48 +274,46 @@ instance ToField TicketTags where
 instance ToField TicketStatus where
     toField (TicketStatus tiStatus)         = SQLText $ tiStatus
 
--- | A general resource closing function.
--- The issue with this is that we currently can't use any concurrency
--- primitives, but that will be fixed in the future.
-withDatabase :: forall a. String -> (Connection -> IO a) -> IO a
-withDatabase dbName dbOperation =
-    bracket
-        (open dbName)
-        (close)
-        dbOperation
-
--- | A production resource closing function.
-withProdDatabase :: forall m a. (MonadIO m) => (Connection -> IO a) -> m a
-withProdDatabase = liftIO . withDatabase "./prod.db"
-
 ------------------------------------------------------------
 -- Query
 ------------------------------------------------------------
 
-_getTicketsInfo :: forall m. (MonadIO m) => m [TicketInfo]
-_getTicketsInfo = withProdDatabase $ \conn ->
-    query_ conn "SELECT * FROM ticket_info"
+_getTicketsInfo
+    :: forall m. (MonadIO m)
+    => Connection
+    -> m [TicketInfo]
+_getTicketsInfo conn =
+    liftIO $ query_ conn "SELECT * FROM ticket_info"
 
-getTicketInfoByTicketId :: forall m. (MonadIO m) => TicketId -> m (Maybe TicketInfo)
-getTicketInfoByTicketId ticketId = withProdDatabase $ \conn ->
-    safeHead <$> queryNamed conn "SELECT * FROM ticket_info WHERE tId = :id" [":id" := ticketId]
+getTicketInfoByTicketId
+    :: forall m. (MonadIO m)
+    => Connection
+    -> TicketId
+    -> m (Maybe TicketInfo)
+getTicketInfoByTicketId conn ticketId =
+    liftIO $ safeHead <$> queryNamed conn
+        "SELECT * FROM ticket_info WHERE tId = :id" [":id" := ticketId]
 
-getAllAssignedTicketsByUser :: forall m. (MonadIO m) => UserId -> m [TicketInfo]
-getAllAssignedTicketsByUser userId = withProdDatabase $ \conn ->
-    queryNamed conn "SELECT * FROM ticket_info WHERE assignee_id = :id" [":id" := userId]
+getAllAssignedTicketsByUser
+    :: forall m. (MonadIO m)
+    => Connection
+    -> UserId
+    -> m [TicketInfo]
+getAllAssignedTicketsByUser conn userId =
+    liftIO $ queryNamed conn "SELECT * FROM ticket_info WHERE assignee_id = :id" [":id" := userId]
 
-getAllUnassignedTicketsByUser :: forall m. (MonadIO m) => m [TicketInfo]
-getAllUnassignedTicketsByUser = withProdDatabase $ \conn ->
-    query_ conn "SELECT * FROM ticket_info WHERE assignee_id = NULL"
+getAllUnassignedTicketsByUser :: forall m. (MonadIO m) => Connection -> m [TicketInfo]
+getAllUnassignedTicketsByUser conn =
+    liftIO $ query_ conn "SELECT * FROM ticket_info WHERE assignee_id = NULL"
 
-getAllRequestedTicketsByUser :: forall m. (MonadIO m) => UserId -> m [TicketInfo]
-getAllRequestedTicketsByUser userId = withProdDatabase $ \conn ->
-    queryNamed conn "SELECT * FROM ticket_info WHERE requester_id = :id" [":id" := userId]
+getAllRequestedTicketsByUser :: forall m. (MonadIO m) => Connection -> UserId -> m [TicketInfo]
+getAllRequestedTicketsByUser conn userId =
+    liftIO $ queryNamed conn "SELECT * FROM ticket_info WHERE requester_id = :id" [":id" := userId]
 
 
 -- | A join would be more performant, but KISS for now.
-getTicketComments :: forall m. (MonadIO m) => TicketId -> m [Comment]
-getTicketComments ticketId = do
+getTicketComments :: forall m. (MonadIO m) => Connection -> TicketId -> m [Comment]
+getTicketComments conn ticketId = do
     commentsInfo <- getTicketIdComments ticketId
 
     forM commentsInfo $ \(commentId, commentBody, commentIsPublic, commentAuthorId) -> do
@@ -196,14 +329,15 @@ getTicketComments ticketId = do
             }
   where
     getTicketIdComments :: TicketId -> m [(CommentId, CommentBody, Bool, Integer)]
-    getTicketIdComments ticketId' = withProdDatabase $ \conn ->
-        queryNamed conn "SELECT tc.id, tc.body, tc.is_public, tc.author_id \
+    getTicketIdComments ticketId' =
+        liftIO $ queryNamed conn "SELECT tc.id, tc.body, tc.is_public, tc.author_id \
             \FROM ticket_comment tc \
             \WHERE tc.ticket_id = :id" [":id" := ticketId']
 
     getCommentAttachments :: CommentId -> m [Attachment]
-    getCommentAttachments commentId = withProdDatabase $ \conn ->
-        queryNamed conn "SELECT * FROM comment_attachments WHERE comment_id = :id" [":id" := commentId]
+    getCommentAttachments commentId =
+        liftIO $ queryNamed conn
+            "SELECT * FROM comment_attachments WHERE comment_id = :id" [":id" := commentId]
 
 -- | We use a different database here since a simple calculation shows that
 -- this database will be huge. If an average log takes around 10Mb, saving
@@ -212,9 +346,10 @@ getTicketComments ticketId = do
 -- relating to attachments, it makes sense to separate the DB's. Another option
 -- is to use another database (KV storage/database) for this.
 -- TODO(ks): For now, let's delay this decision for a bit.
-getAttachmentContent :: forall m. (MonadIO m) => Attachment -> m (Maybe AttachmentContent)
-getAttachmentContent Attachment{..} = withProdDatabase $ \conn ->
-    safeHead <$> queryNamed conn "SELECT * FROM attachment_content WHERE attachment_id = :id" [":id" := aId]
+getAttachmentContent :: forall m. (MonadIO m) => Connection -> Attachment -> m (Maybe AttachmentContent)
+getAttachmentContent conn Attachment{..} =
+    liftIO $ safeHead <$> queryNamed conn
+        "SELECT * FROM attachment_content WHERE attachment_id = :id" [":id" := aId]
 
 ------------------------------------------------------------
 -- DML
@@ -222,9 +357,49 @@ getAttachmentContent Attachment{..} = withProdDatabase $ \conn ->
 
 -- TODO(ks): withTransaction
 
-insertTicketInfo :: forall m. (MonadIO m) => TicketInfo -> m ()
-insertTicketInfo TicketInfo{..} = withProdDatabase $ \conn ->
-    executeNamed conn "INSERT INTO ticket_info (tiId, tiRequesterId, tiAssigneeId, tiUrl, tiTags, tiStatus) VALUES (:tiId, :tiRequesterId, :tiAssigneeId, :tiUrl, :tiTags, :tiStatus)"
+createSchema :: forall m. (MonadIO m) => Connection -> m ()
+createSchema conn = liftIO $ execute_ conn
+    "CREATE TABLE `ticket_info` (                                           \
+\       `tiId`  INTEGER,                                                    \
+\       `tiRequesterId` INTEGER NOT NULL,                                   \
+\       `tiAssigneeId`  INTEGER,                                            \
+\       `tiUrl` TEXT NOT NULL,                                              \
+\       `tiTags`    TEXT NOT NULL,                                          \
+\       `tiStatus`  TEXT NOT NULL,                                          \
+\       PRIMARY KEY(tiId)                                                   \
+\    ) WITHOUT ROWID;                                                       \
+\                                                                           \
+\    CREATE TABLE `ticket_comment` (                                        \
+\       `id`    INTEGER,                                                    \
+\       `ticket_id` INTEGER NOT NULL,                                       \
+\       `body`  TEXT NOT NULL,                                              \
+\       `is_public` INTEGER NOT NULL,                                       \
+\       `author_id` INTEGER NOT NULL,                                       \
+\       PRIMARY KEY(id),                                                    \
+\       FOREIGN KEY(`ticket_id`) REFERENCES ticket_info(tId)                \
+\    ) WITHOUT ROWID;                                                       \
+\                                                                           \
+\    CREATE TABLE `comment_attachment` (                                    \
+\       `aId`   INTEGER,                                                    \
+\       `comment_id`    INTEGER NOT NULL,                                   \
+\       `aURL`  TEXT NOT NULL,                                              \
+\       `aContentType`  TEXT NOT NULL,                                      \
+\       `aSize` INTEGER NOT NULL,                                           \
+\       PRIMARY KEY(aId),                                                   \
+\         FOREIGN KEY(`comment_id`) REFERENCES ticket_comment ( ticket_id ) \
+\    ) WITHOUT ROWID;                                                       \
+\                                                                           \
+\    CREATE TABLE `attachment_content` (                                    \
+\       `attachment_id` INTEGER,                                            \
+\       `content`   BLOB NOT NULL,                                          \
+\       PRIMARY KEY(attachment_id),                                         \
+\       FOREIGN KEY(`attachment_id`) REFERENCES comment_attachment(aId)     \
+\    )"
+
+insertTicketInfo :: forall m. (MonadIO m) => Connection -> TicketInfo -> m ()
+insertTicketInfo conn TicketInfo{..} =
+    liftIO $ executeNamed conn "INSERT INTO ticket_info (tiId, tiRequesterId, tiAssigneeId, tiUrl, tiTags, tiStatus) \
+        \VALUES (:tiId, :tiRequesterId, :tiAssigneeId, :tiUrl, :tiTags, :tiStatus)"
         [ ":tiId"           := tiId
         , ":tiRequesterId"  := tiRequesterId
         , ":tiAssigneeId"   := tiAssigneeId
@@ -233,9 +408,10 @@ insertTicketInfo TicketInfo{..} = withProdDatabase $ \conn ->
         , ":tiStatus"       := tiStatus
         ]
 
-insertTicketComments :: forall m. (MonadIO m) => TicketId -> Comment -> m ()
-insertTicketComments ticketId Comment{..} = withProdDatabase $ \conn ->
-    executeNamed conn "INSERT INTO ticket_comment (id, ticket_id, body, is_public, author_id) VALUES (:id, :ticket_id, :body, :is_public, :author_id)"
+insertTicketComments :: forall m. (MonadIO m) => Connection -> TicketId -> Comment -> m ()
+insertTicketComments conn ticketId Comment{..} =
+    liftIO $ executeNamed conn "INSERT INTO ticket_comment (id, ticket_id, body, is_public, author_id) \
+        \VALUES (:id, :ticket_id, :body, :is_public, :author_id)"
         [ ":id"             := cId
         , ":ticket_id"      := ticketId
         , ":body"           := cBody
@@ -243,9 +419,10 @@ insertTicketComments ticketId Comment{..} = withProdDatabase $ \conn ->
         , ":author_id"      := cAuthor
         ]
 
-insertCommentAttachments :: forall m. (MonadIO m) => Comment -> Attachment -> m ()
-insertCommentAttachments Comment{..} Attachment{..} = withProdDatabase $ \conn ->
-    executeNamed conn "INSERT INTO comment_attachment (aId, comment_id, aURL, aContentType, aSize) VALUES (:aId, :comment_id, :aURL, :aContentType, :aSize)"
+insertCommentAttachments :: forall m. (MonadIO m) => Connection -> Comment -> Attachment -> m ()
+insertCommentAttachments conn Comment{..} Attachment{..} =
+    liftIO $ executeNamed conn "INSERT INTO comment_attachment (aId, comment_id, aURL, aContentType, aSize) \
+        \VALUES (:aId, :comment_id, :aURL, :aContentType, :aSize)"
         [ ":aId"            := aId
         , ":comment_id"     := cId
         , ":aURL"           := aURL
@@ -253,24 +430,22 @@ insertCommentAttachments Comment{..} Attachment{..} = withProdDatabase $ \conn -
         , ":aSize"          := aSize
         ]
 
-deleteCommentAttachments :: forall m. (MonadIO m) => m ()
-deleteCommentAttachments = withProdDatabase $ \conn ->
-    execute_ conn "DELETE FROM comment_attachment"
+deleteCommentAttachments :: forall m. (MonadIO m) => Connection -> m ()
+deleteCommentAttachments conn =
+    liftIO $ execute_ conn "DELETE FROM comment_attachment"
 
-deleteTicketComments :: forall m. (MonadIO m) => m ()
-deleteTicketComments = withProdDatabase $ \conn ->
-    execute_ conn "DELETE FROM ticket_comment"
+deleteTicketComments :: forall m. (MonadIO m) => Connection -> m ()
+deleteTicketComments conn =
+    liftIO $ execute_ conn "DELETE FROM ticket_comment"
 
-deleteTickets :: forall m. (MonadIO m) => m ()
-deleteTickets = withProdDatabase $ \conn ->
-    execute_ conn "DELETE FROM ticket_info"
+deleteTickets :: forall m. (MonadIO m) => Connection -> m ()
+deleteTickets conn =
+    liftIO $ execute_ conn "DELETE FROM ticket_info"
 
 -- | Delete all data.
--- Here we can show that we lack composition, and the step we
--- need to achive it.
-deleteAllData :: forall m. (MonadIO m) => m ()
-deleteAllData = withProdDatabase $ \conn -> do
-    execute_ conn "DELETE FROM comment_attachment"
-    execute_ conn "DELETE FROM ticket_comment"
-    execute_ conn "DELETE FROM ticket_info"
+deleteAllData :: forall m. (MonadIO m) => Connection -> m ()
+deleteAllData conn = do
+    deleteCommentAttachments conn
+    deleteTicketComments conn
+    deleteTickets conn
 

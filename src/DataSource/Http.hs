@@ -5,8 +5,6 @@
 module DataSource.Http
     ( basicZendeskLayer
     , emptyZendeskLayer
-    , basicIOLayer
-    , defaultConfig
     , createResponseTicket
     ) where
 
@@ -26,28 +24,12 @@ import           Network.HTTP.Simple (Request, addRequestHeader, getResponseBody
 import           DataSource.Types (Attachment (..), AttachmentContent (..), Comment (..),
                                    CommentBody (..), CommentId (..), Config (..),
                                    DeletedTicket (..), ExportFromTime (..), FromPageResultList (..),
-                                   IOLayer (..), PageResultList (..), Ticket (..), TicketId (..),
-                                   TicketInfo (..), TicketTag (..), TicketTags (..), User, UserId (..),
+                                   PageResultList (..), Ticket (..), TicketId (..), TicketInfo (..),
+                                   TicketTag (..), TicketTags (..), User, UserId (..),
                                    ZendeskAPIUrl (..), ZendeskLayer (..), ZendeskResponse (..),
                                    parseComments, parseTicket, renderTicketStatus, showURL)
 
 -- ./mitmproxy --mode reverse:https://iohk.zendesk.com -p 4001
-
--- | The default configuration.
-defaultConfig :: Config
-defaultConfig =
-    Config
-        { cfgAgentId            = 0
-        , cfgZendesk            = "https://iohk.zendesk.com"
-        , cfgToken              = ""
-        , cfgEmail              = "daedalus-bug-reports@iohk.io"
-        , cfgAssignTo           = 0
-        , cfgKnowledgebase      = []
-        , cfgNumOfLogsToAnalyze = 5
-        , cfgIsCommentPublic    = True -- TODO(ks): For now, we need this in CLI.
-        , cfgZendeskLayer       = basicZendeskLayer
-        , cfgIOLayer            = basicIOLayer
-        }
 
 -- | The basic Zendesk layer.
 -- The convention:
@@ -66,14 +48,6 @@ basicZendeskLayer = ZendeskLayer
     , zlGetAttachment           = getAttachment
     , zlGetTicketComments       = getTicketComments
     , zlExportTickets           = getExportedTickets
-    }
-
-basicIOLayer :: (MonadIO m, MonadReader Config m) => IOLayer m
-basicIOLayer = IOLayer
-    { iolAppendFile             = appendFile
-    , iolPrintText              = putTextLn
-    , iolReadFile               = \_ -> error "Not implemented readFile!"
-    -- ^ TODO(ks): We need to implement this!
     }
 
 -- | The non-implemented Zendesk layer.
