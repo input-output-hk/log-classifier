@@ -14,7 +14,7 @@ The purpose of this project is to analyze Cardano log file and provide a solutio
 - The classifier cannot find any unknown/unique issues.
 
 ## Installation and Configuration Instructions
-Please read the instructions available at [INSTALL.md](./install.md)
+Please read the instructions available in [INSTALL.md](INSTALL.md)
 
 ## How it works
 
