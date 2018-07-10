@@ -17,6 +17,7 @@ library
   hs-source-dirs:      src
   exposed-modules:     Classify
                        CLI
+                       Exceptions
                        Lib
                        LogAnalysis.Classifier
                        LogAnalysis.KnowledgeCSVParser

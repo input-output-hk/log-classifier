@@ -470,16 +470,7 @@ inspectAttachments ticketInfo attachments = runMaybeT $ do
     lastAttachment  <- MaybeT . pure $ lastAttach
     att             <- MaybeT $ getAttachment lastAttachment
 
-    catchAny (inspectAttachment config ticketInfo att)
-        (\_ ->
-            -- Exception handling, return response stating the log was corruptedqq
-            return $ ZendeskResponse
-                { zrTicketId    = (tiId ticketInfo)
-                , zrComment     = prettyFormatLogReadError ticketInfo
-                , zrTags        = TicketTags [renderTicketStatus CannotReadZipFile]
-                , zrIsPublic    = (cfgIsCommentPublic config)
-                }
-        )
+    pure $ inspectAttachment config ticketInfo att
 
 -- | Inspection of the local zip.
 -- This function prints out the analysis result on the console.
@@ -515,7 +506,7 @@ inspectLocalZipAttachment filePath = do
 
 -- | Given number of file of inspect, knowledgebase and attachment,
 -- analyze the logs and return the results.
-inspectAttachment :: (MonadCatch m) => Config -> TicketInfo -> AttachmentContent -> m ZendeskResponse
+inspectAttachment :: Config -> TicketInfo -> AttachmentContent -> ZendeskResponse
 inspectAttachment Config{..} ticketInfo@TicketInfo{..} attContent = do
 
     let rawLog      = getAttachmentContent attContent
@@ -524,7 +515,7 @@ inspectAttachment Config{..} ticketInfo@TicketInfo{..} attContent = do
 
     case results of
         Left _ ->
-            return $ ZendeskResponse
+            ZendeskResponse
                 { zrTicketId    = tiId
                 , zrComment     = prettyFormatLogReadError ticketInfo
                 , zrTags        = TicketTags [renderErrorCode SentLogCorrupted]
@@ -539,7 +530,7 @@ inspectAttachment Config{..} ticketInfo@TicketInfo{..} attContent = do
                     let errorCodes = extractErrorCodes analysisResult
                     let commentRes = prettyFormatAnalysis analysisResult ticketInfo
 
-                    return $ ZendeskResponse
+                    ZendeskResponse
                         { zrTicketId    = tiId
                         , zrComment     = commentRes
                         , zrTags        = TicketTags errorCodes
@@ -548,7 +539,7 @@ inspectAttachment Config{..} ticketInfo@TicketInfo{..} attContent = do
 
                 Left _ ->
 
-                    return $ ZendeskResponse
+                    ZendeskResponse
                         { zrTicketId    = tiId
                         , zrComment     = prettyFormatNoIssues ticketInfo
                         , zrTags        = TicketTags [renderTicketStatus NoKnownIssue]

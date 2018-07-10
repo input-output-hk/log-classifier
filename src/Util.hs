@@ -8,9 +8,10 @@ import           Universum
 import qualified Codec.Archive.Zip as Zip
 import qualified Data.Map.Strict as Map
 
+import Exceptions (ClassifierExceptions(..))
 -- | Extract log file from given zip file
 -- TODO(ks): What happens with the other files? We just ignore them?
-extractLogsFromZip :: Int -> LByteString -> Either Text [LByteString]
+extractLogsFromZip :: Int -> LByteString -> Either ClassifierExceptions [LByteString]
 extractLogsFromZip numberOfFiles file = do
     zipMap <- readZip file  -- Read File
     let extractedLogs = Map.elems $ mTake numberOfFiles zipMap  -- Extract selected logs
@@ -20,9 +21,9 @@ extractLogsFromZip numberOfFiles file = do
     mTake n = Map.fromDistinctAscList . take n . Map.toAscList
 
 -- | Read zipe file
-readZip :: LByteString -> Either Text (Map FilePath LByteString)
+readZip :: LByteString -> Either ClassifierExceptions (Map FilePath LByteString)
 readZip rawzip = case Zip.toArchiveOrFail rawzip of
-    Left err      -> Left (toText err)
+    Left err      -> Left $ ReadZipFileException (toText err)
     Right archive -> Right $ finishProcessing archive
   where
     finishProcessing :: Zip.Archive -> Map FilePath LByteString
