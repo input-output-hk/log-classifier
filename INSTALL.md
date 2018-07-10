@@ -23,6 +23,8 @@ Congratulations, you have downloaded log-classifier.
 You will need the following:
   - Numeric ID of the user assigned tickets you want to analyze ($ASSIGNED_TO)
   - API Token ($API_TOKEN)
+
+An API can be generated for you by an admin. The admin can follow [these instructions](https://support.zendesk.com/hc/en-us/articles/226022787-Generating-a-new-API-token-).2
   
 ```
 $ cd /home/$USER/log-classifier
@@ -36,5 +38,5 @@ NOTE: The -n is important, without it echo will append a newline char and it wil
 
 Congratulations, you have configured log-classifier.
 
-The simulated terminal below shows the installation process.
+The above instructions are reflected in the simulated terminal below.
 [![asciicast](https://asciinema.org/a/q3uqFawXqfrSm9gh4nzWueZJ2.png)](https://asciinema.org/a/q3uqFawXqfrSm9gh4nzWueZJ2)
