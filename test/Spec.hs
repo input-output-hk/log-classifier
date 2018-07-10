@@ -322,7 +322,7 @@ validShowURLSpec =
             property $ \timestamp ->
                 let typedURL    = showURL $ ExportDataByTimestamp timestamp
                     untypedURL  = "https://iohk.zendesk.com/api/v2/incremental/tickets.json?start_time="
-                        <> (show . floor . toRational $ getExportFromTime timestamp)
+                        <> (show @_ @Integer . floor . toRational $ getExportFromTime timestamp)
                 in  typedURL == untypedURL
 
 

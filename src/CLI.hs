@@ -5,21 +5,22 @@ module CLI
 
 import           Universum
 
-import           Options.Applicative (Parser, ParserInfo, argument, auto, command, execParser, fullDesc, header,
-                                      help, helper, hsubparser, info, infoOption, long, metavar,
-                                      progDesc, (<**>))
+import           Options.Applicative (Parser, ParserInfo, argument, auto, command, execParser,
+                                      fullDesc, header, help, helper, hsubparser, info, infoOption,
+                                      long, metavar, progDesc, strOption, (<**>))
 import           Paths_log_classifier (version)
 
 -- | TODO(ks): Ideally we should drop this and
 -- use direct function calls.
 data CLI
-    = CollectEmails     -- ^ Collect email addresses
-    | FetchAgents       -- ^ List agents
-    | FetchTickets      -- ^ Fetch all the tickets in Zendesk
-    | ProcessTicket Int -- ^ Process ticket of an given ticket id
-    | ProcessTickets    -- ^ Process all the tickets in Zendesk
-    | ShowStatistics    -- ^ Show statistics
-    | ExportData        -- ^ Export data. TODO(ks): From N days before!
+    = CollectEmails             -- ^ Collect email addresses
+    | FetchAgents               -- ^ List agents
+    | FetchTickets              -- ^ Fetch all the tickets in Zendesk
+    | ProcessTicket Int         -- ^ Process ticket of an given ticket id
+    | ProcessTickets            -- ^ Process all the tickets in Zendesk
+    | ShowStatistics            -- ^ Show statistics
+    | InspectLocalZip FilePath  -- ^ Inspect local file
+    | ExportData                -- ^ Export data. TODO(ks): From N days before!
     deriving (Show)
 
 -- | Parser for ProcessTicket
@@ -44,8 +45,18 @@ cli = hsubparser $ mconcat
     , command "show-stats" (info (pure ShowStatistics)
         (progDesc "Print list of ticket Ids that agent has been assigned"))
     , command "export-data" (info (pure ExportData)
-        (progDesc "Print list of ticket Ids that agent has been assigned"))
+        (progDesc "Export the data from the Zendesk API to the local database"))
+    , command "inspect-local-zip" (info cmdInspectLocalZip
+        (progDesc "Inspect a local zip with logs, no need to connect to Zendesk API."))
     ]
+  where
+    cmdInspectLocalZip :: Parser CLI
+    cmdInspectLocalZip =
+        InspectLocalZip <$> strOption (long "file-path"
+            <> metavar "FILE_PATH"
+            <> help "Path to local zip file for analysis")
+
+
 
 -- | Get CLI arguments from command line
 getCliArgs :: IO CLI

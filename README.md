@@ -121,3 +121,15 @@ In this case, one can run the command below.
 This will collect all the email addresses with the ticket where the assignee and the requester is report server and write them on a file `emailAddress.txt`. Agent then can later use the text file to send batch emails to the end user.
 
 *Note that this issue has been fixed (meaning all the ticket has appropriate requester assigned to it therefore the agent does not need to create a new ticket to contact with the end user.) so this command is deprecated.
+
+
+### Run the application locally
+
+The command should be run as follows:
+
+```terminal
+./log-classifier-exe inspect-local-zip --file-path="/home/ksaric/Downloads/Windows-Logs.zip"
+```
+
+This will return the error if the error is encountered or else the report from the analysis.
+

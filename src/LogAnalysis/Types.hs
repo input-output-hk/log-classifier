@@ -10,6 +10,7 @@ module LogAnalysis.Types
        ) where
 
 import           Universum
+import           Prelude (Show (..))
 
 import qualified Data.Map.Strict as Map
 
@@ -44,7 +45,16 @@ data Knowledge = Knowledge
     -- ^ Text describing how to solve the issue
     ,  kFAQNumber :: !Text
     -- ^ The FAQ number that will be displayed on the official Cardano FAQ page
-    } deriving (Show)
+    }
+
+instance Show Knowledge where
+    show Knowledge{..} =
+        "{  errorText  = " <> Prelude.show kErrorText   <>
+        ",  errorCode  = " <> Prelude.show kErrorCode   <>
+        ",  problem    = " <> Prelude.show kProblem     <>
+        ",  solution   = " <> Prelude.show kSolution    <>
+        ",  FAQNumber  = " <> Prelude.show kFAQNumber   <>
+        "}"
 
 -- | Sorted accoring to knowledgebase.
 renderErrorCode :: ErrorCode -> Text
