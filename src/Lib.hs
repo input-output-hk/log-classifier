@@ -255,7 +255,8 @@ processTicket tId = do
 
     zendeskResponse     <- getZendeskResponses comments attachments ticketInfo
 
-    whenJust zendeskResponse $ \response -> do
+    -- What should we do if the zendeskResponse was Nothing?
+    whenJust zendeskResponse $ \response -> 
         postTicketComment ticketInfo response
 
     pure zendeskResponse
@@ -473,7 +474,7 @@ inspectAttachments ticketInfo attachments = runMaybeT $ do
     att             <- MaybeT $ getAttachment lastAttachment
     let rawLog = getAttachmentContent att
 
-    -- Decompression of zip file may fail
+    -- Decompression of zip file may fail or files maybe corrupted
     eLogFiles    <- try $ extractLogsFromZip (cfgNumOfLogsToAnalyze config) rawLog
     case eLogFiles of
         Right logFiles -> pure $ inspectAttachment config ticketInfo logFiles
@@ -487,7 +488,7 @@ inspectAttachments ticketInfo attachments = runMaybeT $ do
                 }
           where
             renderErrorTag :: ClassifierExceptions -> TicketTags
-            renderErrorTag ReadZipFileException = TicketTags [renderErrorCode SentLogCorrupted]
+            renderErrorTag ReadZipFileException   = TicketTags [renderErrorCode SentLogCorrupted]
             renderErrorTag DecompressionException = TicketTags [renderErrorCode DecompressionFailure]
 
 -- | Inspection of the local zip.
