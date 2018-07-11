@@ -21,6 +21,7 @@ import           Data.List (nub)
 import           Data.Text (isInfixOf, stripEnd)
 import           Data.Time (UTCTime (..), Day, fromGregorianValid)
 import           Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
+import qualified Data.ByteString.Lazy as BS
 
 import           CLI (CLI (..), getCliArgs)
 import           DataSource (App, Attachment (..), AttachmentContent (..), Comment (..),
@@ -77,6 +78,7 @@ runZendeskMain = do
         (ProcessTicket ticketId) -> void $ runApp (processTicket (TicketId ticketId)) cfg
         ProcessTickets           -> void $ runApp processTickets cfg
         ShowStatistics           -> void $ runApp (fetchTickets >>= showStatistics) cfg
+        InspectLocalZip filePath -> runApp (inspectLocalZipAttachment filePath) cfg
         ExportData               -> void $ runApp (exportZendeskDataToLocalDB exportFromTime) cfg
           where
             -- | The day we want the export from.
@@ -356,6 +358,37 @@ inspectAttachments ticketInfo attachments = runMaybeT $ do
 
     pure $ inspectAttachment config ticketInfo att
 
+-- | Inspection of the local zip.
+-- This function prints out the analysis result on the console.
+inspectLocalZipAttachment :: FilePath -> App ()
+inspectLocalZipAttachment filePath = do
+
+    config          <- ask
+    printText       <- asksIOLayer iolPrintText
+
+    -- Read the zip file
+    fileContent     <- liftIO $ BS.readFile filePath
+    let results     = extractLogsFromZip 100 fileContent
+
+    case results of
+        Left err -> do
+            printText err
+        Right result -> do
+            let analysisEnv             = setupAnalysis $ cfgKnowledgebase config
+            let eitherAnalysisResult    = extractIssuesFromLogs result analysisEnv
+
+            case eitherAnalysisResult of
+                Right analysisResult -> do
+                    let errorCodes = extractErrorCodes analysisResult
+
+                    printText "Analysis result:"
+                    void $ mapM (printText . show) analysisResult
+
+                    printText "Error codes:"
+                    void $ mapM printText errorCodes
+
+                Left e -> do
+                    printText e
 
 -- | Given number of file of inspect, knowledgebase and attachment,
 -- analyze the logs and return the results.
