@@ -37,6 +37,8 @@ import           DataSource (App, Attachment (..), AttachmentContent (..), Comme
                              asksIOLayer, asksZendeskLayer, assignToPath, connPoolDBLayer,
                              createProdConnectionPool, defaultConfig, knowledgebasePath,
                              renderTicketStatus, runApp, tokenPath)
+
+import           Exceptions (ClassifierExceptions(..))
 import           LogAnalysis.Classifier (extractErrorCodes, extractIssuesFromLogs,
                                          prettyFormatAnalysis, prettyFormatLogReadError,
                                          prettyFormatNoIssues, prettyFormatNoLogs)
@@ -469,8 +471,24 @@ inspectAttachments ticketInfo attachments = runMaybeT $ do
 
     lastAttachment  <- MaybeT . pure $ lastAttach
     att             <- MaybeT $ getAttachment lastAttachment
+    let rawLog = getAttachmentContent att
 
-    pure $ inspectAttachment config ticketInfo att
+    -- Decompression of zip file may fail
+    eLogFiles    <- try $ extractLogsFromZip (cfgNumOfLogsToAnalyze config) rawLog
+    case eLogFiles of
+        Right logFiles -> pure $ inspectAttachment config ticketInfo logFiles
+        Left (e :: ClassifierExceptions) -> do
+            let ticketTag = renderErrorTag e
+            pure $ ZendeskResponse
+                { zrTicketId    = tiId ticketInfo
+                , zrComment     = prettyFormatLogReadError ticketInfo
+                , zrTags        = ticketTag
+                , zrIsPublic    = cfgIsCommentPublic config
+                }
+          where
+            renderErrorTag :: ClassifierExceptions -> TicketTags
+            renderErrorTag ReadZipFileException = TicketTags [renderErrorCode SentLogCorrupted]
+            renderErrorTag DecompressionException = TicketTags [renderErrorCode DecompressionFailure]
 
 -- | Inspection of the local zip.
 -- This function prints out the analysis result on the console.
@@ -482,11 +500,11 @@ inspectLocalZipAttachment filePath = do
 
     -- Read the zip file
     fileContent     <- liftIO $ BS.readFile filePath
-    let results     = extractLogsFromZip 100 fileContent
+    eResults        <- try $ extractLogsFromZip 100 fileContent
 
-    case results of
-        Left err -> do
-            printText err
+    case eResults of
+        Left (err :: ClassifierExceptions) -> do
+            printText $ show err
         Right result -> do
             let analysisEnv             = setupAnalysis $ cfgKnowledgebase config
             let eitherAnalysisResult    = extractIssuesFromLogs result analysisEnv
@@ -506,45 +524,32 @@ inspectLocalZipAttachment filePath = do
 
 -- | Given number of file of inspect, knowledgebase and attachment,
 -- analyze the logs and return the results.
-inspectAttachment :: Config -> TicketInfo -> AttachmentContent -> ZendeskResponse
-inspectAttachment Config{..} ticketInfo@TicketInfo{..} attContent = do
+inspectAttachment :: Config -> TicketInfo -> [LByteString]-> ZendeskResponse
+inspectAttachment Config{..} ticketInfo@TicketInfo{..} logFiles = do
 
-    let rawLog      = getAttachmentContent attContent
-    -- What do we want to do when decompression fails?
-    let results     = extractLogsFromZip cfgNumOfLogsToAnalyze rawLog
+    let analysisEnv             = setupAnalysis cfgKnowledgebase
+    let eitherAnalysisResult    = extractIssuesFromLogs logFiles analysisEnv
 
-    case results of
-        Left _ ->
+    case eitherAnalysisResult of
+        Right analysisResult -> do
+            let errorCodes = extractErrorCodes analysisResult
+            let commentRes = prettyFormatAnalysis analysisResult ticketInfo
+
             ZendeskResponse
                 { zrTicketId    = tiId
-                , zrComment     = prettyFormatLogReadError ticketInfo
-                , zrTags        = TicketTags [renderErrorCode SentLogCorrupted]
+                , zrComment     = commentRes
+                , zrTags        = TicketTags errorCodes
                 , zrIsPublic    = cfgIsCommentPublic
                 }
-        Right result -> do
-            let analysisEnv             = setupAnalysis cfgKnowledgebase
-            let eitherAnalysisResult    = extractIssuesFromLogs result analysisEnv
 
-            case eitherAnalysisResult of
-                Right analysisResult -> do
-                    let errorCodes = extractErrorCodes analysisResult
-                    let commentRes = prettyFormatAnalysis analysisResult ticketInfo
+        Left _ ->
 
-                    ZendeskResponse
-                        { zrTicketId    = tiId
-                        , zrComment     = commentRes
-                        , zrTags        = TicketTags errorCodes
-                        , zrIsPublic    = cfgIsCommentPublic
-                        }
-
-                Left _ ->
-
-                    ZendeskResponse
-                        { zrTicketId    = tiId
-                        , zrComment     = prettyFormatNoIssues ticketInfo
-                        , zrTags        = TicketTags [renderTicketStatus NoKnownIssue]
-                        , zrIsPublic    = cfgIsCommentPublic
-                        }
+            ZendeskResponse
+                { zrTicketId    = tiId
+                , zrComment     = prettyFormatNoIssues ticketInfo
+                , zrTags        = TicketTags [renderTicketStatus NoKnownIssue]
+                , zrIsPublic    = cfgIsCommentPublic
+                }
 
 responseNoLogs :: TicketInfo -> App ZendeskResponse
 responseNoLogs TicketInfo{..} = do

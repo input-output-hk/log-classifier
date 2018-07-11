@@ -48,6 +48,7 @@ library
                      , optparse-applicative
                      , reflection
                      , regex-tdfa
+                     , safe-exceptions
                      , text
                      , time
                      , universum
