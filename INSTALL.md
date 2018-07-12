@@ -1,8 +1,6 @@
 # log-classifier Build Instructions
 
 ---
-
-
 ## Prerequisites
 - [Stack](https://github.com/commercialhaskell/stack/blob/master/doc/install_and_upgrade.md)
 
@@ -10,6 +8,10 @@
 
 ## Optional
 - [Nix](https://nixos.org/nix/download.html)
+
+```
+NOTE: Windows installation is identical with the exception that the path is in Windows format.
+```
 
 ## Download log-classifier
 
