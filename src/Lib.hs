@@ -102,7 +102,7 @@ exportZendeskDataToLocalDB exportFromTime = do
     -- The max requests are 400 per minute, so we wait a minute!
     ticketData <- forM chunkedExportedTickets $ \chunkedTickets -> do
         -- Wait a minute!
-        --threadDelay $ 61 * 1000000
+        threadDelay $ 61 * 1000000
         -- Concurrently we fetch the ticket data. If a single
         -- call fails, they all fail. When they all finish, they return the
         -- result.
