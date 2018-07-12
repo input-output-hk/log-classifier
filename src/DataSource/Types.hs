@@ -54,6 +54,8 @@ module DataSource.Types
 
 import           Universum
 
+import           UnliftIO (MonadUnliftIO)
+
 import           Data.Aeson (FromJSON, ToJSON, Value (Object), object, parseJSON, toJSON,
                              withObject, (.:), (.:?), (.=))
 import           Data.Aeson.Types (Parser)
@@ -77,6 +79,7 @@ newtype App a = App { runAppBase :: ReaderT Config IO a }
              , MonadReader Config
              , MonadIO
              , MonadBase IO
+             , MonadUnliftIO
              )
 
 instance MonadBaseControl IO App where

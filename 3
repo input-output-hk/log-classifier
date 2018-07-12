@@ -17,7 +17,7 @@ module Lib
 import           Universum
 
 import           UnliftIO.Async (mapConcurrently)
-import           UnliftIO.Concurrent (threadDelay)
+import           UnliftIO.Concurrent (threadDelay, withMVarMasked)
 
 import           Data.Attoparsec.Text.Lazy (eitherResult, parse)
 import           Data.List (nub)
@@ -78,10 +78,10 @@ runZendeskMain = do
         CollectEmails                   -> runApp collectEmails cfg
         FetchAgents                     -> void $ runApp fetchAgents cfg
         FetchTickets                    -> runApp fetchAndShowTickets cfg
-        FetchTicketsFromTime fromTime   -> runApp (fetchAndShowTicketsFrom fromTime) cfg
         (ProcessTicket ticketId)        -> void $ runApp (processTicket (TicketId ticketId)) cfg
         ProcessTickets                  -> void $ runApp processTickets cfg
         ProcessTicketsFromTime fromTime -> runApp (processTicketsFromTime fromTime) cfg
+
         ShowStatistics                  -> void $ runApp (fetchTickets >>= showStatistics) cfg
         InspectLocalZip filePath        -> runApp (inspectLocalZipAttachment filePath) cfg
         ExportData fromTime             -> void $ runApp (exportZendeskDataToLocalDB fromTime) cfg
@@ -94,15 +94,26 @@ exportZendeskDataToLocalDB exportFromTime = do
 
     deleteAllData               <- asksDBLayer dlDeleteAllData
 
-    notDeletedExportedTickets   <- fetchTicketsExportedFromTime exportFromTime
+    listDeletedTickets          <- asksZendeskLayer zlListDeletedTickets
+    exportTickets               <- asksZendeskLayer zlExportTickets
+
+    -- Yeah, not sure why this happens. Very weird.
+    exportedTickets             <- nub <$> exportTickets exportFromTime
+
+    -- Yeah, there is a strange behaviour when we export tickets,
+    -- we might get deleted tickets as well.
+    deletedTickets              <- listDeletedTickets
+
+    let notDeletedExportedTickets =
+            sort $ filter (not . isDeletedTicket deletedTickets) exportedTickets
 
     -- We want to call in parallel 400 HTTP requests to fetch the data.
     let chunkedExportedTickets = chunks 400 notDeletedExportedTickets
 
     -- The max requests are 400 per minute, so we wait a minute!
-    ticketData <- forM chunkedExportedTickets $ \chunkedTickets -> do
+    ticketData  <- forM chunkedExportedTickets $ \chunkedTickets -> do
         -- Wait a minute!
-        --threadDelay $ 61 * 1000000
+        threadDelay $ 61 * 1000000
         -- Concurrently we fetch the ticket data. If a single
         -- call fails, they all fail. When they all finish, they return the
         -- result.
@@ -120,40 +131,11 @@ exportZendeskDataToLocalDB exportFromTime = do
     -- would take a ton of time and would require probably up to 100Gb of space!
     pure notDeletedExportedTickets
   where
-    -- | Get ticket comments and create a sum type out of them.
-    fetchTicketData :: TicketInfo -> App (TicketInfo,[Comment])
-    fetchTicketData ticket = do
-
-        getTicketComments           <- asksZendeskLayer zlGetTicketComments
-
-        -- First fetch comments, FAIL-FAST
-        ticketComments              <- getTicketComments $ tiId ticket
-
-        pure (ticket, ticketComments)
-
--- | Fetch all tickets changed from a specific date.
-fetchTicketsExportedFromTime :: ExportFromTime -> App [TicketInfo]
-fetchTicketsExportedFromTime exportFromTime = do
-
-    listDeletedTickets          <- asksZendeskLayer zlListDeletedTickets
-    exportTickets               <- asksZendeskLayer zlExportTickets
-
-    -- Yeah, not sure why this happens. Very weird.
-    exportedTickets             <- nub <$> exportTickets exportFromTime
-
-    let filteredTicketIds = filterAnalyzedTickets exportedTickets
-    let sortedTicketIds   = sortBy compare filteredTicketIds
-
-    -- Yeah, there is a strange behaviour when we export tickets,
-    -- we might get deleted tickets as well.
-    deletedTickets              <- listDeletedTickets
-
-    pure . sort $ filter (not . isDeletedTicket deletedTickets) sortedTicketIds
-  where
     -- | Filter for deleted tickets.
     isDeletedTicket :: [DeletedTicket] -> TicketInfo -> Bool
     isDeletedTicket dTickets TicketInfo{..} =
         tiId `elem` map dtId dTickets
+
 
 -- | So we don't have to include another library here.
 chunks :: Int -> [a] -> [[a]]
@@ -161,6 +143,17 @@ chunks _ [] = []
 chunks n xs =
     let (ys, zs) = splitAt n xs
     in  ys : chunks n zs
+
+-- | Get ticket comments and create a sum type out of them.
+fetchTicketData :: TicketInfo -> App (TicketInfo,[Comment])
+fetchTicketData ticket = do
+
+    getTicketComments           <- asksZendeskLayer zlGetTicketComments
+
+    -- First fetch comments, FAIL-FAST
+    ticketComments              <- getTicketComments $ tiId ticket
+
+    pure (ticket, ticketComments)
 
 -- | We are missing an intermediate step here to test and separate.
 saveTicketDataToLocalDB :: (TicketInfo,[Comment]) -> App ()
@@ -213,14 +206,23 @@ fetchAgents = do
     mapM_ print agents
     pure agents
 
--- | When we want to process a specific ticket.
 processTicket :: TicketId -> App (Maybe ZendeskResponse)
 processTicket tId = do
+
+    appendLock          <- newEmptyMVar
+
+    -- We first fetch the function from the configuration
+    printText           <- asksIOLayer iolPrintText
+    appendF             <- asksIOLayer iolAppendFile -- We need to remove this.
 
     -- We see 3 HTTP calls here.
     getTicketInfo       <- asksZendeskLayer zlGetTicketInfo
     getTicketComments   <- asksZendeskLayer zlGetTicketComments
     postTicketComment   <- asksZendeskLayer zlPostTicketComment
+
+    -- Printing id before inspecting the ticket so that when the process stops by the
+    -- corrupted log file, we know which id to blacklist.
+    --printText $ "Analyzing ticket id: " <> show (getTicketId tId)
 
     mTicketInfo         <- getTicketInfo tId
     comments            <- getTicketComments tId
@@ -232,20 +234,28 @@ processTicket tId = do
 
     whenJust zendeskResponse $ \response -> do
         postTicketComment ticketInfo response
+        let tags = getTicketTags $ zrTags response
+        forM_ tags $ \tag -> do
+            let formattedTicketIdAndTag = show (getTicketId tId) <> " " <> tag
+
+            -- TODO(ks): This is temporary, no need for this function to know about this.
+            withMVarMasked appendLock $ \lock -> do
+                printText formattedTicketIdAndTag
+                appendF "logs/analysis-result.log" (formattedTicketIdAndTag <> "\n")
+                -- Unlock
+                putMVar appendLock lock
 
     pure zendeskResponse
 
--- | When we want to process all tickets from a specific time onwards.
--- Run in parallel.
-processTicketsFromTime :: ExportFromTime -> App ()
-processTicketsFromTime exportFromTime = do
+processTickets :: App ()
+processTickets = do
 
-    allTickets          <- fetchTicketsExportedFromTime exportFromTime
-
+    allTickets          <- fetchTickets
+    -- We want to call in parallel 400 HTTP requests to fetch the data. 3 calls are required.
     let chunkedTickets = chunks 100 allTickets
 
     -- The max requests are 400 per minute, so we wait a minute!
-    mZendeskResponses <- forM chunkedTickets $ \chunkedTickets' -> do
+    _  <- forM chunkedTickets $ \chunkedTickets' -> do
         -- Wait a minute!
         threadDelay $ 61 * 1000000
         -- Concurrently we fetch the ticket data. If a single
@@ -253,43 +263,8 @@ processTicketsFromTime exportFromTime = do
         -- result.
         mapConcurrently (processTicket . tiId) chunkedTickets'
 
-    -- This is single-threaded.
-    mapM_ processSingleTicket $ concat mZendeskResponses
-
-    putTextLn "All the tickets has been processed."
-  where
-    -- | Process a single ticket after they were analyzed.
-    processSingleTicket :: Maybe ZendeskResponse -> App ()
-    processSingleTicket zendeskResponse = do
-
-        -- We first fetch the function from the configuration
-        printText           <- asksIOLayer iolPrintText
-        appendF             <- asksIOLayer iolAppendFile -- We need to remove this.
-
-        whenJust zendeskResponse $ \response -> do
-            let ticketId = getTicketId $ zrTicketId response
-
-            -- Printing id before inspecting the ticket so that when the process stops by the
-            -- corrupted log file, we know which id to blacklist.
-            printText $ "Analyzing ticket id: " <> show ticketId
-
-            let tags = getTicketTags $ zrTags response
-            forM_ tags $ \tag -> do
-                let formattedTicketIdAndTag = show ticketId <> " " <> tag
-                printText formattedTicketIdAndTag
-                appendF "logs/analysis-result.log" (formattedTicketIdAndTag <> "\n")
-
-
--- | When we want to process all possible tickets.
-processTickets :: App ()
-processTickets = do
-
-    allTickets          <- fetchTickets
-    _                   <- mapM (processTicket . tiId) allTickets
-
     putTextLn "All the tickets has been processed."
 
--- | Fetch all tickets.
 fetchTickets :: App [TicketInfo]
 fetchTickets = do
     sortedTicketIds             <- listAndSortTickets
@@ -306,31 +281,13 @@ fetchAndShowTickets = do
     let chunkedTickets = chunks 100 allTickets
 
     -- The max requests are 400 per minute, so we wait a minute!
-    output <- forM chunkedTickets $ \chunkedTickets' -> do
+    _  <- forM chunkedTickets $ \chunkedTickets' -> do
+        -- Wait a minute!
+        threadDelay $ 61 * 1000000
         -- Concurrently we fetch the ticket data. If a single
         -- call fails, they all fail. When they all finish, they return the
         -- result.
-        mapConcurrently (pure . show @Text) chunkedTickets'
-
-    mapM_ putTextLn (concat output)
-
-    putTextLn "All the tickets has been processed."
-
--- | Fetch and show tickets from a specific time.
-fetchAndShowTicketsFrom :: ExportFromTime -> App ()
-fetchAndShowTicketsFrom exportFromTime = do
-    allTickets <- fetchTicketsExportedFromTime exportFromTime
-
-    let chunkedTickets = chunks 100 allTickets
-
-    -- The max requests are 400 per minute, so we wait a minute!
-    output <- forM chunkedTickets $ \chunkedTickets' -> do
-        -- Concurrently we fetch the ticket data. If a single
-        -- call fails, they all fail. When they all finish, they return the
-        -- result.
-        mapConcurrently (pure . show . tiId) chunkedTickets'
-
-    mapM_ putTextLn (concat output)
+        mapConcurrently (putTextLn . show) chunkedTickets'
 
     putTextLn "All the tickets has been processed."
 
