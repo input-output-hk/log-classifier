@@ -1,4 +1,4 @@
-# log-classifier Build Instructions
+# log-classifier Configuration & Build Instructions
 
 ---
 ## Prerequisites
