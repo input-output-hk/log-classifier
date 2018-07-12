@@ -49,7 +49,7 @@ packages:
 # extra-package-dbs: [ ]
 
 nix:
-#  enable: true
+  enable: true
   shell-file: shell.nix
 
 # Control whether we use the GHC we find on the path
