@@ -43,5 +43,4 @@ NOTE: The -n is important, without it echo will append a newline char and it wil
 Congratulations, you have configured log-classifier.
 
 The above instructions are reflected in the simulated terminal below.
-[![Terminal Example](./log-classifier.svg)
-<img src="./log-classifier.svg">
+![Terminal Example](./log-classifier.svg)
