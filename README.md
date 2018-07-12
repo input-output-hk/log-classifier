@@ -4,6 +4,9 @@ Original version by Hiroto Shioi (https://github.com/HirotoShioi).
 
 The purpose of this project is to analyze Cardano log file and provide a solution to the end user while collecting statistics so Cardano developers can prioritize the issues.
 
+## Installation and Configuration Instructions
+Please read the instructions available in [INSTALL.md](INSTALL.md)
+
 ## What it is
 
 ![log-classifier](https://user-images.githubusercontent.com/6264437/40305397-b5f182f8-5cfa-11e8-822e-c0c74d3dbce0.png)
@@ -12,9 +15,6 @@ The purpose of this project is to analyze Cardano log file and provide a solutio
 - Currently, identifying the issue manually takes a decent amount of time and knowledge. Using classifier, the agent will be able to automate the identification of the issue without having to know all the known issues.
 - This is a Haskell program so the agent will need [stack](https://docs.haskellstack.org/en/stable/README/) and [Nix](https://nixos.org/) in order to use the classifier. Instruction on how to use it will be documented on different file.
 - The classifier cannot find any unknown/unique issues.
-
-## Installation and Configuration Instructions
-Please read the instructions available in [INSTALL.md](INSTALL.md)
 
 ## How it works
 
