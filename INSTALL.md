@@ -41,3 +41,6 @@ $ echo -n $ASSIGNED_TO > assign_to
 ```
 
 NOTE: The -n is important, without it echo will append a newline char and it will not work.
+
+The above instructions are reflected in the simulated terminal below.
+![Terminal Example](./log-classifier.svg)
