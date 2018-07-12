@@ -5,6 +5,10 @@
 
 ## Prerequisites
 - [Stack](https://github.com/commercialhaskell/stack/blob/master/doc/install_and_upgrade.md)
+
+---
+
+## Optional
 - [Nix](https://nixos.org/nix/download.html)
 
 ## Download log-classifier
@@ -39,4 +43,5 @@ NOTE: The -n is important, without it echo will append a newline char and it wil
 Congratulations, you have configured log-classifier.
 
 The above instructions are reflected in the simulated terminal below.
-[![asciicast](https://asciinema.org/a/q3uqFawXqfrSm9gh4nzWueZJ2.png)](https://asciinema.org/a/q3uqFawXqfrSm9gh4nzWueZJ2)
+[![Terminal Example](./log-classifier.svg)
+<img src="./log-classifier.svg">
