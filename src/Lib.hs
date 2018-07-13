@@ -38,7 +38,7 @@ import           DataSource (App, Attachment (..), AttachmentContent (..), Comme
                              createProdConnectionPool, defaultConfig, knowledgebasePath,
                              renderTicketStatus, runApp, tokenPath)
 
-import           Exceptions (ClassifierExceptions(..))
+import           Exceptions (TicketInfoExceptions(..), ZipFileExceptions(..))
 import           LogAnalysis.Classifier (extractErrorCodes, extractIssuesFromLogs,
                                          prettyFormatAnalysis, prettyFormatLogReadError,
                                          prettyFormatNoIssues, prettyFormatNoLogs)
@@ -82,7 +82,7 @@ runZendeskMain = do
         FetchAgents                     -> void $ runApp fetchAgents cfg
         FetchTickets                    -> runApp fetchAndShowTickets cfg
         FetchTicketsFromTime fromTime   -> runApp (fetchAndShowTicketsFrom fromTime) cfg
-        (ProcessTicket ticketId)        -> void $ runApp (processTicket (TicketId ticketId)) cfg
+        (ProcessTicket ticketId)        -> void $ runApp (processTicket' (TicketId ticketId)) cfg
         ProcessTickets                  -> void $ runApp processTickets cfg
         ProcessTicketsFromTime fromTime -> runApp (processTicketsFromTime fromTime) cfg
         ShowStatistics                  -> void $ runApp (fetchTickets >>= showStatistics) cfg
@@ -238,8 +238,17 @@ fetchAgents = do
     mapM_ print agents
     pure agents
 
--- | When we want to process a specific ticket.
-processTicket :: TicketId -> App (Maybe ZendeskResponse)
+-- What should the name of this function?
+processTicket' :: TicketId -> App ()
+processTicket' tId = catch (void $ processTicket tId)
+    -- Print and log any ticket info related exceptions
+    (\(e :: TicketInfoExceptions) -> do
+        printText <- asksIOLayer iolPrintText
+        printText $ show e
+        appendF <- asksIOLayer iolAppendFile
+        appendF "./logs/errors.log" (show e <> "\n"))
+
+processTicket :: TicketId -> App ZendeskResponse
 processTicket tId = do
 
     -- We see 3 HTTP calls here.
@@ -251,15 +260,14 @@ processTicket tId = do
     comments            <- getTicketComments tId
 
     let attachments     = getAttachmentsFromComment comments
-    let ticketInfo      = fromMaybe (error "No ticket info") mTicketInfo
+    case mTicketInfo of
+        Nothing -> throwM $ TicketInfoNotFound tId
+        Just ticketInfo -> do
+            zendeskResponse     <- getZendeskResponses comments attachments ticketInfo
+   
+            postTicketComment ticketInfo zendeskResponse
 
-    zendeskResponse     <- getZendeskResponses comments attachments ticketInfo
-
-    -- What should we do if the zendeskResponse was Nothing?
-    whenJust zendeskResponse $ \response -> 
-        postTicketComment ticketInfo response
-
-    pure zendeskResponse
+            pure zendeskResponse
 
 -- | When we want to process all tickets from a specific time onwards.
 -- Run in parallel.
@@ -285,25 +293,24 @@ processTicketsFromTime exportFromTime = do
     putTextLn "All the tickets has been processed."
   where
     -- | Process a single ticket after they were analyzed.
-    processSingleTicket :: Maybe ZendeskResponse -> App ()
+    processSingleTicket :: ZendeskResponse -> App ()
     processSingleTicket zendeskResponse = do
 
         -- We first fetch the function from the configuration
         printText           <- asksIOLayer iolPrintText
         appendF             <- asksIOLayer iolAppendFile -- We need to remove this.
 
-        whenJust zendeskResponse $ \response -> do
-            let ticketId = getTicketId $ zrTicketId response
+        let ticketId = getTicketId $ zrTicketId zendeskResponse
 
-            -- Printing id before inspecting the ticket so that when the process stops by the
-            -- corrupted log file, we know which id to blacklist.
-            printText $ "Analyzing ticket id: " <> show ticketId
+        -- Printing id before inspecting the ticket so that when the process stops by the
+        -- corrupted log file, we know which id to blacklist.
+        printText $ "Analyzing ticket id: " <> show ticketId
 
-            let tags = getTicketTags $ zrTags response
-            forM_ tags $ \tag -> do
-                let formattedTicketIdAndTag = show ticketId <> " " <> tag
-                printText formattedTicketIdAndTag
-                appendF "logs/analysis-result.log" (formattedTicketIdAndTag <> "\n")
+        let tags = getTicketTags $ zrTags zendeskResponse
+        forM_ tags $ \tag -> do
+            let formattedTicketIdAndTag = show ticketId <> " " <> tag
+            printText formattedTicketIdAndTag
+            appendF "logs/analysis-result.log" (formattedTicketIdAndTag <> "\n")
 
 
 -- | When we want to process all possible tickets.
@@ -311,7 +318,7 @@ processTickets :: App ()
 processTickets = do
 
     allTickets          <- fetchTickets
-    _                   <- mapM (processTicket . tiId) allTickets
+    _                   <- mapM (processTicket' . tiId) allTickets
 
     putTextLn "All the tickets has been processed."
 
@@ -452,44 +459,51 @@ getAttachmentsFromComment comments = do
 
 -- | Get zendesk responses
 -- | Returns with maybe because it could return no response
-getZendeskResponses :: [Comment] -> [Attachment] -> TicketInfo -> App (Maybe ZendeskResponse)
+getZendeskResponses :: [Comment] -> [Attachment] -> TicketInfo -> App ZendeskResponse
 getZendeskResponses comments attachments ticketInfo
     | not (null attachments) = inspectAttachments ticketInfo attachments
-    | not (null comments)    = Just <$> responseNoLogs ticketInfo
-    | otherwise              = return Nothing
+    | not (null comments)    = responseNoLogs ticketInfo
+    | otherwise              = throwM $ InvalidTicketInfoException (tiId ticketInfo)
+    -- No attachment, no comments means something is wrong with ticket itself
 
 -- | Inspect only the latest attachment. We could propagate this
 -- @Maybe@ upwards or use an @Either@ which will go hand in hand
 -- with the idea that we need to improve our exception handling.
-inspectAttachments :: TicketInfo -> [Attachment] -> App (Maybe ZendeskResponse)
-inspectAttachments ticketInfo attachments = runMaybeT $ do
+inspectAttachments :: TicketInfo -> [Attachment] -> App ZendeskResponse
+inspectAttachments ticketInfo attachments = do
 
     config          <- ask
     getAttachment   <- asksZendeskLayer zlGetAttachment
 
-    let lastAttach :: Maybe Attachment
-        lastAttach = safeHead . reverse . sort $ attachments
+    mAtt <- runMaybeT $ do
+        let lastAttach :: Maybe Attachment
+            lastAttach = safeHead . reverse . sort $ attachments
 
-    lastAttachment  <- MaybeT . pure $ lastAttach
-    att             <- MaybeT $ getAttachment lastAttachment
-    let rawLog = getAttachmentContent att
+        lastAttachment  <- MaybeT . pure $ lastAttach
+        MaybeT $ getAttachment lastAttachment
+    
+    case mAtt of
+        Nothing -> throwM $ AttachmentNotFound (tiId ticketInfo)
+        Just att -> do
+            let rawLog = getAttachmentContent att
 
-    -- Decompression of zip file may fail or files maybe corrupted
-    eLogFiles    <- try $ extractLogsFromZip (cfgNumOfLogsToAnalyze config) rawLog
-    case eLogFiles of
-        Right logFiles -> pure $ inspectAttachment config ticketInfo logFiles
-        Left (e :: ClassifierExceptions) -> do
-            let ticketTag = renderErrorTag e
-            pure $ ZendeskResponse
-                { zrTicketId    = tiId ticketInfo
-                , zrComment     = prettyFormatLogReadError ticketInfo
-                , zrTags        = ticketTag
-                , zrIsPublic    = cfgIsCommentPublic config
-                }
-          where
-            renderErrorTag :: ClassifierExceptions -> TicketTags
-            renderErrorTag ReadZipFileException   = TicketTags [renderErrorCode SentLogCorrupted]
-            renderErrorTag DecompressionException = TicketTags [renderErrorCode DecompressionFailure]
+            -- Decompression of zip file may fail or files maybe corrupted
+            eLogFiles <- try $ extractLogsFromZip (cfgNumOfLogsToAnalyze config) rawLog
+            case eLogFiles of
+                Right logFiles -> pure $ inspectAttachment config ticketInfo logFiles
+
+                Left (e :: ZipFileExceptions) -> do
+                    let ticketTag = renderErrorTag e
+                    pure $ ZendeskResponse
+                        { zrTicketId    = tiId ticketInfo
+                        , zrComment     = prettyFormatLogReadError ticketInfo
+                        , zrTags        = ticketTag
+                        , zrIsPublic    = cfgIsCommentPublic config
+                        }
+                where
+                    renderErrorTag :: ZipFileExceptions -> TicketTags
+                    renderErrorTag ReadZipFileException   = TicketTags [renderErrorCode SentLogCorrupted]
+                    renderErrorTag DecompressionException = TicketTags [renderErrorCode DecompressionFailure]
 
 -- | Inspection of the local zip.
 -- This function prints out the analysis result on the console.
@@ -504,7 +518,7 @@ inspectLocalZipAttachment filePath = do
     eResults        <- try $ extractLogsFromZip 100 fileContent
 
     case eResults of
-        Left (err :: ClassifierExceptions) -> do
+        Left (err :: ZipFileExceptions) -> do
             printText $ show err
         Right result -> do
             let analysisEnv             = setupAnalysis $ cfgKnowledgebase config
@@ -544,7 +558,6 @@ inspectAttachment Config{..} ticketInfo@TicketInfo{..} logFiles = do
                 }
 
         Left _ ->
-
             ZendeskResponse
                 { zrTicketId    = tiId
                 , zrComment     = prettyFormatNoIssues ticketInfo
