@@ -31,7 +31,7 @@ This is a use case diagram. Use case diagrams overview the usage requirements fo
 
 ## Requirements
 
-In order to use this, the user must be possess an IOHK Zendesk agent ID and API key.
+In order to use this, the user must possess an IOHK Zendesk agent ID and API key.
 
 ## Features
 
