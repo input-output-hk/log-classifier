@@ -21,24 +21,24 @@ import           UnliftIO.Async (mapConcurrently)
 import           UnliftIO.Concurrent (threadDelay)
 
 import           Data.Attoparsec.Text.Lazy (eitherResult, parse)
+import qualified Data.ByteString.Lazy as BS
 import           Data.List (nub)
 import           Data.Text (isInfixOf, stripEnd)
-import qualified Data.ByteString.Lazy as BS
 
 import           System.Directory (createDirectoryIfMissing)
-import           System.IO (hSetBuffering, BufferMode (..))
+import           System.IO (BufferMode (..), hSetBuffering)
 
 import           CLI (CLI (..), getCliArgs)
 import           DataSource (App, Attachment (..), AttachmentContent (..), Comment (..),
                              CommentBody (..), Config (..), DBLayer (..), DeletedTicket (..),
-                             ExportFromTime (..), IOLayer (..), TicketId (..), TicketInfo (..),
-                             TicketStatus (..), TicketTag (..), TicketTags (..), User (..),
-                             UserId (..), ZendeskLayer (..), ZendeskResponse (..), asksDBLayer,
-                             asksIOLayer, asksZendeskLayer, assignToPath, connPoolDBLayer,
-                             createProdConnectionPool, defaultConfig, knowledgebasePath,
-                             renderTicketStatus, runApp, tokenPath)
+                             ExportFromTime (..), IOLayer (..), LogFiles (..), TicketId (..),
+                             TicketInfo (..), TicketStatus (..), TicketTag (..), TicketTags (..),
+                             User (..), UserId (..), ZendeskLayer (..), ZendeskResponse (..),
+                             asksDBLayer, asksIOLayer, asksZendeskLayer, assignToPath,
+                             connPoolDBLayer, createProdConnectionPool, defaultConfig,
+                             knowledgebasePath, renderTicketStatus, runApp, tokenPath)
 
-import           Exceptions (TicketInfoExceptions(..), ZipFileExceptions(..))
+import           Exceptions (ProcessTicketExceptions (..), ZipFileExceptions (..))
 import           LogAnalysis.Classifier (extractErrorCodes, extractIssuesFromLogs,
                                          prettyFormatAnalysis, prettyFormatLogReadError,
                                          prettyFormatNoIssues, prettyFormatNoLogs)
@@ -241,8 +241,8 @@ fetchAgents = do
 -- What should the name of this function?
 processTicket' :: TicketId -> App ()
 processTicket' tId = catch (void $ processTicket tId)
-    -- Print and log any ticket info related exceptions
-    (\(e :: TicketInfoExceptions) -> do
+    -- Print and log any exceptions related to process ticket
+    (\(e :: ProcessTicketExceptions) -> do
         printText <- asksIOLayer iolPrintText
         printText $ show e
         appendF <- asksIOLayer iolAppendFile
@@ -264,7 +264,7 @@ processTicket tId = do
         Nothing -> throwM $ TicketInfoNotFound tId
         Just ticketInfo -> do
             zendeskResponse     <- getZendeskResponses comments attachments ticketInfo
-   
+
             postTicketComment ticketInfo zendeskResponse
 
             pure zendeskResponse
@@ -463,7 +463,7 @@ getZendeskResponses :: [Comment] -> [Attachment] -> TicketInfo -> App ZendeskRes
 getZendeskResponses comments attachments ticketInfo
     | not (null attachments) = inspectAttachments ticketInfo attachments
     | not (null comments)    = responseNoLogs ticketInfo
-    | otherwise              = throwM $ InvalidTicketInfoException (tiId ticketInfo)
+    | otherwise              = throwM $ InvalidTicketInfo (tiId ticketInfo)
     -- No attachment, no comments means something is wrong with ticket itself
 
 -- | Inspect only the latest attachment. We could propagate this
@@ -481,7 +481,7 @@ inspectAttachments ticketInfo attachments = do
 
         lastAttachment  <- MaybeT . pure $ lastAttach
         MaybeT $ getAttachment lastAttachment
-    
+
     case mAtt of
         Nothing -> throwM $ AttachmentNotFound (tiId ticketInfo)
         Just att -> do
@@ -490,7 +490,7 @@ inspectAttachments ticketInfo attachments = do
             -- Decompression of zip file may fail or files maybe corrupted
             eLogFiles <- try $ extractLogsFromZip (cfgNumOfLogsToAnalyze config) rawLog
             case eLogFiles of
-                Right logFiles -> pure $ inspectAttachment config ticketInfo logFiles
+                Right logFiles -> pure $ inspectAttachment config ticketInfo (LogFiles logFiles)
 
                 Left (e :: ZipFileExceptions) -> do
                     let ticketTag = renderErrorTag e
@@ -539,11 +539,11 @@ inspectLocalZipAttachment filePath = do
 
 -- | Given number of file of inspect, knowledgebase and attachment,
 -- analyze the logs and return the results.
-inspectAttachment :: Config -> TicketInfo -> [LByteString]-> ZendeskResponse
+inspectAttachment :: Config -> TicketInfo -> LogFiles -> ZendeskResponse
 inspectAttachment Config{..} ticketInfo@TicketInfo{..} logFiles = do
 
     let analysisEnv             = setupAnalysis cfgKnowledgebase
-    let eitherAnalysisResult    = extractIssuesFromLogs logFiles analysisEnv
+    let eitherAnalysisResult    = extractIssuesFromLogs (getLogFiles logFiles) analysisEnv
 
     case eitherAnalysisResult of
         Right analysisResult -> do

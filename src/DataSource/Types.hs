@@ -11,6 +11,7 @@ module DataSource.Types
     , CommentId (..)
     , CommentBody (..)
     , CommentOuter (..)
+    , LogFiles(..)
     , PageResultList (..)
     , RequestType (..)
     , DeletedTicket (..)
@@ -347,6 +348,10 @@ data Comment = Comment
 -- | Outer comment ??
 newtype CommentOuter = CommentOuter {
       coComment :: Comment
+    }
+
+newtype LogFiles = LogFiles {
+    getLogFiles :: [LByteString]
     }
 
 -- | Zendesk ticket

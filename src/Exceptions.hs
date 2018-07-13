@@ -1,5 +1,5 @@
 module Exceptions
-    ( TicketInfoExceptions (..)
+    ( ProcessTicketExceptions (..)
     , ZipFileExceptions (..)
     ) where
 
@@ -7,10 +7,10 @@ import Universum
 
 import DataSource (TicketId)
 
-data TicketInfoExceptions
+data ProcessTicketExceptions
     = AttachmentNotFound TicketId
-    -- ^ Could not fetch the attachment
-    | InvalidTicketInfoException TicketId
+    -- ^ Could not fetch the attachment even though ticket info has the url of the attachment
+    | InvalidTicketInfo TicketId
     -- ^ TicketInfo is invalid (both attachment and comment were not found)
     | TicketInfoNotFound TicketId
     -- ^ TicketInfo could not be fetched
@@ -23,5 +23,5 @@ data ZipFileExceptions
     -- ^ Decompresson of a zip file was not sucessful
     deriving Show
 
-instance Exception TicketInfoExceptions
+instance Exception ProcessTicketExceptions
 instance Exception ZipFileExceptions
