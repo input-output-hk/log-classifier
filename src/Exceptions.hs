@@ -5,7 +5,9 @@ module Exceptions
 
 import Universum
 
-import DataSource (TicketId)
+import DataSource (TicketId(..))
+
+import Prelude (Show(..))
 
 data ProcessTicketExceptions
     = AttachmentNotFound TicketId
@@ -14,7 +16,6 @@ data ProcessTicketExceptions
     -- ^ TicketInfo is invalid (both attachment and comment were not found)
     | TicketInfoNotFound TicketId
     -- ^ TicketInfo could not be fetched
-    deriving Show
 
 data ZipFileExceptions
     = ReadZipFileException
@@ -25,3 +26,11 @@ data ZipFileExceptions
 
 instance Exception ProcessTicketExceptions
 instance Exception ZipFileExceptions
+
+instance Show ProcessTicketExceptions where
+    show (AttachmentNotFound tid) = "Attachment was not found on ticket ID: " <> showTicketId tid
+    show (InvalidTicketInfo tid)  = "Ticket information is invalid on ticket ID: " <> showTicketId tid
+    show (TicketInfoNotFound tid) = "Ticket information was not found on ticket ID: " <> showTicketId tid
+
+showTicketId :: TicketId -> String
+showTicketId tid = Universum.show (getTicketId tid)
