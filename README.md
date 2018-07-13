@@ -80,6 +80,13 @@ The classifier can collect email addresses of tickets with this issue.
 
 ## Simple use-case scenario
 
+### IOHK agent wants to find out which tickets were changed after 12.07.2018
+
+In this case:
+```terminal
+./log-classifier-exe fetch-tickets-from --time=12.07.2018
+```
+
 ### IOHK help desk agent finds ticket submitted from the end user with log file attached and wants to perform analysis on it
 
 In this case, one can run the command below.
