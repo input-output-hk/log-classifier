@@ -546,7 +546,7 @@ filterAnalyzedTickets ticketsInfo =
         && isTicketInGoguenTestnet ticketInfo
 
     analyzedTags :: [Text]
-    analyzedTags = map renderTicketStatus [AnalyzedByScriptV1_0, AnalyzedByScriptV1_1]
+    analyzedTags = map renderTicketStatus [AnalyzedByScriptV1_0, AnalyzedByScriptV1_1, AnalyzedByScriptV1_2]
 
     isTicketAnalyzed :: TicketInfo -> Bool
     isTicketAnalyzed TicketInfo{..} = all (\analyzedTag -> analyzedTag `notElem` (getTicketTags tiTags)) analyzedTags
