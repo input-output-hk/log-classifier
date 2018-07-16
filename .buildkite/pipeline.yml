@@ -1,5 +1,5 @@
 steps:
   - label: 'log-classifier-x86_64-linux-nix'
-    command: 'scripts/nix-shell.sh'
+    command: 'nix-shell'
     agents:
       system: x86_64-linux
