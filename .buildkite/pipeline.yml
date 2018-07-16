@@ -1,6 +1,5 @@
 steps:
-  - command: stack build 
-    plugins:
-      docker#v1.4.0:
-        image: "fpco/stack-build"
-        workdir: /app
+  - label: 'log-classifier-x86_64-linux-nix'
+    command: 'scripts/nix-shell.sh'
+    agents:
+      system: x86_64-linux
