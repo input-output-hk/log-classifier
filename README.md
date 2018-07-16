@@ -4,6 +4,9 @@ Original version by Hiroto Shioi (https://github.com/HirotoShioi).
 
 The purpose of this project is to analyze Cardano log file and provide a solution to the end user while collecting statistics so Cardano developers can prioritize the issues.
 
+## Installation and Configuration Instructions
+Please read the instructions available in [INSTALL.md](INSTALL.md)
+
 ## What it is
 
 ![log-classifier](https://user-images.githubusercontent.com/6264437/40305397-b5f182f8-5cfa-11e8-822e-c0c74d3dbce0.png)
@@ -28,7 +31,7 @@ This is a use case diagram. Use case diagrams overview the usage requirements fo
 
 ## Requirements
 
-In order to use this, the user must be IOHK Zendesk agent and be able to provide email and password to the classifier.
+In order to use this, the user must possess an IOHK Zendesk agent ID and API key.
 
 ## Features
 
