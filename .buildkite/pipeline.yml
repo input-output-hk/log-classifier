@@ -1,5 +1,5 @@
 steps:
   - label: 'log-classifier-x86_64-linux-nix'
-    command: 'stack --nix build' 
+    command: 'nix-build shell.nix' 
     agents:
       system: x86_64-linux
