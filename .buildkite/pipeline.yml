@@ -1,3 +1,6 @@
 steps:
-  - label: Example Test
-    command: "stack build" 
+  - command: stack build 
+    plugins:
+      docker#v1.4.0:
+        image: "fpco/stack-build"
+        workdir: /app
