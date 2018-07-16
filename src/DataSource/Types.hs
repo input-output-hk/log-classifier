@@ -645,7 +645,7 @@ instance FromPageResultList TicketInfo where
         , exportTicketsParser obj
         ]
       where
-          -- | The case when we have the simple parser from tickets.
+        -- | The case when we have the simple parser from tickets.
         ticketListParser :: Value -> Parser (PageResultList TicketInfo)
         ticketListParser = withObject "ticketList" $ \o ->
             PageResultList
@@ -808,4 +808,3 @@ renderTicketStatus AnalyzedByScriptV1_0 = "analyzed-by-script-v1.0"
 renderTicketStatus AnalyzedByScriptV1_1 = "analyzed-by-script-v1.1"
 renderTicketStatus NoKnownIssue         = "no-known-issues"
 renderTicketStatus NoLogAttached        = "no-log-files"
-
