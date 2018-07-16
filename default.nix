@@ -8,5 +8,5 @@ in runCommand "log-classifier" { buildInputs = [ ghc haskellPackages.ghcid ]; } 
   chmod -R +w src
   cd src
   mkdir -p $out/bin/
-  ghc Zendesk.hs -o $out/bin/log-classifier -Wall
+  stack build
 ''
