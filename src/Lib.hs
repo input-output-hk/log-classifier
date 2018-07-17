@@ -464,7 +464,7 @@ getZendeskResponses :: [Comment] -> [Attachment] -> TicketInfo -> App ZendeskRes
 getZendeskResponses comments attachments ticketInfo
     | not (null attachments) = inspectAttachments ticketInfo attachments
     | not (null comments)    = responseNoLogs ticketInfo
-    | otherwise              = throwM $ InvalidTicketInfo (tiId ticketInfo)
+    | otherwise              = throwM $ CommentAndAttachmentNotFound (tiId ticketInfo)
     -- No attachment, no comments means something is wrong with ticket itself
 
 -- | Inspect only the latest attachment. We could propagate this

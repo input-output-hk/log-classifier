@@ -201,7 +201,8 @@ processTicketSpec =
 
                     assert $ (not . null . zrComment) zendeskResponse
                     assert $ not (isResponseTaggedWithNoLogs zendeskResponse)
-        it "processes ticket with no comments or attachments, throws exception" $
+
+        it "tries to process ticket but cannot find both comments and attachments, throws exception" $
             forAll arbitrary $ \(ticketInfo :: TicketInfo) ->
 
                 monadicIO $ do
@@ -227,9 +228,9 @@ processTicketSpec =
                     -- How do I check if it returns proper exception?
                     assert $ isLeft (eZendeskResponse :: Either ProcessTicketExceptions ZendeskResponse)
                     whenLeft eZendeskResponse $ \processException ->
-                        assert $ processException == InvalidTicketInfo (tiId ticketInfo)
+                        assert $ processException == CommentAndAttachmentNotFound (tiId ticketInfo)
 
-        it "processes ticket with attachment not found, throws exception" $
+        it "tries to process ticket but cannot find attachments, throws exception" $
             forAll arbitrary $ \(ticketInfo :: TicketInfo) ->
                 forAll (listOf1 arbitrary) $ \comments ->
 
@@ -259,7 +260,7 @@ processTicketSpec =
                         whenLeft eZendeskResponse $ \processException ->
                             assert $ processException == AttachmentNotFound (tiId ticketInfo)
 
-        it "processes ticket with ticket info not found, throws exception" $
+        it "tries to process ticket but cannot fetch ticket info, throws exception" $
             forAll arbitrary $ \(ticketId :: TicketId) ->
 
                     monadicIO $ do
@@ -270,7 +271,6 @@ processTicketSpec =
                                     { zlGetTicketInfo           = \_     -> pure Nothing
                                     , zlPostTicketComment       = \_ _   -> pure ()
                                     , zlGetTicketComments       = \_     -> pure empty
-                                    , zlGetAttachment           = \_     -> pure Nothing
                                     }
 
                         let stubbedConfig :: Config
@@ -281,7 +281,6 @@ processTicketSpec =
 
                         eZendeskResponse <- run (try appExecution)
 
-                        -- Check we have some comments.
                         assert $ isLeft (eZendeskResponse :: Either ProcessTicketExceptions ZendeskResponse)
                         whenLeft eZendeskResponse $ \processException ->
                             assert $ processException == TicketInfoNotFound ticketId

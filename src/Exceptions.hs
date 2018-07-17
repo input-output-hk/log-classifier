@@ -9,15 +9,17 @@ import DataSource (TicketId(..))
 
 import Prelude (Show(..))
 
+-- | Exceptions that can occur during ticket processing
 data ProcessTicketExceptions
     = AttachmentNotFound TicketId
     -- ^ Could not fetch the attachment even though ticket info has the url of the attachment
-    | InvalidTicketInfo TicketId
-    -- ^ TicketInfo is invalid (both attachment and comment were not found)
+    | CommentAndAttachmentNotFound TicketId
+    -- ^ Both attachment and comment were not found
     | TicketInfoNotFound TicketId
     -- ^ TicketInfo could not be fetched
     deriving (Eq)
 
+-- | Exception for reading zip files
 data ZipFileExceptions
     = ReadZipFileException
     -- ^ Could not read the zip file because it was corrupted
@@ -29,9 +31,9 @@ instance Exception ProcessTicketExceptions
 instance Exception ZipFileExceptions
 
 instance Show ProcessTicketExceptions where
-    show (AttachmentNotFound tid) = "Attachment was not found on ticket ID: " <> showTicketId tid
-    show (InvalidTicketInfo tid)  = "Ticket information is invalid on ticket ID: " <> showTicketId tid
-    show (TicketInfoNotFound tid) = "Ticket information was not found on ticket ID: " <> showTicketId tid
+    show (AttachmentNotFound tid)           = "Attachment was not found on ticket ID: " <> showTicketId tid
+    show (CommentAndAttachmentNotFound tid) = "Both comment and attachment were not found on ticket ID: " <> showTicketId tid
+    show (TicketInfoNotFound tid)           = "Ticket information was not found on ticket ID: " <> showTicketId tid
 
 showTicketId :: TicketId -> String
 showTicketId tid = Universum.show (getTicketId tid)
