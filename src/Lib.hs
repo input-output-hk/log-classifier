@@ -556,7 +556,7 @@ filterAnalyzedTickets ticketsInfo =
     unsolvedTicketStatus = map TicketStatus ["new", "open", "hold", "pending"]
 
     isTicketOpen :: TicketInfo -> Bool
-    isTicketOpen TicketInfo{..} = tiStatus `elem` unsolvedTicketStatus-- || ticketStatus == "new"
+    isTicketOpen TicketInfo{..} = tiStatus `elem` unsolvedTicketStatus
 
     -- | If we have a ticket we are having issues with...
     isTicketBlacklisted :: TicketInfo -> Bool
