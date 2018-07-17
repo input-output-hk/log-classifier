@@ -1,5 +1,5 @@
 steps:
   - label: 'log-classifier-x86_64-linux-nix'
-    command: 'NIX_PATH=https://github.com/NixOS/nixpkgs-channels/archive/411cc559c052feb6e20a01fc6d5fa63cba09ce9a.tar.gz; nix-build release1.nix' 
+    command: 'NIX_PATH="https://github.com/NixOS/nixpkgs-channels/archive/411cc559c052feb6e20a01fc6d5fa63cba09ce9a.tar.gz"; nix-build release1.nix' 
     agents:
       system: x86_64-linux
