@@ -238,7 +238,6 @@ fetchAgents = do
     mapM_ print agents
     pure agents
 
--- What should the name of this function?
 processTicketSafe :: TicketId -> App ()
 processTicketSafe tId = catch (void $ processTicket tId)
     -- Print and log any exceptions related to process ticket
