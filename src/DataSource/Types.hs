@@ -290,7 +290,7 @@ newtype AttachmentId = AttachmentId
 -- TODO(ks): Arbitrary log contents?
 newtype AttachmentContent = AttachmentContent
     { getAttachmentContent :: LByteString
-    } deriving (Eq, Show, Ord, Generic, Monoid)
+    } deriving (Eq, Show, Ord, Generic, Monoid, Semigroup)
 
 -- | Attachment of the ticket
 data Attachment = Attachment
