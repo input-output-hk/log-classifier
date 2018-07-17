@@ -5,6 +5,7 @@ These are the instructions for generating nix expressions for buildkite CI for l
 ```
 $ cd $LOG_CLASSIFIER_ROOT
 $ cabal2nix . > default.nix
+$ nix-shell -p nix-prefetch-git
 nix-shell $ nix-prefetch-git https://github.com/NixOS/nixpkgs.git > nixpkgs.json
 ```
 
