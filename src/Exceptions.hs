@@ -16,6 +16,7 @@ data ProcessTicketExceptions
     -- ^ TicketInfo is invalid (both attachment and comment were not found)
     | TicketInfoNotFound TicketId
     -- ^ TicketInfo could not be fetched
+    deriving (Eq)
 
 data ZipFileExceptions
     = ReadZipFileException
