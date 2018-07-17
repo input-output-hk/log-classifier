@@ -226,7 +226,7 @@ postTicketComment ticketInfo zendeskResponse = do
 -- | Create response ticket
 createResponseTicket :: Integer -> TicketInfo -> ZendeskResponse -> Ticket
 createResponseTicket agentId TicketInfo{..} ZendeskResponse{..} =
-    let analyzedTag = renderTicketStatus AnalyzedByScriptV1_1
+    let analyzedTag = renderTicketStatus AnalyzedByScriptV1_2
     -- Nub so it won't post duplicate tags
         mergedTags = TicketTags . nub $ [analyzedTag] <> getTicketTags tiTags <> getTicketTags zrTags
     in (Ticket
