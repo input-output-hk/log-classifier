@@ -82,7 +82,7 @@ runZendeskMain = do
         FetchAgents                     -> void $ runApp fetchAgents cfg
         FetchTickets                    -> runApp fetchAndShowTickets cfg
         FetchTicketsFromTime fromTime   -> runApp (fetchAndShowTicketsFrom fromTime) cfg
-        (ProcessTicket ticketId)        -> void $ runApp (processTicket' (TicketId ticketId)) cfg
+        (ProcessTicket ticketId)        -> void $ runApp (processTicketSafe (TicketId ticketId)) cfg
         ProcessTickets                  -> void $ runApp processTickets cfg
         ProcessTicketsFromTime fromTime -> runApp (processTicketsFromTime fromTime) cfg
         ShowStatistics                  -> void $ runApp (fetchTickets >>= showStatistics) cfg
@@ -239,12 +239,13 @@ fetchAgents = do
     pure agents
 
 -- What should the name of this function?
-processTicket' :: TicketId -> App ()
-processTicket' tId = catch (void $ processTicket tId)
+processTicketSafe :: TicketId -> App ()
+processTicketSafe tId = catch (void $ processTicket tId)
     -- Print and log any exceptions related to process ticket
     (\(e :: ProcessTicketExceptions) -> do
         printText <- asksIOLayer iolPrintText
         printText $ show e
+        -- TODO(hs): Implement concurrent logging
         appendF <- asksIOLayer iolAppendFile
         appendF "./logs/errors.log" (show e <> "\n"))
 
@@ -318,7 +319,7 @@ processTickets :: App ()
 processTickets = do
 
     allTickets          <- fetchTickets
-    _                   <- mapM (processTicket' . tiId) allTickets
+    _                   <- mapM (processTicketSafe . tiId) allTickets
 
     putTextLn "All the tickets has been processed."
 
