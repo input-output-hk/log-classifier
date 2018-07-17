@@ -1,13 +1,13 @@
 # Buildkite
-```
-$ nix-shell -p nix-prefetch-git
 
-$ nix-prefetch-git https://github.com/NixOS/nixpkgs.git > nixpkgs.json
- 
-```
+These are the instructions for generating nix expressions for buildkite CI for log-classifier.
 
-cabal2nix . > default.nix
+```
+$ cd $LOG_CLASSIFIER_ROOT
+$ cabal2nix . > default.nix
+nix-shell $ nix-prefetch-git https://github.com/NixOS/nixpkgs.git > nixpkgs.json
+```
 
 NOTE: 
   - NIX_PATH - Get from https://github.com/NixOS/nixpkgs, click clone, copy ZIP link, rename to .tar.gz.
-  - buildkite pipeline  is now: nix-build -I nixpkgs=$NIX_PATH release1.nix
+  - buildkite pipeline command is "nix-build -I nixpkgs=$NIX_PATH release1.nix"
