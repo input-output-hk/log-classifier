@@ -11,4 +11,4 @@ nix-shell $ nix-prefetch-git https://github.com/NixOS/nixpkgs.git > nixpkgs.json
 
 NOTE: 
   - NIX_PATH - Get from https://github.com/NixOS/nixpkgs, click clone, copy ZIP link, rename to .tar.gz.
-  - buildkite pipeline command is "nix-build -I nixpkgs=$NIX_PATH release1.nix"
+  - buildkite pipeline command is "nix-build -I nixpkgs=$NIX_PATH shell.nix"
