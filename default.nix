@@ -2,11 +2,11 @@
 , containers, directory, generics-sop, hspec, http-conduit
 , monad-control, mtl, optparse-applicative, QuickCheck, reflection
 , regex-tdfa, resource-pool, sqlite-simple, stdenv, text, time
-, transformers-base, universum, zip-archive
+, transformers-base, universum, unliftio, zip-archive
 }:
 mkDerivation {
   pname = "log-classifier";
-  version = "1.1.0.0";
+  version = "1.2.0.0";
   src = ./.;
   isLibrary = true;
   isExecutable = true;
@@ -14,7 +14,7 @@ mkDerivation {
     aeson array attoparsec base bytestring containers directory
     generics-sop http-conduit monad-control mtl optparse-applicative
     QuickCheck reflection regex-tdfa resource-pool sqlite-simple text
-    time transformers-base universum zip-archive
+    time transformers-base universum unliftio zip-archive
   ];
   executableHaskellDepends = [ base universum ];
   testHaskellDepends = [
