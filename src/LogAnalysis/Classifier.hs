@@ -13,12 +13,14 @@ module LogAnalysis.Classifier
 
 import           Universum
 
+import           Control.Exception.Safe (tryAnyDeep)
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Map.Strict as Map
 import           Data.Text (isInfixOf)
 import           Data.Text.Encoding.Error (ignore)
 
 import           DataSource.Types (TicketInfo (..), ZendeskAPIUrl (..), showURL)
+import           LogAnalysis.Exceptions (LogAnalysisException (..))
 import           LogAnalysis.Types (Analysis, Knowledge (..), renderErrorCode)
 
 -- | Number of error texts it should show
@@ -26,35 +28,42 @@ numberOfErrorText :: Int
 numberOfErrorText = 3
 
 -- | Analyze each log file based on the knowlodgebases' data.
-extractIssuesFromLogs :: [LByteString] -> Analysis -> Either Text Analysis
-extractIssuesFromLogs files analysis = filterAnalysis $ foldl' runClassifiers analysis files
+extractIssuesFromLogs :: (MonadCatch m, MonadIO m) => [LByteString] -> Analysis -> m Analysis
+extractIssuesFromLogs files analysis = do
+    analysisResult <- foldlM runClassifiers analysis files
+    filterAnalysis analysisResult
 
 -- | Run analysis on given file
-runClassifiers :: Analysis -> LByteString -> Analysis
-runClassifiers analysis logfile =
-    let logLines = lines $ decodeUtf8With ignore (LBS.toStrict logfile)
-    in foldl' analyzeLine analysis (toLText <$> logLines)
+runClassifiers :: (MonadCatch m, MonadIO m) => Analysis -> LByteString -> m Analysis
+runClassifiers analysis logfile = do
+    -- Log read exception can be caught here and only by tryAnyDeep or tryDeep
+    eDecodeFile <- (tryAnyDeep . pure . decodeUtf8With ignore) (LBS.toStrict logfile)
+    case eDecodeFile of
+        Left _ -> throwM LogReadException
+        Right strictFile -> do
+            let logLines = lines strictFile
+            return $ foldl' analyzeLine analysis (toLText <$> logLines)
 
 -- | Analyze each line
 analyzeLine :: Analysis -> LText -> Analysis
 analyzeLine analysis str = Map.mapWithKey (compareWithKnowledge str) analysis
 
 -- | Compare the line with knowledge lists
-compareWithKnowledge :: LText -> Knowledge -> [ LText ] -> [ LText ]
+compareWithKnowledge :: LText -> Knowledge -> [LText] -> [LText]
 compareWithKnowledge str Knowledge{..} xs =
-    if kErrorText `isInfixOf` (show str)
-    then str : xs
-    else xs
+   if kErrorText `isInfixOf` show str
+       then str:xs
+       else xs
 
 -- | Filter out any records that are empty (i.e couldn't catch any string related)
-filterAnalysis :: Analysis -> Either Text Analysis
+filterAnalysis :: (MonadThrow m) => Analysis -> m Analysis
 filterAnalysis as = do
-    let filteredAnalysis = Map.filter (/=[]) as
+    let filteredAnalysis = Map.filter (/= mempty) as
     if null filteredAnalysis
-    then Left "Cannot find any known issues"
+    then throwM NoIssueFound
     else return $ Map.map (take numberOfErrorText) filteredAnalysis
 
-extractErrorCodes :: Analysis -> [ Text ]
+extractErrorCodes :: Analysis -> [Text]
 extractErrorCodes as = map (\(Knowledge{..}, _) -> renderErrorCode kErrorCode) $ Map.toList as
 
 prettyHeader :: Text
@@ -138,4 +147,3 @@ prettyFormatNoLogs =
 
     "Thanks," <> "\n" <>
     "The IOHK Technical Support Desk Team"
-

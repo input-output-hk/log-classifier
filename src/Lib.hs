@@ -31,7 +31,7 @@ import           System.IO (BufferMode (..), hSetBuffering)
 import           CLI (CLI (..), getCliArgs)
 import           DataSource (App, Attachment (..), AttachmentContent (..), Comment (..),
                              CommentBody (..), Config (..), DBLayer (..), DeletedTicket (..),
-                             ExportFromTime (..), IOLayer (..), LogFiles (..), TicketId (..),
+                             ExportFromTime (..), IOLayer (..), TicketId (..),
                              TicketInfo (..), TicketStatus (..), TicketTag (..), TicketTags (..),
                              User (..), UserId (..), ZendeskLayer (..), ZendeskResponse (..),
                              asksDBLayer, asksIOLayer, asksZendeskLayer, assignToPath,
@@ -42,6 +42,7 @@ import           Exceptions (ProcessTicketExceptions (..), ZipFileExceptions (..
 import           LogAnalysis.Classifier (extractErrorCodes, extractIssuesFromLogs,
                                          prettyFormatAnalysis, prettyFormatLogReadError,
                                          prettyFormatNoIssues, prettyFormatNoLogs)
+import LogAnalysis.Exceptions (LogAnalysisException(..))
 import           LogAnalysis.KnowledgeCSVParser (parseKnowLedgeBase)
 import           LogAnalysis.Types (ErrorCode (..), Knowledge, renderErrorCode, setupAnalysis)
 import           Statistics (showStatistics)
@@ -484,26 +485,7 @@ inspectAttachments ticketInfo attachments = do
 
     case mAtt of
         Nothing -> throwM $ AttachmentNotFound (tiId ticketInfo)
-        Just att -> do
-            let rawLog = getAttachmentContent att
-
-            -- Decompression of zip file may fail or files maybe corrupted
-            eLogFiles <- try $ extractLogsFromZip (cfgNumOfLogsToAnalyze config) rawLog
-            case eLogFiles of
-                Right logFiles -> pure $ inspectAttachment config ticketInfo (LogFiles logFiles)
-
-                Left (e :: ZipFileExceptions) -> do
-                    let ticketTag = renderErrorTag e
-                    pure $ ZendeskResponse
-                        { zrTicketId    = tiId ticketInfo
-                        , zrComment     = prettyFormatLogReadError ticketInfo
-                        , zrTags        = ticketTag
-                        , zrIsPublic    = cfgIsCommentPublic config
-                        }
-                where
-                    renderErrorTag :: ZipFileExceptions -> TicketTags
-                    renderErrorTag ReadZipFileException   = TicketTags [renderErrorCode SentLogCorrupted]
-                    renderErrorTag DecompressionException = TicketTags [renderErrorCode DecompressionFailure]
+        Just att -> inspectAttachment config ticketInfo att
 
 -- | Inspection of the local zip.
 -- This function prints out the analysis result on the console.
@@ -515,14 +497,14 @@ inspectLocalZipAttachment filePath = do
 
     -- Read the zip file
     fileContent     <- liftIO $ BS.readFile filePath
-    eResults        <- try $ extractLogsFromZip 100 fileContent
+    let eResults = extractLogsFromZip 100 fileContent
 
     case eResults of
         Left (err :: ZipFileExceptions) -> do
             printText $ show err
         Right result -> do
             let analysisEnv             = setupAnalysis $ cfgKnowledgebase config
-            let eitherAnalysisResult    = extractIssuesFromLogs result analysisEnv
+            eitherAnalysisResult    <- try $ extractIssuesFromLogs result analysisEnv
 
             case eitherAnalysisResult of
                 Right analysisResult -> do
@@ -534,36 +516,57 @@ inspectLocalZipAttachment filePath = do
                     printText "Error codes:"
                     void $ mapM printText errorCodes
 
-                Left e -> do
-                    printText e
+                Left (e :: LogAnalysisException) -> do
+                    printText $ show e
 
 -- | Given number of file of inspect, knowledgebase and attachment,
 -- analyze the logs and return the results.
-inspectAttachment :: Config -> TicketInfo -> LogFiles -> ZendeskResponse
-inspectAttachment Config{..} ticketInfo@TicketInfo{..} logFiles = do
+inspectAttachment :: (MonadCatch m, MonadIO m) => Config -> TicketInfo -> AttachmentContent -> m ZendeskResponse
+inspectAttachment Config{..} ticketInfo@TicketInfo{..} attachment = do
 
     let analysisEnv             = setupAnalysis cfgKnowledgebase
-    let eitherAnalysisResult    = extractIssuesFromLogs (getLogFiles logFiles) analysisEnv
+    let eLogFiles = extractLogsFromZip cfgNumOfLogsToAnalyze (getAttachmentContent attachment)
 
-    case eitherAnalysisResult of
-        Right analysisResult -> do
-            let errorCodes = extractErrorCodes analysisResult
-            let commentRes = prettyFormatAnalysis analysisResult ticketInfo
-
-            ZendeskResponse
+    case eLogFiles of
+        Left _ -> 
+            pure $ ZendeskResponse
                 { zrTicketId    = tiId
-                , zrComment     = commentRes
-                , zrTags        = TicketTags errorCodes
+                , zrComment     = prettyFormatLogReadError ticketInfo
+                , zrTags        = TicketTags [renderErrorCode SentLogCorrupted]
                 , zrIsPublic    = cfgIsCommentPublic
                 }
 
-        Left _ ->
-            ZendeskResponse
-                { zrTicketId    = tiId
-                , zrComment     = prettyFormatNoIssues ticketInfo
-                , zrTags        = TicketTags [renderTicketStatus NoKnownIssue]
-                , zrIsPublic    = cfgIsCommentPublic
-                }
+        Right logFiles -> do 
+            eitherAnalysisResult    <- try $ extractIssuesFromLogs logFiles analysisEnv
+
+            case eitherAnalysisResult of
+                Right analysisResult -> do
+                    let errorCodes = extractErrorCodes analysisResult
+                    let commentRes = prettyFormatAnalysis analysisResult ticketInfo
+
+                    pure $ ZendeskResponse
+                        { zrTicketId    = tiId
+                        , zrComment     = commentRes
+                        , zrTags        = TicketTags errorCodes
+                        , zrIsPublic    = cfgIsCommentPublic
+                        }
+
+                Left (analysisException :: LogAnalysisException) ->
+                    case analysisException of
+                        LogReadException -> 
+                            pure $ ZendeskResponse
+                                { zrTicketId    = tiId
+                                , zrComment     = prettyFormatLogReadError ticketInfo
+                                , zrTags        = TicketTags [renderErrorCode DecompressionFailure]
+                                , zrIsPublic    = cfgIsCommentPublic
+                                }
+                        NoIssueFound ->
+                            pure $ ZendeskResponse
+                                { zrTicketId    = tiId
+                                , zrComment     = prettyFormatNoIssues ticketInfo
+                                , zrTags        = TicketTags [renderTicketStatus NoKnownIssue]
+                                , zrIsPublic    = cfgIsCommentPublic
+                                }    
 
 responseNoLogs :: TicketInfo -> App ZendeskResponse
 responseNoLogs TicketInfo{..} = do

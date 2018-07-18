@@ -20,6 +20,7 @@ library
                        Exceptions
                        Lib
                        LogAnalysis.Classifier
+                       LogAnalysis.Exceptions
                        LogAnalysis.KnowledgeCSVParser
                        LogAnalysis.Types
                        Regex

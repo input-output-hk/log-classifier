@@ -225,7 +225,6 @@ processTicketSpec =
                     eZendeskResponse <- run (try appExecution)
 
                     -- Check it throws exception
-                    -- How do I check if it returns proper exception?
                     assert $ isLeft (eZendeskResponse :: Either ProcessTicketExceptions ZendeskResponse)
                     whenLeft eZendeskResponse $ \processException ->
                         assert $ processException == CommentAndAttachmentNotFound (tiId ticketInfo)
