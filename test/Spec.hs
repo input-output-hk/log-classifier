@@ -464,7 +464,7 @@ exportZendeskDataToLocalDBSpec =
                        stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
 
                    let appExecution :: IO [TicketInfo]
-                       appExecution = runApp (exportZendeskDataToLocalDB exportFromTime) stubbedConfig
+                       appExecution = runApp (exportZendeskDataToLocalDB mapNotConcurrent exportFromTime) stubbedConfig
 
                    ticketsToExport <- run appExecution
 
@@ -472,7 +472,7 @@ exportZendeskDataToLocalDBSpec =
                    assert . null $ ticketsToExport
 
         it "should export a list of tickets since there are new tickets" $
-             forAll (listOf1 arbitrary) $ \(listTickets) ->
+             forAll (listOf1 genTicketWithUnsolvedStatus) $ \(listTickets) ->
                 forAll arbitrary $ \(exportFromTime) ->
 
                     monadicIO $ do
@@ -489,7 +489,7 @@ exportZendeskDataToLocalDBSpec =
                             stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
 
                         let appExecution :: IO [TicketInfo]
-                            appExecution = runApp (exportZendeskDataToLocalDB exportFromTime) stubbedConfig
+                            appExecution = runApp (exportZendeskDataToLocalDB mapNotConcurrent exportFromTime) stubbedConfig
 
                         ticketsToExport <- run appExecution
 
@@ -515,7 +515,7 @@ exportZendeskDataToLocalDBSpec =
                             stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
 
                         let appExecution :: IO [TicketInfo]
-                            appExecution = runApp (exportZendeskDataToLocalDB exportFromTime) stubbedConfig
+                            appExecution = runApp (exportZendeskDataToLocalDB mapNotConcurrent exportFromTime) stubbedConfig
 
                         ticketsToExport <- run appExecution
 
@@ -523,7 +523,7 @@ exportZendeskDataToLocalDBSpec =
                         assert . null $ ticketsToExport
 
         it "should not return duplicated tickets" $
-             forAll (listOf1 arbitrary) $ \(listTickets) ->
+             forAll (listOf1 genTicketWithUnsolvedStatus) $ \(listTickets) ->
                 forAll arbitrary $ \(exportFromTime) ->
 
                     monadicIO $ do
@@ -543,11 +543,19 @@ exportZendeskDataToLocalDBSpec =
                             stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
 
                         let appExecution :: IO [TicketInfo]
-                            appExecution = runApp (exportZendeskDataToLocalDB exportFromTime) stubbedConfig
+                            appExecution = runApp (exportZendeskDataToLocalDB mapNotConcurrent exportFromTime) stubbedConfig
 
                         ticketsToExport <- run appExecution
 
                         -- Check that we have tickets.
                         assert . not . null $ ticketsToExport
                         assert $ length ticketsToExport == length listTickets
-
+  where
+    -- [a] -> Int -> Int -> (a -> m b) -> m [b]
+    mapNotConcurrent
+        :: [TicketInfo]
+        -> Int
+        -> Int
+        -> (TicketInfo -> App (TicketInfo, [Comment]))
+        -> App [(TicketInfo, [Comment])]
+    mapNotConcurrent tickets _ _ fetchTicketData = forM tickets fetchTicketData
