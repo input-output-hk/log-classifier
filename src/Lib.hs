@@ -16,6 +16,7 @@ module Lib
 
 import           Universum
 
+import           UnliftIO (MonadUnliftIO)
 import           UnliftIO.Async (mapConcurrently)
 import           UnliftIO.Concurrent (threadDelay)
 
@@ -84,31 +85,53 @@ runZendeskMain = do
         ProcessTicketsFromTime fromTime -> runApp (processTicketsFromTime fromTime) cfg
         ShowStatistics                  -> void $ runApp (fetchTickets >>= showStatistics) cfg
         InspectLocalZip filePath        -> runApp (inspectLocalZipAttachment filePath) cfg
-        ExportData fromTime             -> void $ runApp (exportZendeskDataToLocalDB fromTime) cfg
+        ExportData fromTime             -> void $ runApp (exportZendeskDataToLocalDB mapConcurrentlyWithDelay fromTime) cfg
+
+-- | A general function for using concurrent calls.
+mapConcurrentlyWithDelay
+    :: forall m a b. (MonadIO m, MonadUnliftIO m)
+    => [a] -> Int -> Int -> (a -> m b) -> m [b]
+mapConcurrentlyWithDelay dataIter chunksNum delayAmount concurrentFunction = do
+    let chunkedData = chunks chunksNum dataIter
+
+    collectedData <- forM chunkedData $ \chunkedData' -> do
+        -- Wait a minute!
+        threadDelay delayAmount
+        -- Concurrently we execute the function. If a single
+        -- call fails, they all fail. When they all finish, they return the
+        -- result.
+        mapConcurrently concurrentFunction chunkedData'
+
+    pure . concat $ collectedData
+
+-- | Yes, horrible. Seems like we need another layer, but I'm not convinced yet what it should be, so we
+-- wait patiently until it forms.
+type MapConcurrentlyFunction
+    =  [TicketInfo]
+    -> Int
+    -> Int
+    -> (TicketInfo -> App (TicketInfo, [Comment]))
+    -> App [(TicketInfo, [Comment])]
 
 -- | The function for exporting Zendesk data to our local DB so
 -- we can have faster analysis and runs.
 -- We expect that the local database exists and has the correct schema.
-exportZendeskDataToLocalDB :: ExportFromTime -> App [TicketInfo]
-exportZendeskDataToLocalDB exportFromTime = do
+exportZendeskDataToLocalDB
+    :: MapConcurrentlyFunction
+    -> ExportFromTime
+    -> App [TicketInfo]
+exportZendeskDataToLocalDB mapConcurrentlyWithDelay' exportFromTime = do
 
     deleteAllData               <- asksDBLayer dlDeleteAllData
 
     notDeletedExportedTickets   <- fetchTicketsExportedFromTime exportFromTime
 
-    -- We want to call in parallel 400 HTTP requests to fetch the data.
-    let chunkedExportedTickets = chunks 400 notDeletedExportedTickets
-
-    -- The max requests are 400 per minute, so we wait a minute!
-    ticketData <- forM chunkedExportedTickets $ \chunkedTickets -> do
-        -- Wait a minute!
-        threadDelay $ 61 * 1000000
-        -- Concurrently we fetch the ticket data. If a single
-        -- call fails, they all fail. When they all finish, they return the
-        -- result.
-        mapConcurrently fetchTicketData chunkedTickets
-
-    let allTicketData = concat ticketData
+    -- Map concurrently if required.
+    allTicketData               <-  mapConcurrentlyWithDelay'
+                                        notDeletedExportedTickets
+                                        400
+                                        (60 * 1000000)
+                                        fetchTicketData
 
     -- Clear the data.
     deleteAllData
@@ -546,7 +569,11 @@ filterAnalyzedTickets ticketsInfo =
         && isTicketInGoguenTestnet ticketInfo
 
     analyzedTags :: [Text]
-    analyzedTags = map renderTicketStatus [AnalyzedByScriptV1_0, AnalyzedByScriptV1_1, AnalyzedByScriptV1_2]
+    analyzedTags = map renderTicketStatus
+                        [ AnalyzedByScriptV1_0
+                        , AnalyzedByScriptV1_1
+                        , AnalyzedByScriptV1_2
+                        ]
 
     isTicketAnalyzed :: TicketInfo -> Bool
     isTicketAnalyzed TicketInfo{..} = all (\analyzedTag -> analyzedTag `notElem` (getTicketTags tiTags)) analyzedTags
