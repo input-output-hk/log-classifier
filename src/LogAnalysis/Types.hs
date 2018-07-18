@@ -83,7 +83,7 @@ toComment SentLogCorrupted = "Log file is corrupted"
 toComment _                = "Error"
 
 -- | Map used to collect error lines
-type Analysis = Map Knowledge [LText]
+type Analysis = Map Knowledge [Text]
 
 -- | Create initial analysis environment
 setupAnalysis :: [Knowledge] -> Analysis

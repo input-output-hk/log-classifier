@@ -31,18 +31,18 @@ import           System.IO (BufferMode (..), hSetBuffering)
 import           CLI (CLI (..), getCliArgs)
 import           DataSource (App, Attachment (..), AttachmentContent (..), Comment (..),
                              CommentBody (..), Config (..), DBLayer (..), DeletedTicket (..),
-                             ExportFromTime (..), IOLayer (..), TicketId (..),
-                             TicketInfo (..), TicketStatus (..), TicketTag (..), TicketTags (..),
-                             User (..), UserId (..), ZendeskLayer (..), ZendeskResponse (..),
-                             asksDBLayer, asksIOLayer, asksZendeskLayer, assignToPath,
-                             connPoolDBLayer, createProdConnectionPool, defaultConfig,
-                             knowledgebasePath, renderTicketStatus, runApp, tokenPath)
+                             ExportFromTime (..), IOLayer (..), TicketId (..), TicketInfo (..),
+                             TicketStatus (..), TicketTag (..), TicketTags (..), User (..),
+                             UserId (..), ZendeskLayer (..), ZendeskResponse (..), asksDBLayer,
+                             asksIOLayer, asksZendeskLayer, assignToPath, connPoolDBLayer,
+                             createProdConnectionPool, defaultConfig, knowledgebasePath,
+                             renderTicketStatus, runApp, tokenPath)
 
 import           Exceptions (ProcessTicketExceptions (..), ZipFileExceptions (..))
 import           LogAnalysis.Classifier (extractErrorCodes, extractIssuesFromLogs,
                                          prettyFormatAnalysis, prettyFormatLogReadError,
                                          prettyFormatNoIssues, prettyFormatNoLogs)
-import LogAnalysis.Exceptions (LogAnalysisException(..))
+import           LogAnalysis.Exceptions (LogAnalysisException (..))
 import           LogAnalysis.KnowledgeCSVParser (parseKnowLedgeBase)
 import           LogAnalysis.Types (ErrorCode (..), Knowledge, renderErrorCode, setupAnalysis)
 import           Statistics (showStatistics)
@@ -481,7 +481,7 @@ inspectAttachments ticketInfo attachments = do
     inspectAttachment config ticketInfo att
   where
     handleMaybe :: Maybe a -> App a
-    handleMaybe Nothing = throwM $ AttachmentNotFound (tiId ticketInfo)
+    handleMaybe Nothing  = throwM $ AttachmentNotFound (tiId ticketInfo)
     handleMaybe (Just a) = return a
 
 -- | Inspection of the local zip.
@@ -518,14 +518,15 @@ inspectLocalZipAttachment filePath = do
 
 -- | Given number of file of inspect, knowledgebase and attachment,
 -- analyze the logs and return the results.
-inspectAttachment :: (MonadCatch m, MonadIO m) => Config -> TicketInfo -> AttachmentContent -> m ZendeskResponse
+inspectAttachment :: (MonadCatch m) => Config -> TicketInfo -> AttachmentContent -> m ZendeskResponse
 inspectAttachment Config{..} ticketInfo@TicketInfo{..} attachment = do
 
-    let analysisEnv             = setupAnalysis cfgKnowledgebase
+    let analysisEnv = setupAnalysis cfgKnowledgebase
     let eLogFiles = extractLogsFromZip cfgNumOfLogsToAnalyze (getAttachmentContent attachment)
 
     case eLogFiles of
-        Left _ -> 
+        Left _ ->
+            -- Log file was corrupted
             pure $ ZendeskResponse
                 { zrTicketId    = tiId
                 , zrComment     = prettyFormatLogReadError ticketInfo
@@ -533,11 +534,13 @@ inspectAttachment Config{..} ticketInfo@TicketInfo{..} attachment = do
                 , zrIsPublic    = cfgIsCommentPublic
                 }
 
-        Right logFiles -> do 
+        Right logFiles -> do
+            -- Log files maybe corrupted or issue may not be found
             eitherAnalysisResult    <- try $ extractIssuesFromLogs logFiles analysisEnv
 
             case eitherAnalysisResult of
                 Right analysisResult -> do
+                    -- Known issue was found
                     let errorCodes = extractErrorCodes analysisResult
                     let commentRes = prettyFormatAnalysis analysisResult ticketInfo
 
@@ -550,20 +553,22 @@ inspectAttachment Config{..} ticketInfo@TicketInfo{..} attachment = do
 
                 Left (analysisException :: LogAnalysisException) ->
                     case analysisException of
-                        LogReadException -> 
+                        -- Could not read the log files
+                        LogReadException ->
                             pure $ ZendeskResponse
                                 { zrTicketId    = tiId
                                 , zrComment     = prettyFormatLogReadError ticketInfo
                                 , zrTags        = TicketTags [renderErrorCode DecompressionFailure]
                                 , zrIsPublic    = cfgIsCommentPublic
                                 }
-                        NoIssueFound ->
+                        -- No known issue was found
+                        NoKnownIssueFound ->
                             pure $ ZendeskResponse
                                 { zrTicketId    = tiId
                                 , zrComment     = prettyFormatNoIssues ticketInfo
                                 , zrTags        = TicketTags [renderTicketStatus NoKnownIssue]
                                 , zrIsPublic    = cfgIsCommentPublic
-                                }    
+                                }
 
 responseNoLogs :: TicketInfo -> App ZendeskResponse
 responseNoLogs TicketInfo{..} = do

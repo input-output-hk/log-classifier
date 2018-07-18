@@ -3,11 +3,11 @@ module Exceptions
     , ZipFileExceptions (..)
     ) where
 
-import Universum
+import           Universum
 
-import DataSource (TicketId(..))
+import           DataSource (TicketId (..))
 
-import Prelude (Show(..))
+import           Prelude (Show (..))
 
 -- | Exceptions that can occur during ticket processing
 data ProcessTicketExceptions

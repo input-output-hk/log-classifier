@@ -8,7 +8,7 @@ import           Universum
 import qualified Codec.Archive.Zip as Zip
 import qualified Data.Map.Strict as Map
 
-import Exceptions (ZipFileExceptions(..))
+import           Exceptions (ZipFileExceptions (..))
 
 -- | Extract log file from given zip file
 -- TODO(ks): What happens with the other files? We just ignore them?
@@ -22,13 +22,10 @@ extractLogsFromZip numberOfFiles file = do
     mTake n = Map.fromDistinctAscList . take n . Map.toAscList
 
 -- | Read zipe file
--- toArchiveOrFail is a partial function, we need to use tryDeep to catch the exception and throw it 
--- upwards
--- Why tryDeep instead of try? It's because we need to fully evaluate bytestrings in order to catch
--- the decompression issue.
+-- toArchiveOrFail is a partial function, so be careful.
 readZip :: LByteString -> Either ZipFileExceptions (Map FilePath LByteString)
 readZip rawzip = case Zip.toArchiveOrFail rawzip of
-    Left _      -> Left ReadZipFileException
+    Left _        -> Left ReadZipFileException
     Right archive -> return $ finishProcessing archive
   where
     finishProcessing :: Zip.Archive -> Map FilePath LByteString
