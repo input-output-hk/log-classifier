@@ -476,16 +476,13 @@ inspectAttachments ticketInfo attachments = do
     config          <- ask
     getAttachment   <- asksZendeskLayer zlGetAttachment
 
-    mAtt <- runMaybeT $ do
-        let lastAttach :: Maybe Attachment
-            lastAttach = safeHead . reverse . sort $ attachments
-
-        lastAttachment  <- MaybeT . pure $ lastAttach
-        MaybeT $ getAttachment lastAttachment
-
-    case mAtt of
-        Nothing -> throwM $ AttachmentNotFound (tiId ticketInfo)
-        Just att -> inspectAttachment config ticketInfo att
+    lastAttach <- handleMaybe (safeHead . reverse . sort $ attachments)
+    att <- handleMaybe =<< getAttachment lastAttach
+    inspectAttachment config ticketInfo att
+  where
+    handleMaybe :: Maybe a -> App a
+    handleMaybe Nothing = throwM $ AttachmentNotFound (tiId ticketInfo)
+    handleMaybe (Just a) = return a
 
 -- | Inspection of the local zip.
 -- This function prints out the analysis result on the console.
