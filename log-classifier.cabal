@@ -1,5 +1,5 @@
 name:                log-classifier
-version:             1.1.0.0
+version:             1.2.0.0
 synopsis:            Log classifier for a Cardano node
 description:         Please see the README
 homepage:            https://github.com/input-output-hk/log-classifier#readme
@@ -42,6 +42,7 @@ library
                      , mtl
                      , monad-control
                      , transformers-base
+                     , unliftio
                      -- 
                      , optparse-applicative
                      , reflection

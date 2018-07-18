@@ -16,12 +16,16 @@ module Lib
 
 import           Universum
 
+import           UnliftIO.Async (mapConcurrently)
+import           UnliftIO.Concurrent (threadDelay)
+
 import           Data.Attoparsec.Text.Lazy (eitherResult, parse)
 import           Data.List (nub)
 import           Data.Text (isInfixOf, stripEnd)
-import           Data.Time (UTCTime (..), Day, fromGregorianValid)
-import           Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import qualified Data.ByteString.Lazy as BS
+
+import           System.Directory (createDirectoryIfMissing)
+import           System.IO (hSetBuffering, BufferMode (..))
 
 import           CLI (CLI (..), getCliArgs)
 import           DataSource (App, Attachment (..), AttachmentContent (..), Comment (..),
@@ -32,8 +36,6 @@ import           DataSource (App, Attachment (..), AttachmentContent (..), Comme
                              asksIOLayer, asksZendeskLayer, assignToPath, connPoolDBLayer,
                              createProdConnectionPool, defaultConfig, knowledgebasePath,
                              renderTicketStatus, runApp, tokenPath)
-import           System.Directory (createDirectoryIfMissing)
-
 import           LogAnalysis.Classifier (extractErrorCodes, extractIssuesFromLogs,
                                          prettyFormatAnalysis, prettyFormatLogReadError,
                                          prettyFormatNoIssues, prettyFormatNoLogs)
@@ -49,12 +51,13 @@ import           Util (extractLogsFromZip)
 runZendeskMain :: IO ()
 runZendeskMain = do
     createDirectoryIfMissing True "logs"
+    hSetBuffering stdout NoBuffering
 
     args        <- getCliArgs
 
     putTextLn "Welcome to Zendesk classifier!"
-    token       <- readFile tokenPath  -- Zendesk token
-    assignFile  <- readFile assignToPath  -- Select assignee
+    token       <- readFile tokenPath       -- Zendesk token
+    assignFile  <- readFile assignToPath    -- Select assignee
     knowledges  <- setupKnowledgebaseEnv knowledgebasePath
     assignTo    <- case readEither assignFile of
         Right agentid -> return agentid
@@ -72,31 +75,65 @@ runZendeskMain = do
 
     -- At this point, the configuration is set up and there is no point in using a pure IO.
     case args of
-        CollectEmails            -> runApp collectEmails cfg
-        FetchAgents              -> void $ runApp fetchAgents cfg
-        FetchTickets             -> runApp fetchAndShowTickets cfg
-        (ProcessTicket ticketId) -> void $ runApp (processTicket (TicketId ticketId)) cfg
-        ProcessTickets           -> void $ runApp processTickets cfg
-        ShowStatistics           -> void $ runApp (fetchTickets >>= showStatistics) cfg
-        InspectLocalZip filePath -> runApp (inspectLocalZipAttachment filePath) cfg
-        ExportData               -> void $ runApp (exportZendeskDataToLocalDB exportFromTime) cfg
-          where
-            -- | The day we want the export from.
-            day :: Day
-            day = fromMaybe (error "Invalid date!") $ fromGregorianValid 2018 6 28
-
-            utctime     = UTCTime day 0
-            posixTime   = utcTimeToPOSIXSeconds utctime
-
-            exportFromTime :: ExportFromTime
-            exportFromTime = ExportFromTime posixTime
-
-
+        CollectEmails                   -> runApp collectEmails cfg
+        FetchAgents                     -> void $ runApp fetchAgents cfg
+        FetchTickets                    -> runApp fetchAndShowTickets cfg
+        FetchTicketsFromTime fromTime   -> runApp (fetchAndShowTicketsFrom fromTime) cfg
+        (ProcessTicket ticketId)        -> void $ runApp (processTicket (TicketId ticketId)) cfg
+        ProcessTickets                  -> void $ runApp processTickets cfg
+        ProcessTicketsFromTime fromTime -> runApp (processTicketsFromTime fromTime) cfg
+        ShowStatistics                  -> void $ runApp (fetchTickets >>= showStatistics) cfg
+        InspectLocalZip filePath        -> runApp (inspectLocalZipAttachment filePath) cfg
+        ExportData fromTime             -> void $ runApp (exportZendeskDataToLocalDB fromTime) cfg
 
 -- | The function for exporting Zendesk data to our local DB so
 -- we can have faster analysis and runs.
+-- We expect that the local database exists and has the correct schema.
 exportZendeskDataToLocalDB :: ExportFromTime -> App [TicketInfo]
 exportZendeskDataToLocalDB exportFromTime = do
+
+    deleteAllData               <- asksDBLayer dlDeleteAllData
+
+    notDeletedExportedTickets   <- fetchTicketsExportedFromTime exportFromTime
+
+    -- We want to call in parallel 400 HTTP requests to fetch the data.
+    let chunkedExportedTickets = chunks 400 notDeletedExportedTickets
+
+    -- The max requests are 400 per minute, so we wait a minute!
+    ticketData <- forM chunkedExportedTickets $ \chunkedTickets -> do
+        -- Wait a minute!
+        threadDelay $ 61 * 1000000
+        -- Concurrently we fetch the ticket data. If a single
+        -- call fails, they all fail. When they all finish, they return the
+        -- result.
+        mapConcurrently fetchTicketData chunkedTickets
+
+    let allTicketData = concat ticketData
+
+    -- Clear the data.
+    deleteAllData
+
+    -- Save all the data.
+    _           <- mapM saveTicketDataToLocalDB allTicketData
+
+    -- TODO(ks): We currently don't download the attachment since that
+    -- would take a ton of time and would require probably up to 100Gb of space!
+    pure notDeletedExportedTickets
+  where
+    -- | Get ticket comments and create a sum type out of them.
+    fetchTicketData :: TicketInfo -> App (TicketInfo,[Comment])
+    fetchTicketData ticket = do
+
+        getTicketComments           <- asksZendeskLayer zlGetTicketComments
+
+        -- First fetch comments, FAIL-FAST
+        ticketComments              <- getTicketComments $ tiId ticket
+
+        pure (ticket, ticketComments)
+
+-- | Fetch all tickets changed from a specific date.
+fetchTicketsExportedFromTime :: ExportFromTime -> App [TicketInfo]
+fetchTicketsExportedFromTime exportFromTime = do
 
     listDeletedTickets          <- asksZendeskLayer zlListDeletedTickets
     exportTickets               <- asksZendeskLayer zlExportTickets
@@ -104,40 +141,30 @@ exportZendeskDataToLocalDB exportFromTime = do
     -- Yeah, not sure why this happens. Very weird.
     exportedTickets             <- nub <$> exportTickets exportFromTime
 
+    let filteredTicketIds = filterAnalyzedTickets exportedTickets
+    let sortedTicketIds   = sortBy compare filteredTicketIds
+
     -- Yeah, there is a strange behaviour when we export tickets,
     -- we might get deleted tickets as well.
     deletedTickets              <- listDeletedTickets
 
-    -- Yep, some more strange behaviour. Not deleted, just not found.
-    -- TODO(ks): We can remove this once we have exception handling.
-    let deletedAndMissingTickets =
-            deletedTickets <>
-                [ DeletedTicket { dtId = TicketId 18317 }
-                , DeletedTicket { dtId = TicketId 18316 }
-                , DeletedTicket { dtId = TicketId 18263 }
-                , DeletedTicket { dtId = TicketId 18258 }
-                , DeletedTicket { dtId = TicketId 18256 }
-                ]
-
-    let notDeletedExportedTickets =
-            sort $ filter (not . isDeletedTicket deletedAndMissingTickets) exportedTickets
-
-    void $ forM_ notDeletedExportedTickets saveTicketDataToLocalDB
-
-    -- TODO(ks): We currently don't download the attachment since that
-    -- would take a ton of time and would require probably up to 100Gb of space!
-    pure notDeletedExportedTickets
+    pure . sort $ filter (not . isDeletedTicket deletedTickets) sortedTicketIds
   where
-    -- Filter for deleted tickets.
+    -- | Filter for deleted tickets.
     isDeletedTicket :: [DeletedTicket] -> TicketInfo -> Bool
     isDeletedTicket dTickets TicketInfo{..} =
         tiId `elem` map dtId dTickets
 
--- | Yep, we are missing an intermediate step here to test and separate.
-saveTicketDataToLocalDB :: TicketInfo -> App ()
-saveTicketDataToLocalDB ticket = do
+-- | So we don't have to include another library here.
+chunks :: Int -> [a] -> [[a]]
+chunks _ [] = []
+chunks n xs =
+    let (ys, zs) = splitAt n xs
+    in  ys : chunks n zs
 
-    getTicketComments           <- asksZendeskLayer zlGetTicketComments
+-- | We are missing an intermediate step here to test and separate.
+saveTicketDataToLocalDB :: (TicketInfo,[Comment]) -> App ()
+saveTicketDataToLocalDB (ticket, ticketComments) = do
 
     insertTicketInfo            <- asksDBLayer dlInsertTicketInfo
     insertTicketComments        <- asksDBLayer dlInsertTicketComments
@@ -145,8 +172,6 @@ saveTicketDataToLocalDB ticket = do
 
     let ticketId = tiId ticket
 
-    -- First fetch comments, FAIL-FAST
-    ticketComments <- getTicketComments ticketId
     insertTicketInfo ticket
 
     -- For all the ticket comments
@@ -188,47 +213,83 @@ fetchAgents = do
     mapM_ print agents
     pure agents
 
+-- | When we want to process a specific ticket.
 processTicket :: TicketId -> App (Maybe ZendeskResponse)
 processTicket tId = do
-    printText           <- asksIOLayer iolPrintText
-    appendF             <- asksIOLayer iolAppendFile
 
-    -- Printing id before inspecting the ticket so that when the process stops by the
-    -- corrupted log file, we know which id to blacklist.
-    printText $ "Analyzing ticket id: " <> show (getTicketId tId)
-
-    -- We first fetch the function from the configuration
+    -- We see 3 HTTP calls here.
     getTicketInfo       <- asksZendeskLayer zlGetTicketInfo
-    mTicketInfo         <- getTicketInfo tId
-
     getTicketComments   <- asksZendeskLayer zlGetTicketComments
+    postTicketComment   <- asksZendeskLayer zlPostTicketComment
+
+    mTicketInfo         <- getTicketInfo tId
     comments            <- getTicketComments tId
+
     let attachments     = getAttachmentsFromComment comments
     let ticketInfo      = fromMaybe (error "No ticket info") mTicketInfo
+
     zendeskResponse     <- getZendeskResponses comments attachments ticketInfo
-    postTicketComment   <- asksZendeskLayer zlPostTicketComment
 
     whenJust zendeskResponse $ \response -> do
         postTicketComment ticketInfo response
-        let tags = getTicketTags $ zrTags response
-        forM_ tags $ \tag -> do
-            let formattedTicketIdAndTag = show (getTicketId tId) <> " " <> tag
-            printText formattedTicketIdAndTag
-            appendF "logs/analysis-result.log" (formattedTicketIdAndTag <> "\n")
 
     pure zendeskResponse
 
+-- | When we want to process all tickets from a specific time onwards.
+-- Run in parallel.
+processTicketsFromTime :: ExportFromTime -> App ()
+processTicketsFromTime exportFromTime = do
+
+    allTickets          <- fetchTicketsExportedFromTime exportFromTime
+
+    let chunkedTickets = chunks 100 allTickets
+
+    -- The max requests are 400 per minute, so we wait a minute!
+    mZendeskResponses <- forM chunkedTickets $ \chunkedTickets' -> do
+        -- Wait a minute!
+        threadDelay $ 61 * 1000000
+        -- Concurrently we fetch the ticket data. If a single
+        -- call fails, they all fail. When they all finish, they return the
+        -- result.
+        mapConcurrently (processTicket . tiId) chunkedTickets'
+
+    -- This is single-threaded.
+    mapM_ processSingleTicket $ concat mZendeskResponses
+
+    putTextLn "All the tickets has been processed."
+  where
+    -- | Process a single ticket after they were analyzed.
+    processSingleTicket :: Maybe ZendeskResponse -> App ()
+    processSingleTicket zendeskResponse = do
+
+        -- We first fetch the function from the configuration
+        printText           <- asksIOLayer iolPrintText
+        appendF             <- asksIOLayer iolAppendFile -- We need to remove this.
+
+        whenJust zendeskResponse $ \response -> do
+            let ticketId = getTicketId $ zrTicketId response
+
+            -- Printing id before inspecting the ticket so that when the process stops by the
+            -- corrupted log file, we know which id to blacklist.
+            printText $ "Analyzing ticket id: " <> show ticketId
+
+            let tags = getTicketTags $ zrTags response
+            forM_ tags $ \tag -> do
+                let formattedTicketIdAndTag = show ticketId <> " " <> tag
+                printText formattedTicketIdAndTag
+                appendF "logs/analysis-result.log" (formattedTicketIdAndTag <> "\n")
+
+
+-- | When we want to process all possible tickets.
 processTickets :: App ()
 processTickets = do
-    sortedTicketIds             <- listAndSortTickets
-    sortedUnassignedTicketIds   <- listAndSortUnassignedTickets
 
-    let allTickets = sortedTicketIds <> sortedUnassignedTicketIds
-
+    allTickets          <- fetchTickets
     _                   <- mapM (processTicket . tiId) allTickets
 
     putTextLn "All the tickets has been processed."
 
+-- | Fetch all tickets.
 fetchTickets :: App [TicketInfo]
 fetchTickets = do
     sortedTicketIds             <- listAndSortTickets
@@ -239,8 +300,38 @@ fetchTickets = do
 
 fetchAndShowTickets :: App ()
 fetchAndShowTickets = do
-    tickets <- fetchTickets
-    mapM_ (putTextLn . show) tickets
+    allTickets <- fetchTickets
+
+    -- We want to call in parallel 400 HTTP requests to fetch the data. 3 calls are required.
+    let chunkedTickets = chunks 100 allTickets
+
+    -- The max requests are 400 per minute, so we wait a minute!
+    output <- forM chunkedTickets $ \chunkedTickets' -> do
+        -- Concurrently we fetch the ticket data. If a single
+        -- call fails, they all fail. When they all finish, they return the
+        -- result.
+        mapConcurrently (pure . show @Text) chunkedTickets'
+
+    mapM_ putTextLn (concat output)
+
+    putTextLn "All the tickets has been processed."
+
+-- | Fetch and show tickets from a specific time.
+fetchAndShowTicketsFrom :: ExportFromTime -> App ()
+fetchAndShowTicketsFrom exportFromTime = do
+    allTickets <- fetchTicketsExportedFromTime exportFromTime
+
+    let chunkedTickets = chunks 100 allTickets
+
+    -- The max requests are 400 per minute, so we wait a minute!
+    output <- forM chunkedTickets $ \chunkedTickets' -> do
+        -- Concurrently we fetch the ticket data. If a single
+        -- call fails, they all fail. When they all finish, they return the
+        -- result.
+        mapConcurrently (pure . show . tiId) chunkedTickets'
+
+    mapM_ putTextLn (concat output)
+
     putTextLn "All the tickets has been processed."
 
 -- TODO(ks): Extract repeating code, generalize.
@@ -455,7 +546,7 @@ filterAnalyzedTickets ticketsInfo =
         && isTicketInGoguenTestnet ticketInfo
 
     analyzedTags :: [Text]
-    analyzedTags = map renderTicketStatus [AnalyzedByScriptV1_0, AnalyzedByScriptV1_1]
+    analyzedTags = map renderTicketStatus [AnalyzedByScriptV1_0, AnalyzedByScriptV1_1, AnalyzedByScriptV1_2]
 
     isTicketAnalyzed :: TicketInfo -> Bool
     isTicketAnalyzed TicketInfo{..} = all (\analyzedTag -> analyzedTag `notElem` (getTicketTags tiTags)) analyzedTags
@@ -465,7 +556,7 @@ filterAnalyzedTickets ticketsInfo =
     unsolvedTicketStatus = map TicketStatus ["new", "open", "hold", "pending"]
 
     isTicketOpen :: TicketInfo -> Bool
-    isTicketOpen TicketInfo{..} = tiStatus `elem` unsolvedTicketStatus-- || ticketStatus == "new"
+    isTicketOpen TicketInfo{..} = tiStatus `elem` unsolvedTicketStatus
 
     -- | If we have a ticket we are having issues with...
     isTicketBlacklisted :: TicketInfo -> Bool

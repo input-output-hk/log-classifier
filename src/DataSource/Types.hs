@@ -54,6 +54,8 @@ module DataSource.Types
 
 import           Universum
 
+import           UnliftIO (MonadUnliftIO)
+
 import           Data.Aeson (FromJSON, ToJSON, Value (Object), object, parseJSON, toJSON,
                              withObject, (.:), (.:?), (.=))
 import           Data.Aeson.Types (Parser)
@@ -77,6 +79,7 @@ newtype App a = App { runAppBase :: ReaderT Config IO a }
              , MonadReader Config
              , MonadIO
              , MonadBase IO
+             , MonadUnliftIO
              )
 
 instance MonadBaseControl IO App where
@@ -403,6 +406,7 @@ data TicketTag
     = AnalyzedByScript      -- ^ Ticket has been analyzed
     | AnalyzedByScriptV1_0  -- ^ Ticket has been analyzed by the version 1.0
     | AnalyzedByScriptV1_1  -- ^ Ticket has been analyzed by the version 1.1
+    | AnalyzedByScriptV1_2  -- ^ Ticket has been analyzed by the version 1.2
     | NoKnownIssue          -- ^ Ticket had no known issue
     | NoLogAttached         -- ^ Log file not attached
 
@@ -642,7 +646,7 @@ instance FromPageResultList TicketInfo where
         , exportTicketsParser obj
         ]
       where
-          -- | The case when we have the simple parser from tickets.
+        -- | The case when we have the simple parser from tickets.
         ticketListParser :: Value -> Parser (PageResultList TicketInfo)
         ticketListParser = withObject "ticketList" $ \o ->
             PageResultList
@@ -803,6 +807,6 @@ renderTicketStatus :: TicketTag -> Text
 renderTicketStatus AnalyzedByScript     = "analyzed-by-script"
 renderTicketStatus AnalyzedByScriptV1_0 = "analyzed-by-script-v1.0"
 renderTicketStatus AnalyzedByScriptV1_1 = "analyzed-by-script-v1.1"
+renderTicketStatus AnalyzedByScriptV1_2 = "analyzed-by-script-v1.2"
 renderTicketStatus NoKnownIssue         = "no-known-issues"
 renderTicketStatus NoLogAttached        = "no-log-files"
-
