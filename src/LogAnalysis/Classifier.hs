@@ -13,7 +13,6 @@ module LogAnalysis.Classifier
 
 import           Universum
 
-import           Control.Exception.Safe (Handler (..), catches)
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Map.Strict as Map
 import           Data.Text (isInfixOf)
@@ -30,17 +29,16 @@ numberOfErrorText = 3
 -- | Analyze each log file based on the knowlodgebases' data.
 extractIssuesFromLogs :: (MonadCatch m) => [LByteString] -> Analysis -> m Analysis
 extractIssuesFromLogs files analysis = do
-    let analysisResult = foldl' runClassifiers analysis files
-    catches (filterAnalysis analysisResult)
-        [ Handler (\(e :: LogAnalysisException) -> throwM e)
-        , Handler (\(_ :: SomeException)        -> throwM LogReadException)
-        ]
+    analysisResult <- foldlM runClassifiers analysis files
+    filterAnalysis analysisResult
 
 -- | Run analysis on given file
-runClassifiers :: Analysis -> LByteString -> Analysis
-runClassifiers analysis logfile =
-    let logLines = lines $ decodeUtf8With ignore (LBS.toStrict logfile)
-    in foldl' analyzeLine analysis logLines
+runClassifiers :: (MonadCatch m) => Analysis -> LByteString -> m Analysis
+runClassifiers analysis logfile = do
+    elogLines <- tryAny $ pure $!! (lines . decodeUtf8With ignore) $ LBS.toStrict logfile
+    case elogLines of
+        Left _ -> throwM LogReadException
+        Right logLines -> pure $ foldl' analyzeLine analysis logLines
 
 -- | Analyze each line
 analyzeLine :: Analysis -> Text -> Analysis
@@ -59,7 +57,7 @@ filterAnalysis as = do
     let filteredAnalysis = Map.filter (/= mempty) as
     if null filteredAnalysis
     then throwM NoKnownIssueFound
-    else return $ Map.map (take numberOfErrorText) filteredAnalysis
+    else pure $ Map.map (take numberOfErrorText) filteredAnalysis
 
 extractErrorCodes :: Analysis -> [Text]
 extractErrorCodes as = map (\(Knowledge{..}, _) -> renderErrorCode kErrorCode) $ Map.toList as

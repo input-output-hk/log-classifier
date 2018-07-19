@@ -264,7 +264,7 @@ processTicket tId = do
     case mTicketInfo of
         Nothing -> throwM $ TicketInfoNotFound tId
         Just ticketInfo -> do
-            zendeskResponse     <- getZendeskResponses comments attachments ticketInfo
+            zendeskResponse <- getZendeskResponses comments attachments ticketInfo
 
             postTicketComment ticketInfo zendeskResponse
 
@@ -535,10 +535,10 @@ inspectAttachment Config{..} ticketInfo@TicketInfo{..} attachment = do
                 }
 
         Right logFiles -> do
-            -- Log files maybe corrupted or issue may not be found
-            eitherAnalysisResult    <- try $ extractIssuesFromLogs logFiles analysisEnv
+            -- Log files maybe corrupted or issue was not found
+            tryAnalysisResult    <- try $ extractIssuesFromLogs logFiles analysisEnv
 
-            case eitherAnalysisResult of
+            case tryAnalysisResult of
                 Right analysisResult -> do
                     -- Known issue was found
                     let errorCodes = extractErrorCodes analysisResult
