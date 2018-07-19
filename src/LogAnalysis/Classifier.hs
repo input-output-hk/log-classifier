@@ -35,10 +35,15 @@ extractIssuesFromLogs files analysis = do
 -- | Run analysis on given file
 runClassifiers :: (MonadCatch m) => Analysis -> LByteString -> m Analysis
 runClassifiers analysis logfile = do
-    elogLines <- tryAny $ pure $!! (lines . decodeUtf8With ignore) $ LBS.toStrict logfile
-    case elogLines of
-        Left _ -> throwM LogReadException
-        Right logLines -> pure $ foldl' analyzeLine analysis logLines
+    -- Force the evaluation of the whole file.
+    strictLogfile <- catchAnyStrict (pure logfile) $ \_ -> throwM LogReadException
+    pure . foldl' analyzeLine analysis . lines . decodeUtf8With ignore . LBS.toStrict $ strictLogfile
+  where
+
+    -- | A helpful utility function.
+    -- TODO(ks): Maybe move it to Util?
+    catchAnyStrict :: (MonadCatch m, NFData a) => m a -> (SomeException -> m a) -> m a
+    catchAnyStrict m = catchAny $ m >>= (return $!) . force
 
 -- | Analyze each line
 analyzeLine :: Analysis -> Text -> Analysis
