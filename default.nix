@@ -1,5 +1,5 @@
 let lib = import ./lib.nix;
 
-let hsPkgs = haskell.packages.ghc822;
+    pkgs = import lib.fetchNixPkgs {};
 in
-  fetchNixPkgs.callPackage ./cabal2nix.nix {}
+  pkgs.haskellPackages.callPackage ./cabal2nix.nix {}
