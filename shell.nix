@@ -1,15 +1,18 @@
+with import ((import ./lib.nix).fetchNixPkgs) { };
+
 let
-  bootstrap = import <nixpkgs> { };
-
-  nixpkgs = builtins.fromJSON (builtins.readFile ./nixpkgs-src.json);
-
-  src = bootstrap.fetchFromGitHub {
-    owner = "NixOS";
-    repo  = "nixpkgs";
-    inherit (nixpkgs) rev sha256;
-  };
-
-  pkgs = import src { };
-
+  hsPkgs = haskell.packages.ghc822;
 in
-  pkgs.haskellPackages.callPackage ./default.nix { }
+  haskell.lib.buildStackProject {
+     name = "log-classifier";
+     ghc = hsPkgs.ghc;
+     buildInputs = [
+       zlib unzip openssh autoreconfHook openssl
+       gmp rocksdb git bsdiff ncurses
+       hsPkgs.happy hsPkgs.cpphs lzma
+       perl bash
+     # cabal-install and stack pull in lots of dependencies on OSX so skip them
+     # See https://github.com/NixOS/nixpkgs/issues/21200
+     ] ++ (lib.optionals stdenv.isLinux [ cabal-install stack ])
+       ++ (lib.optionals stdenv.isDarwin (with darwin.apple_sdk.frameworks; [ Cocoa CoreServices libcxx libiconv ]));
+}
