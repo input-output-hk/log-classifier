@@ -6,6 +6,7 @@ module Lib
     , collectEmails
     , getZendeskResponses
     , processTicket
+    , processTicketSafe
     , processTickets
     , fetchTickets
     , showStatistics
@@ -210,7 +211,7 @@ saveTicketDataToLocalDB (ticket, ticketComments) = do
 
     pure ()
 
--- TODO(hs): Remove this function since it's not used
+-- | TODO(hs): Remove this function since it's not used
 collectEmails :: App ()
 collectEmails = do
     cfg <- ask
@@ -239,6 +240,7 @@ fetchAgents = do
     mapM_ print agents
     pure agents
 
+-- | 'processTicket' with exception handling
 processTicketSafe :: TicketId -> App ()
 processTicketSafe tId = catch (void $ processTicket tId)
     -- Print and log any exceptions related to process ticket
@@ -249,6 +251,7 @@ processTicketSafe tId = catch (void $ processTicket tId)
         appendF <- asksIOLayer iolAppendFile
         appendF "./logs/errors.log" (show e <> "\n"))
 
+-- | Process ticket with given 'TicketId'
 processTicket :: TicketId -> App ZendeskResponse
 processTicket tId = do
 
@@ -458,8 +461,7 @@ getAttachmentsFromComment comments = do
     isAttachmentZip :: Attachment -> Bool
     isAttachmentZip attachment = "application/zip" == aContentType attachment
 
--- | Get zendesk responses
--- | Returns with maybe because it could return no response
+-- | Inspects the comment, attachment, ticket info and create 'ZendeskResponse'
 getZendeskResponses :: [Comment] -> [Attachment] -> TicketInfo -> App ZendeskResponse
 getZendeskResponses comments attachments ticketInfo
     | not (null attachments) = inspectAttachments ticketInfo attachments
@@ -467,16 +469,14 @@ getZendeskResponses comments attachments ticketInfo
     | otherwise              = throwM $ CommentAndAttachmentNotFound (tiId ticketInfo)
     -- No attachment, no comments means something is wrong with ticket itself
 
--- | Inspect only the latest attachment. We could propagate this
--- @Maybe@ upwards or use an @Either@ which will go hand in hand
--- with the idea that we need to improve our exception handling.
+-- | Inspect the latest attachment
 inspectAttachments :: TicketInfo -> [Attachment] -> App ZendeskResponse
 inspectAttachments ticketInfo attachments = do
 
     config          <- ask
     getAttachment   <- asksZendeskLayer zlGetAttachment
 
-    lastAttach <- handleMaybe (safeHead . reverse . sort $ attachments)
+    lastAttach <- handleMaybe . safeHead . reverse . sort $ attachments
     att <- handleMaybe =<< getAttachment lastAttach
     inspectAttachment config ticketInfo att
   where
@@ -570,6 +570,7 @@ inspectAttachment Config{..} ticketInfo@TicketInfo{..} attachment = do
                                 , zrIsPublic    = cfgIsCommentPublic
                                 }
 
+-- | Create 'ZendeskResponse' stating no logs were found on the ticket
 responseNoLogs :: TicketInfo -> App ZendeskResponse
 responseNoLogs TicketInfo{..} = do
     Config {..} <- ask
@@ -580,7 +581,7 @@ responseNoLogs TicketInfo{..} = do
              , zrIsPublic = cfgIsCommentPublic
              }
 
--- | Filter analyzed tickets
+-- | Filter tickets
 filterAnalyzedTickets :: [TicketInfo] -> [TicketInfo]
 filterAnalyzedTickets ticketsInfo =
     filter ticketsFilter ticketsInfo

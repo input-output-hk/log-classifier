@@ -149,7 +149,7 @@ processTicketSpec =
                         zendeskResponse <- run appExecution
 
                         -- Check we have some comments.
-                        assert $ (not . null . zrComment) zendeskResponse
+                        assert . not . null . zrComment $ zendeskResponse
 
         it "processes ticket, with no attachments" $
             forAll (listOf1 genCommentWithNoAttachment) $ \(commentsWithoutAttachment :: [Comment]) ->
@@ -172,7 +172,7 @@ processTicketSpec =
 
                     zendeskResponse <- run appExecution
 
-                    assert $ (not . null . zrComment) zendeskResponse
+                    assert . not . null . zrComment $ zendeskResponse
                     assert $ isResponseTaggedWithNoLogs zendeskResponse
 
         it "processes ticket, with attachments" $
@@ -199,8 +199,8 @@ processTicketSpec =
 
                     zendeskResponse <- run appExecution
 
-                    assert $ (not . null . zrComment) zendeskResponse
-                    assert $ not (isResponseTaggedWithNoLogs zendeskResponse)
+                    assert . not . null . zrComment $ zendeskResponse
+                    assert . not . isResponseTaggedWithNoLogs $ zendeskResponse
 
         it "tries to process ticket but cannot find both comments and attachments, throws exception" $
             forAll arbitrary $ \(ticketInfo :: TicketInfo) ->
