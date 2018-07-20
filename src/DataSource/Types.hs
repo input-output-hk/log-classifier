@@ -80,6 +80,8 @@ newtype App a = App { runAppBase :: ReaderT Config IO a }
              , MonadIO
              , MonadBase IO
              , MonadUnliftIO
+             , MonadCatch
+             , MonadThrow
              )
 
 instance MonadBaseControl IO App where

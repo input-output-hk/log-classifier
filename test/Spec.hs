@@ -13,6 +13,7 @@ import           DataSource (App, Attachment (..), Comment (..), Config (..), De
                              ZendeskAPIUrl (..), ZendeskLayer (..), ZendeskResponse (..),
                              basicIOLayer, createResponseTicket, defaultConfig, emptyDBLayer,
                              emptyZendeskLayer, runApp, showURL)
+import           Exceptions (ProcessTicketExceptions (..))
 
 import           Lib (exportZendeskDataToLocalDB, filterAnalyzedTickets, listAndSortTickets,
                       processTicket)
@@ -59,6 +60,7 @@ withStubbedIOAndZendeskLayer stubbedZendeskLayer =
     stubbedIOLayer =
         basicIOLayer
             { iolPrintText      = \_     -> pure ()
+            , iolAppendFile     = \_ _   -> pure ()
             -- ^ Do nothing with the output
             }
 
@@ -121,32 +123,6 @@ listAndSortTicketsSpec =
 processTicketSpec :: Spec
 processTicketSpec =
     describe "processTicket" $ modifyMaxSuccess (const 200) $ do
-        it "processes ticket, no comments" $
-            forAll arbitrary $ \(ticketInfo :: TicketInfo) ->
-                forAll (listOf1 arbitrary) $ \(listTickets) ->
-
-                    monadicIO $ do
-
-                        let stubbedZendeskLayer :: ZendeskLayer App
-                            stubbedZendeskLayer =
-                                emptyZendeskLayer
-                                    { zlListAssignedTickets     = \_     -> pure listTickets
-                                    , zlGetTicketInfo           = \_     -> pure $ Just ticketInfo
-                                    , zlPostTicketComment       = \_ _   -> pure ()
-                                    , zlGetTicketComments       = \_     -> pure []
-                                    }
-
-                        let stubbedConfig :: Config
-                            stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
-
-                        let appExecution :: IO (Maybe ZendeskResponse)
-                            appExecution = runApp (processTicket . tiId $ ticketInfo) stubbedConfig
-
-                        zendeskComments <- run appExecution
-
-                        -- Check we have some comments.
-                        assert $ isNothing zendeskComments
-
         it "processes ticket, with comments" $
             forAll arbitrary $ \(ticketInfo :: TicketInfo) ->
                 forAll (listOf1 arbitrary) $ \(listTickets) ->
@@ -167,13 +143,13 @@ processTicketSpec =
                         let stubbedConfig :: Config
                             stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
 
-                        let appExecution :: IO (Maybe ZendeskResponse)
+                        let appExecution :: IO ZendeskResponse
                             appExecution = runApp (processTicket . tiId $ ticketInfo) stubbedConfig
 
                         zendeskResponse <- run appExecution
 
                         -- Check we have some comments.
-                        assert $ isJust zendeskResponse
+                        assert . not . null . zrComment $ zendeskResponse
 
         it "processes ticket, with no attachments" $
             forAll (listOf1 genCommentWithNoAttachment) $ \(commentsWithoutAttachment :: [Comment]) ->
@@ -191,12 +167,12 @@ processTicketSpec =
                     let stubbedConfig :: Config
                         stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
 
-                    let appExecution :: IO (Maybe ZendeskResponse)
+                    let appExecution :: IO ZendeskResponse
                         appExecution = runApp (processTicket . tiId $ ticketInfo) stubbedConfig
 
                     zendeskResponse <- run appExecution
 
-                    assert $ isJust zendeskResponse
+                    assert . not . null . zrComment $ zendeskResponse
                     assert $ isResponseTaggedWithNoLogs zendeskResponse
 
         it "processes ticket, with attachments" $
@@ -218,17 +194,98 @@ processTicketSpec =
                     let stubbedConfig :: Config
                         stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
 
-                    let appExecution :: IO (Maybe ZendeskResponse)
+                    let appExecution :: IO ZendeskResponse
                         appExecution = runApp (processTicket . tiId $ ticketInfo) stubbedConfig
 
                     zendeskResponse <- run appExecution
 
-                    assert $ isJust zendeskResponse
-                    assert $ not (isResponseTaggedWithNoLogs zendeskResponse)
+                    assert . not . null . zrComment $ zendeskResponse
+                    assert . not . isResponseTaggedWithNoLogs $ zendeskResponse
 
-isResponseTaggedWithNoLogs :: Maybe ZendeskResponse -> Bool
-isResponseTaggedWithNoLogs (Just response) = "no-log-files" `elem` getTicketTags (zrTags response)
-isResponseTaggedWithNoLogs Nothing         = False
+        it "tries to process ticket but cannot find both comments and attachments, throws exception" $
+            forAll arbitrary $ \(ticketInfo :: TicketInfo) ->
+
+                monadicIO $ do
+
+                    let stubbedZendeskLayer :: ZendeskLayer App
+                        stubbedZendeskLayer =
+                            emptyZendeskLayer
+                                { zlGetTicketInfo           = \_     -> pure $ Just ticketInfo
+                                , zlPostTicketComment       = \_ _   -> pure ()
+                                , zlGetTicketComments       = \_     -> pure []
+                                , zlGetAttachment           = \_     -> pure Nothing
+                                }
+
+                    let stubbedConfig :: Config
+                        stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
+
+                    let appExecution :: IO ZendeskResponse
+                        appExecution = runApp (processTicket . tiId $ ticketInfo) stubbedConfig
+
+                    eZendeskResponse <- run (try appExecution)
+
+                    -- Check it throws exception
+                    assert $ isLeft (eZendeskResponse :: Either ProcessTicketExceptions ZendeskResponse)
+                    whenLeft eZendeskResponse $ \processException ->
+                        assert $ processException == CommentAndAttachmentNotFound (tiId ticketInfo)
+
+        it "tries to process ticket but cannot find attachments, throws exception" $
+            forAll arbitrary $ \(ticketInfo :: TicketInfo) ->
+                forAll (listOf1 arbitrary) $ \comments ->
+
+                    monadicIO $ do
+
+                        pre $ any (\Comment{..} -> not $ null cAttachments) comments
+
+                        let stubbedZendeskLayer :: ZendeskLayer App
+                            stubbedZendeskLayer =
+                                emptyZendeskLayer
+                                    { zlGetTicketInfo           = \_     -> pure $ Just ticketInfo
+                                    , zlPostTicketComment       = \_ _   -> pure ()
+                                    , zlGetTicketComments       = \_     -> pure comments
+                                    , zlGetAttachment           = \_     -> pure Nothing
+                                    }
+
+                        let stubbedConfig :: Config
+                            stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
+
+                        let appExecution :: IO ZendeskResponse
+                            appExecution = runApp (processTicket . tiId $ ticketInfo) stubbedConfig
+
+                        eZendeskResponse <- run (try appExecution)
+
+                        -- Check we have some comments.
+                        assert $ isLeft (eZendeskResponse :: Either ProcessTicketExceptions ZendeskResponse)
+                        whenLeft eZendeskResponse $ \processException ->
+                            assert $ processException == AttachmentNotFound (tiId ticketInfo)
+
+        it "tries to process ticket but cannot fetch ticket info, throws exception" $
+            forAll arbitrary $ \(ticketId :: TicketId) ->
+
+                    monadicIO $ do
+
+                        let stubbedZendeskLayer :: ZendeskLayer App
+                            stubbedZendeskLayer =
+                                emptyZendeskLayer
+                                    { zlGetTicketInfo           = \_     -> pure Nothing
+                                    , zlPostTicketComment       = \_ _   -> pure ()
+                                    , zlGetTicketComments       = \_     -> pure empty
+                                    }
+
+                        let stubbedConfig :: Config
+                            stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
+
+                        let appExecution :: IO ZendeskResponse
+                            appExecution = runApp (processTicket ticketId) stubbedConfig
+
+                        eZendeskResponse <- run (try appExecution)
+
+                        assert $ isLeft (eZendeskResponse :: Either ProcessTicketExceptions ZendeskResponse)
+                        whenLeft eZendeskResponse $ \processException ->
+                            assert $ processException == TicketInfoNotFound ticketId
+
+isResponseTaggedWithNoLogs :: ZendeskResponse -> Bool
+isResponseTaggedWithNoLogs response = "no-log-files" `elem` getTicketTags (zrTags response)
 
 genCommentWithNoAttachment :: Gen Comment
 genCommentWithNoAttachment = Comment
