@@ -1,12 +1,5 @@
-with import <nixpkgs> {};
+let lib = import ./lib.nix;
 
-let
-  ghc = haskellPackages.ghcWithPackages (ps: with ps; [aeson array attoparsec bytestring containers http-conduit
-                                                       mtl optparse-applicative regex-tdfa reflection universum zip-archive]);
-in runCommand "log-classifier" { buildInputs = [ ghc haskellPackages.ghcid ]; } ''
-  cp -r ${builtins.fetchGit ./.} src
-  chmod -R +w src
-  cd src
-  mkdir -p $out/bin/
-  ghc src/Lib.hs -o $out/bin/log-classifier -Wall
-''
+    pkgs = import lib.fetchNixPkgs {};
+in
+  pkgs.haskell.packages.ghc822.callPackage ./cabal2nix.nix {}

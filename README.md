@@ -1,3 +1,5 @@
+[![Build status](https://badge.buildkite.com/50d1fa0b6ed53deb7bca3b81419fd2c65e7c22f67d2101e552.svg)](https://buildkite.com/input-output-hk/log-classifier)
+
 # log-classifier
 
 Original version by Hiroto Shioi (https://github.com/HirotoShioi).

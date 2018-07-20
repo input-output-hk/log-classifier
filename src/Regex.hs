@@ -14,6 +14,8 @@ module Regex
 -- Not used, but want to use it in the future.
 import           Universum
 
+import           Prelude (id)
+
 import qualified Data.Array as Array
 import qualified Data.Map.Strict as Map
 import qualified Text.Regex.TDFA as TDFA

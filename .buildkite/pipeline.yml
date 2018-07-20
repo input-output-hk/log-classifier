@@ -1,0 +1,5 @@
+steps:
+  - label: 'log-classifier-x86_64-linux-nix'
+    command: 'nix build -f default.nix' 
+    agents:
+      system: x86_64-linux
