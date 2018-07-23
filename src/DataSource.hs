@@ -12,6 +12,7 @@ import           Universum
 import           DataSource.DB
 import           DataSource.Http
 import           DataSource.Types
+import           HttpLayer (basicHTTPNetworkLayer)
 
 
 -- | The default configuration.
@@ -24,8 +25,9 @@ defaultConfig = Config
     , cfgAssignTo               = 0
     , cfgKnowledgebase          = []
     , cfgNumOfLogsToAnalyze     = 5
-    , cfgIsCommentPublic        = True -- TODO(ks): For now, we need this in CLI.
+    , cfgIsCommentPublic        = False -- TODO(ks): For now, we need this in CLI.
     , cfgZendeskLayer           = basicZendeskLayer
+    , cfgHTTPNetworkLayer       = basicHTTPNetworkLayer
     , cfgIOLayer                = basicIOLayer
     , cfgDBLayer                = connDBLayer
     }
