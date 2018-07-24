@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE RecordWildCards            #-}
 
 module DataSource.Types
@@ -40,12 +41,14 @@ module DataSource.Types
     , App
     , Config (..)
     , ZendeskLayer (..)
+    , HTTPNetworkLayer (..)
     , IOLayer (..)
     , DBLayer (..)
     , knowledgebasePath
     , tokenPath
     , assignToPath
     , asksZendeskLayer
+    , asksHTTPNetworkLayer
     , asksIOLayer
     , asksDBLayer
     , showURL
@@ -54,6 +57,9 @@ module DataSource.Types
 
 import           Universum
 
+import           Control.Monad.Base (MonadBase)
+import           Control.Monad.Trans.Control (MonadBaseControl (..))
+
 import           UnliftIO (MonadUnliftIO)
 
 import           Data.Aeson (FromJSON, ToJSON, Value (Object), object, parseJSON, toJSON,
@@ -61,10 +67,9 @@ import           Data.Aeson (FromJSON, ToJSON, Value (Object), object, parseJSON
 import           Data.Aeson.Types (Parser)
 import qualified Data.Text as T
 import           Data.Time.Clock.POSIX (POSIXTime)
-import           LogAnalysis.Types (Knowledge)
+import           Network.HTTP.Simple (Request)
 
-import           Control.Monad.Base (MonadBase)
-import           Control.Monad.Trans.Control (MonadBaseControl (..))
+import           LogAnalysis.Types (Knowledge)
 
 import           Test.QuickCheck (Arbitrary (..), elements, listOf1, vectorOf)
 
@@ -118,25 +123,44 @@ data Config = Config
     , cfgDBLayer            :: !(DBLayer App)
     -- ^ The _DB_ layer. This is containing all the modification functions.
     -- TODO(ks): @Maybe@ db layer. It's not really required.
+    , cfgHTTPNetworkLayer   :: !HTTPNetworkLayer
+    -- ^ The HTTP network layer. Required so we can mock out the responses and separate
+    -- the specific HTTP communication (library) from the code that uses it.
     }
 
 
 -- | Utility function for getting a function of the @ZendeskLayer@.
-asksZendeskLayer :: forall m a. (MonadReader Config m) => (ZendeskLayer App -> a) -> m a
+asksZendeskLayer
+    :: forall m a. (MonadReader Config m)
+    => (ZendeskLayer App -> a)
+    -> m a
 asksZendeskLayer getter = do
     Config{..} <- ask
     pure $ getter cfgZendeskLayer
 
+-- | Utility function for getting a function of the @cfgHTTPNetworkLayer@.
+asksHTTPNetworkLayer
+    :: forall m a. (MonadReader Config m)
+    => (HTTPNetworkLayer -> a)
+    -> m a
+asksHTTPNetworkLayer getter = do
+    Config{..} <- ask
+    pure $ getter cfgHTTPNetworkLayer
 
 -- | Utility function for getting a function of the @ZendeskLayer@.
-asksIOLayer :: forall m a. (MonadReader Config m) => (IOLayer App -> a) -> m a
+asksIOLayer
+    :: forall m a. (MonadReader Config m)
+    => (IOLayer App -> a)
+    -> m a
 asksIOLayer getter = do
     Config{..} <- ask
     pure $ getter cfgIOLayer
 
-
 -- | Utility function for getting a function of the @DBLayer@.
-asksDBLayer :: forall m a. (MonadReader Config m) => (DBLayer App -> a) -> m a
+asksDBLayer
+    :: forall m a. (MonadReader Config m)
+    => (DBLayer App -> a)
+    -> m a
 asksDBLayer getter = do
     Config{..} <- ask
     pure $ getter cfgDBLayer
@@ -172,6 +196,19 @@ data ZendeskLayer m = ZendeskLayer
                               -> ZendeskResponse
                               -> m ()
     , zlExportTickets         :: ExportFromTime   -> m [TicketInfo]
+    }
+
+-- | The HTTP network layer that we want to expose.
+-- We don't want anything to leak out, so we expose only the most relevant information,
+-- anything relating to how it internaly works should NOT be exposed.
+-- Actually, it would be better if we "inject" this into
+-- the @Http@ module, say in the @ZendeskaLayer@, but it's good enough for now.
+-- We need to use RankNTypes due to some complications that appeared.
+data HTTPNetworkLayer = HTTPNetworkLayer
+    { hnlAddJsonBody    :: forall a.    (ToJSON a) => a -> Request -> Request
+    -- TODO(ks): These two below are basically the same, will fix in future PR, requires refactoring.
+    , hnlApiCall        :: forall m a.  (MonadIO m, FromJSON a) => (Value -> Parser a) -> Request -> m a
+    , hnlApiCallSafe    :: forall m a.  (MonadIO m, FromJSON a) => (Value -> Parser a) -> Request -> m (Either String a)
     }
 
 -- | The IOLayer interface that we can expose.

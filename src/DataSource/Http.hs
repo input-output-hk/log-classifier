@@ -13,13 +13,12 @@ import           Universum
 import           Control.Concurrent (threadDelay)
 import           Control.Monad.Reader (ask)
 
-import           Data.Aeson (FromJSON, ToJSON, Value, encode, parseJSON)
+import           Data.Aeson (parseJSON)
 import           Data.Aeson.Text (encodeToLazyText)
-import           Data.Aeson.Types (Parser, parseEither)
 import           Data.List (nub)
-import           Network.HTTP.Simple (Request, addRequestHeader, getResponseBody, httpJSON, httpLBS,
-                                      parseRequest_, setRequestBasicAuth, setRequestBodyJSON,
-                                      setRequestMethod, setRequestPath)
+import           Network.HTTP.Simple (Request, getResponseBody, httpLBS, parseRequest_)
+
+import           HttpLayer
 
 import           DataSource.Types (Attachment (..), AttachmentContent (..), Comment (..),
                                    CommentBody (..), CommentId (..), Config (..),
@@ -27,9 +26,13 @@ import           DataSource.Types (Attachment (..), AttachmentContent (..), Comm
                                    PageResultList (..), Ticket (..), TicketId (..), TicketInfo (..),
                                    TicketTag (..), TicketTags (..), User, UserId (..),
                                    ZendeskAPIUrl (..), ZendeskLayer (..), ZendeskResponse (..),
-                                   parseComments, parseTicket, renderTicketStatus, showURL)
+                                   asksHTTPNetworkLayer, parseComments, renderTicketStatus, showURL)
 
 -- ./mitmproxy --mode reverse:https://iohk.zendesk.com -p 4001
+
+------------------------------------------------------------
+-- Zendesk layer
+------------------------------------------------------------
 
 -- | The basic Zendesk layer.
 -- The convention:
@@ -65,6 +68,10 @@ emptyZendeskLayer = ZendeskLayer
     , zlExportTickets           = \_     -> error "Not implemented zlExportTickets!"
     }
 
+------------------------------------------------------------
+-- Zendesk functions
+------------------------------------------------------------
+
 -- | Get single ticket info.
 getTicketInfo
     :: (MonadIO m, MonadReader Config m)
@@ -75,7 +82,10 @@ getTicketInfo ticketId = do
 
     let url = showURL $ TicketsURL ticketId
     let req = apiRequest cfg url
-    liftIO $ Just <$> apiCall parseTicket req
+
+    apiCall <- asksHTTPNetworkLayer hnlApiCall
+
+    Just <$> apiCall parseJSON req
 
 -- | Return list of deleted tickets.
 listDeletedTickets
@@ -146,23 +156,28 @@ getExportedTickets
     -> m [TicketInfo]
 getExportedTickets time = do
     cfg <- ask
+
+    apiCall <- asksHTTPNetworkLayer hnlApiCall
+
     let url = showURL $ ExportDataByTimestamp time
     let req = apiRequestAbsolute cfg url
-    iterateExportedTicketsWithDelay req
+
+    iterateExportedTicketsWithDelay req (apiCall parseJSON)
   where
 
     iterateExportedTicketsWithDelay
         :: Request
+        -> (Request -> m (PageResultList TicketInfo))
         -> m [TicketInfo]
-    iterateExportedTicketsWithDelay req = do
+    iterateExportedTicketsWithDelay req apiCall = do
         cfg <- ask
 
-        let go :: [TicketInfo] -> Text -> IO [TicketInfo]
+        let go :: [TicketInfo] -> Text -> m [TicketInfo]
             go list' nextPage' = do
-                threadDelay $ 10 * 1000000 -- Wait, Zendesk allows for 10 per minute.
+                liftIO $ threadDelay $ 10 * 1000000 -- Wait, Zendesk allows for 10 per minute.
 
                 let req'      = apiRequestAbsolute cfg nextPage'
-                (PageResultList pagen nextPagen count) <- apiCall parseJSON req'
+                (PageResultList pagen nextPagen count) <- apiCall req'
                 case nextPagen of
                     Just nextUrl -> if maybe False (>= 1000) count
                                         then go (list' <> pagen) nextUrl
@@ -171,44 +186,10 @@ getExportedTickets time = do
                     Nothing      -> pure (list' <> pagen)
 
 
-        (PageResultList page0 nextPage _) <- liftIO $ apiCall parseJSON req
+        (PageResultList page0 nextPage _) <- apiCall req
         case nextPage of
-            Just nextUrl -> liftIO $ go page0 nextUrl
+            Just nextUrl -> go page0 nextUrl
             Nothing      -> pure page0
-
--- | Iterate all the ticket pages and combine into a result.
-iteratePages
-    :: forall m a. (MonadIO m, MonadReader Config m, FromPageResultList a)
-    => Request
-    -> m [a]
-iteratePages req = iteratePagesWithDelay 0 req
-
--- | Iterate all the ticket pages and combine into a result. Wait for
--- some time in-between the requests.
-iteratePagesWithDelay
-    :: forall m a. (MonadIO m, MonadReader Config m, FromPageResultList a)
-    => Int
-    -> Request
-    -> m [a]
-iteratePagesWithDelay seconds req = do
-    cfg <- ask
-
-    let go :: [a] -> Text -> IO [a]
-        go list' nextPage' = do
-            -- Wait for @Int@ seconds.
-            threadDelay $ seconds * 1000000
-
-            let req'      = apiRequestAbsolute cfg nextPage'
-            (PageResultList pagen nextPagen _) <- apiCall parseJSON req'
-            case nextPagen of
-                Just nextUrl -> go (list' <> pagen) nextUrl
-                Nothing      -> pure (list' <> pagen)
-
-    (PageResultList page0 nextPage _) <- liftIO $ apiCall parseJSON req
-    case nextPage of
-        Just nextUrl -> liftIO $ go page0 nextUrl
-        Nothing      -> pure page0
-
 
 -- | Send API request to post comment
 postTicketComment
@@ -218,10 +199,14 @@ postTicketComment
     -> m ()
 postTicketComment ticketInfo zendeskResponse = do
     cfg <- ask
+
+    addJsonBody <- asksHTTPNetworkLayer hnlAddJsonBody
+    apiCall     <- asksHTTPNetworkLayer hnlApiCall
+
     let responseTicket = createResponseTicket (cfgAgentId cfg) ticketInfo zendeskResponse
     let url  = showURL $ TicketsURL (zrTicketId zendeskResponse)
     let req = addJsonBody responseTicket (apiRequest cfg url)
-    void $ liftIO $ apiCall (pure . encodeToLazyText) req
+    void $ apiCall (pure . encodeToLazyText) req
 
 -- | Create response ticket
 createResponseTicket :: Integer -> TicketInfo -> ZendeskResponse -> Ticket
@@ -248,10 +233,12 @@ _getUser
 _getUser = do
     cfg <- ask
 
+    apiCall     <- asksHTTPNetworkLayer hnlApiCall
+
     let url = showURL UserInfoURL
     let req = apiRequest cfg url
 
-    liftIO $ apiCall parseJSON req
+    apiCall parseJSON req
 
 -- | Given attachmentUrl, return attachment in bytestring
 getAttachment
@@ -271,10 +258,12 @@ getTicketComments
 getTicketComments tId = do
     cfg <- ask
 
+    apiCallSafe     <- asksHTTPNetworkLayer hnlApiCallSafe
+
     let url = showURL $ TicketCommentsURL tId
     let req = apiRequest cfg url
 
-    result  <- apiCallSafe parseComments req
+    result          <- apiCallSafe parseComments req
 
     -- TODO(ks): For now return empty if there is an exception.
     -- After we have exception handling, we propagate this up.
@@ -283,51 +272,41 @@ getTicketComments tId = do
         Right r -> pure r
 
 ------------------------------------------------------------
--- HTTP utility
+-- Utility
 ------------------------------------------------------------
 
--- | Request PUT
-addJsonBody :: ToJSON a => a -> Request -> Request
-addJsonBody body req = setRequestBodyJSON body $ setRequestMethod "PUT" req
+-- | Iterate all the ticket pages and combine into a result.
+iteratePages
+    :: forall m a. (MonadIO m, MonadReader Config m, FromPageResultList a)
+    => Request
+    -> m [a]
+iteratePages req = iteratePagesWithDelay 0 req
 
--- | Make an api call
--- TODO(ks): Switch to @Either@.
-apiCall :: FromJSON a => (Value -> Parser a) -> Request -> IO a
-apiCall parser req = do
-    putTextLn $ show req
-    v <- getResponseBody <$> httpJSON req
-    case parseEither parser v of
-        Right o -> pure o
-        Left e -> error $ "couldn't parse response "
-            <> toText e <> "\n" <> decodeUtf8 (encode v)
-
--- | Make a safe api call.
-apiCallSafe
-    :: forall m a. (MonadIO m, FromJSON a)
-    => (Value -> Parser a)
+-- | Iterate all the ticket pages and combine into a result. Wait for
+-- some time in-between the requests.
+iteratePagesWithDelay
+    :: forall m a. (MonadIO m, MonadReader Config m, FromPageResultList a)
+    => Int
     -> Request
-    -> m (Either String a)
-apiCallSafe parser req = do
-    putTextLn $ show req
-    v <- getResponseBody <$> httpJSON req
-    pure $ parseEither parser v
+    -> m [a]
+iteratePagesWithDelay seconds req = do
+    cfg <- ask
 
--- | General api request function
-apiRequest :: Config -> Text -> Request
-apiRequest Config{..} u = setRequestPath (encodeUtf8 path) $
-                          addRequestHeader "Content-Type" "application/json" $
-                          setRequestBasicAuth
-                              (encodeUtf8 cfgEmail <> "/token")
-                              (encodeUtf8 cfgToken) $
-                          parseRequest_ (toString (cfgZendesk <> path))
-                        where
-                          path :: Text
-                          path = "/api/v2" <> u
+    apiCall     <- asksHTTPNetworkLayer hnlApiCall
 
--- | Api request but use absolute path
-apiRequestAbsolute :: Config -> Text -> Request
-apiRequestAbsolute Config{..} u = addRequestHeader "Content-Type" "application/json" $
-                                  setRequestBasicAuth
-                                      (encodeUtf8 cfgEmail <> "/token")
-                                      (encodeUtf8 cfgToken) $
-                                  parseRequest_ (toString u)
+    let go :: [a] -> Text -> IO [a]
+        go list' nextPage' = do
+            -- Wait for @Int@ seconds.
+            threadDelay $ seconds * 1000000
+
+            let req'      = apiRequestAbsolute cfg nextPage'
+            (PageResultList pagen nextPagen _) <- apiCall parseJSON req'
+            case nextPagen of
+                Just nextUrl -> go (list' <> pagen) nextUrl
+                Nothing      -> pure (list' <> pagen)
+
+    (PageResultList page0 nextPage _) <- liftIO $ apiCall parseJSON req
+    case nextPage of
+        Just nextUrl -> liftIO $ go page0 nextUrl
+        Nothing      -> pure page0
+
