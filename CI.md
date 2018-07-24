@@ -1,14 +1,30 @@
-# Buildkite
+# Buildkite & Nix Builds
 
-These are the instructions for generating nix expressions for buildkite CI for log-classifier.
+## Buildkite
+The buildkite pipeline is automatically triggered by any commits that are pushed to the log-classifier repo.
+The pipeline that is executed is located in the .buildkite folder.
+
+## Nix
+
+These are the instructions for using nix to build log-classifier.
+
+All the commands below are executed in the cloned log-classifier directory.
 
 ```
-$ cd $LOG_CLASSIFIER_ROOT
-$ cabal2nix . > default.nix
-$ nix-shell -p nix-prefetch-git
-nix-shell $ nix-prefetch-git https://github.com/NixOS/nixpkgs.git > nixpkgs.json
+$ nix build -f default.nix
 ```
 
-NOTE: 
-  - NIX_PATH - Get from https://github.com/NixOS/nixpkgs, click clone, copy ZIP link, rename to .tar.gz.
-  - buildkite pipeline command is "nix-build -I nixpkgs=$NIX_PATH shell.nix"
+You can also build within nix-shell: 
+
+```
+$ nix-shell
+nix-shell $ runhaskell Setup.hs configure
+nix-shell $ runhaskell Setup.hs build
+```
+
+If you would prefer to use the repl:
+```
+$ nix-env -f '<nixpkgs>' -iA haskellPackages.ghcid
+$ nix-shell
+nix-shell $ ghcid -c "runhaskell Setup.hs repl Lib"
+```
