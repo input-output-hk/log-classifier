@@ -1,6 +1,7 @@
 module Exceptions
     ( ProcessTicketExceptions (..)
     , ZipFileExceptions (..)
+    , JSONParsingException (..)
     ) where
 
 import           Universum

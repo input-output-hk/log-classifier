@@ -39,7 +39,7 @@ import           DataSource.Types (Attachment (..), AttachmentContent (..), Comm
 --   - get returns a single result (wrapped in @Maybe@)
 --   - list returns multiple results
 --   - post submits a result (maybe PUT?!)
-basicZendeskLayer :: (MonadIO m, MonadReader Config m) => ZendeskLayer m
+basicZendeskLayer :: (MonadIO m, MonadReader Config m, MonadCatch m) => ZendeskLayer m
 basicZendeskLayer = ZendeskLayer
     { zlGetTicketInfo           = getTicketInfo
     , zlListDeletedTickets      = listDeletedTickets
@@ -74,18 +74,22 @@ emptyZendeskLayer = ZendeskLayer
 
 -- | Get single ticket info.
 getTicketInfo
-    :: (MonadIO m, MonadReader Config m)
+    :: forall m. (MonadIO m, MonadReader Config m, MonadCatch m)
     => TicketId
-    -> m (Maybe TicketInfo)
-getTicketInfo ticketId = do
-    cfg <- ask
+    -> m TicketInfo
+getTicketInfo ticketId =
+    catch getInfo $ \(e) -> throwM e  -- TODO(md): Change the exception type to JSONParsingException
+  where
+    getInfo :: m TicketInfo
+    getInfo = do
+        cfg <- ask
 
-    let url = showURL $ TicketsURL ticketId
-    let req = apiRequest cfg url
+        let url = showURL $ TicketsURL ticketId
+        let req = apiRequest cfg url
 
-    apiCall <- asksHTTPNetworkLayer hnlApiCall
+        apiCall <- asksHTTPNetworkLayer hnlApiCall
 
-    Just <$> apiCall parseJSON req
+        apiCall parseJSON req
 
 -- | Return list of deleted tickets.
 listDeletedTickets
@@ -309,4 +313,3 @@ iteratePagesWithDelay seconds req = do
     case nextPage of
         Just nextUrl -> liftIO $ go page0 nextUrl
         Nothing      -> pure page0
-

@@ -184,7 +184,7 @@ assignToPath = "./tmp-secrets/assign_to"
 -- We don't want anything to leak out, so we expose only the most relevant information,
 -- anything relating to how it internaly works should NOT be exposed.
 data ZendeskLayer m = ZendeskLayer
-    { zlGetTicketInfo         :: TicketId         -> m (Maybe TicketInfo)
+    { zlGetTicketInfo         :: TicketId         -> m TicketInfo
     , zlListDeletedTickets    ::                     m [DeletedTicket]
     , zlListRequestedTickets  :: UserId           -> m [TicketInfo]
     , zlListAssignedTickets   :: UserId           -> m [TicketInfo]
