@@ -40,7 +40,7 @@ If you would prefer to use the repl:
 ```
 $ nix-env -f '<nixpkgs>' -iA haskellPackages.ghcid
 $ nix-shell
-nix-shell $ ghcid -c "runhaskell Setup.hs repl Lib"
+nix-shell $ ghcid -c "runhaskell Setup.hs repl Lib" # or replace log-classifier-exe if preferred
 ```
 
 ## If log-classifier.cabal file is modified
