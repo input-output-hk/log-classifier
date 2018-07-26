@@ -11,14 +11,14 @@ The pipeline that is executed is located in the .buildkite folder.
 | --- | --- |
 | default.nix | Contains the primary nix expression used to build log-classifier. This is the only nix expression that a developer may need to modify. |
 | cabal2nix.nix | The cabal2nix generated output from the log-classifier.cabal file. |
-| fetch-nixpkgs.nix | Used for pinning a specific version of nixpkgs. Reads nixpkgs-src.json.Unchanged from cardano-sl repo. |
+| fetch-nixpkgs.nix | Used for pinning a specific version of nixpkgs. Reads nixpkgs-src.json. Unchanged from cardano-sl repo. |
 | fetchNixpkgs.nix | Used for pinning a specific version of nixpkgs. Verifies and pulls nixpkgs. Unchanged from cardano-sl repo. |
 | lib.nix | Used for pinning a specific verison of nixpkgs. Checks for cardano sl pkgs and runs fetch-nixpkgs.nix otherwise. Unchanged from cardano-sl repo. |
 | shell.nix | Used by nix-shell to set nix environment. |
 | universum.nix | Created by cabal2nix, essentially overrides the Universum in nixpkgs. |
 | nixpkgs-src.json | Where version of nixpkgs is defined. See below for instructions to update. |
 
-## Building via Nix
+## Developing / Building via Nix
 
 These are the instructions for using nix to build log-classifier.
 
