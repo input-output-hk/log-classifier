@@ -6,11 +6,11 @@
 | --- | --- |
 | default.nix | Contains the primary nix expression used to build log-classifier. This is the only nix expression that a developer may need to modify. |
 | cabal2nix.nix | The cabal2nix generated output from the log-classifier.cabal file. |
-| fetch-nixpkgs.nix | Used for pinning a specific version of nixpkgs |
-| fetchNixpkgs.nix | Used for pinning a specific version of nixpkgs |
-| lib.nix | Used for pinning a specific verison of nixpkgs |
-| shell.nix | Used by nix-shell to set nix environment |
-| universum.nix | Created by cabal2nix, essentially overrides the Universum in nixpkgs |
+| fetch-nixpkgs.nix | Used for pinning a specific version of nixpkgs. Reads nixpkgs-src.json. |
+| fetchNixpkgs.nix | Used for pinning a specific version of nixpkgs. Verifies and pulls nixpkgs. |
+| lib.nix | Used for pinning a specific verison of nixpkgs. Checks for cardano sl pkgs and runs fetch-nixpkgs.nix otherwise |
+| shell.nix | Used by nix-shell to set nix environment. |
+| universum.nix | Created by cabal2nix, essentially overrides the Universum in nixpkgs. |
 | nixpkgs-src.json | Where version of nixpkgs is defined. See below for instructions to update. |
 
 
@@ -56,7 +56,6 @@ $ cabal2nix . > cabal2nix.nix
 ```
 $ cabal2nix cabal://universum-1.1.0 > universum.nix
 ```
-
 
 ## To change version of nixpkgs
 
