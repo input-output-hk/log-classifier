@@ -53,4 +53,4 @@ $ nix-env -i -f default.nix
 $ log-classifier-exe
 ```
 
-Please see [CI](CI.md) for more detailed instructions pertaining to Nix.
+Please see [CI](CI-NIX.md) for more detailed instructions pertaining to Nix.
