@@ -26,11 +26,12 @@ library
                        Regex
                        Statistics
                        Util
-                       DataSource
   other-modules:       Paths_log_classifier
+                       DataSource
                        DataSource.DB
                        DataSource.Types
                        DataSource.Http
+                       Configuration
                        HttpLayer
   ghc-options:         -Wall
   build-depends:       aeson
