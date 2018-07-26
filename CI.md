@@ -59,7 +59,7 @@ $ cabal2nix cabal://universum-1.1.0 > universum.nix
 
 ### To change version of nixpkgs
 
-Get $REV from https://howoldis.herokuapp.com/ (click commmit, copy the string next to commit)
+Get $REV from https://howoldis.herokuapp.com/ (click commit, copy the string next to commit)
 
 ```
 $ REV="d7d31fea7e7eef8ff4495e75be5dcbb37fb215d0"
