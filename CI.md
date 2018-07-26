@@ -28,3 +28,13 @@ $ nix-env -f '<nixpkgs>' -iA haskellPackages.ghcid
 $ nix-shell
 nix-shell $ ghcid -c "runhaskell Setup.hs repl Lib"
 ```
+
+## To change version of nixpkgs
+
+
+:wq
+
+## To get versions
+```
+nix-shell --run 'ghc-pkg list' | grep universum
+```
