@@ -2,7 +2,7 @@
 
 ---
 ## Prerequisites
-We suggest using either Stack or Nix:
+We presently support using either Stack or Nix:
 - [Stack](https://github.com/commercialhaskell/stack/blob/master/doc/install_and_upgrade.md)
 - [Nix](https://nixos.org/nix/download.html)
 
@@ -47,4 +47,10 @@ $ stack exec log-classifier-exe
 ```
 
 ## Nix Instructions (CI/Buildkite instructons as well)
+
+```
+$ nix-env -i -f default.nix 
+$ log-classifier-exe
+```
+
 Please see [CI](CI.md) for instructions pertainiing to nix
