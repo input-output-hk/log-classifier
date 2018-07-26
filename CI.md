@@ -72,3 +72,11 @@ Copy the outputs into the respective entries in nixpkgs-src.json
 ```
 nix-shell --run 'ghc-pkg list' | grep universum
 ```
+
+## Useful Nix Resources
+
+[Nix by example](https://medium.com/@MrJamesFisher/nix-by-example-a0063a1a4c55)
+[Nix Cheatsheet](https://nixos.wiki/wiki/Cheatsheet)
+[Pinning Nixpkgs](https://nixos.wiki/wiki/FAQ/Pinning_Nixpkgs)
+[Nix Overrides](https://nixos.org/nixpkgs/manual/#sec-overrides)
+[How I Develop with Nix](https://ocharles.org.uk/posts/2014-02-04-how-i-develop-with-nixos.html)
