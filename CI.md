@@ -1,5 +1,10 @@
 # Buildkite & Nix Builds
 
+## Buildkite
+The buildkite pipeline is automatically triggered by any commits that are pushed to the log-classifier repo.
+The pipeline that is executed is located in the .buildkite folder.
+
+
 ## Nix related files and their purposes
 
 | File | Description |
@@ -12,11 +17,6 @@
 | shell.nix | Used by nix-shell to set nix environment. |
 | universum.nix | Created by cabal2nix, essentially overrides the Universum in nixpkgs. |
 | nixpkgs-src.json | Where version of nixpkgs is defined. See below for instructions to update. |
-
-
-## Buildkite
-The buildkite pipeline is automatically triggered by any commits that are pushed to the log-classifier repo.
-The pipeline that is executed is located in the .buildkite folder.
 
 ## Building via Nix
 
