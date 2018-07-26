@@ -1,5 +1,25 @@
 # Buildkite & Nix Builds
 
+## Nix related files and their purposes
+
+default.nix 
+  - Contains the primary nix expression used to build log-classifier. This is the only nix expression that a developer may need to modify.
+cabal2nix.nix 
+  - The cabal2nix generated output from the log-classifier.cabal file.
+fetch-nixpkgs.nix 
+  - Used for pinning a specific version of nixpkgs
+fetchNixpkgs.nix
+  - Used for pinning a specific version of nixpkgs
+lib.nix
+  - Used for pinning a specific verison of nixpkgs
+shell.nix
+  - Used by nix-shell to set nix environment
+universum.nix
+  - created by cabal2nix, essentially overrides the Universum in nixpkgs
+nixpkgs-src.json
+  - Where version of nixpkgs is defined. See below for instructions to update.
+
+
 ## Buildkite
 The buildkite pipeline is automatically triggered by any commits that are pushed to the log-classifier repo.
 The pipeline that is executed is located in the .buildkite folder.
@@ -29,8 +49,25 @@ $ nix-shell
 nix-shell $ ghcid -c "runhaskell Setup.hs repl Lib"
 ```
 
+## If log-classifier.cabal file is modified
+
+Execute the following:
+
+```
+$ cabal2nix . > cabal2nix.nix
+```
+
+## If Universum version needs to be changed
+
+```
+$ cabal2nix cabal://universum-1.1.0 > universum.nix
+```
+
+
 ## To change version of nixpkgs
+
 Get $REV from https://howoldis.herokuapp.com/
+
 ```
 $ REV="d7d31fea7e7eef8ff4495e75be5dcbb37fb215d0"
 $ SHA=`nix-prefetch-url https://github.com/nixos/nixpkgs/archive/${REV}.tar.gz`
