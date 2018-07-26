@@ -10,7 +10,7 @@ The pipeline that is executed is located in the .buildkite folder.
 | File | How to Make | Description |
 | --- | --- | --- |
 | default.nix | Manually | Contains the primary nix expression used to build log-classifier. This is likely the only nix expression that a developer may need to modify. |
-| cabal2nix.nix | `$ nix build -f default.nix` | The cabal2nix generated output from the log-classifier.cabal file. |
+| cabal2nix.nix | `$ cabal2nix . > cabal2nix.nix` | The cabal2nix generated output from the log-classifier.cabal file. |
 | fetch-nixpkgs.nix | [cardano sl](https://github.com/input-output-hk/cardano-sl) | Used for pinning a specific version of nixpkgs. Reads nixpkgs-src.json. |
 | fetchNixpkgs.nix | [cardano sl](https://github.com/input-output-hk/cardano-sl) | Used for pinning a specific version of nixpkgs. Verifies and pulls nixpkgs. |
 | lib.nix | [cardano sl](https://github.com/input-output-hk/cardano-sl) | Used for pinning a specific verison of nixpkgs. Checks for cardano sl pkgs and runs fetch-nixpkgs.nix otherwise. |
