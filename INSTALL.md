@@ -2,11 +2,8 @@
 
 ---
 ## Prerequisites
+We suggest using either Stack or Nix:
 - [Stack](https://github.com/commercialhaskell/stack/blob/master/doc/install_and_upgrade.md)
-
----
-
-## Optional
 - [Nix](https://nixos.org/nix/download.html)
 
 ```
@@ -22,8 +19,6 @@ Let us assume this is /home/$USER/log-classifier
 $ git clone https://github.com/input-output-hk/log-classifier.git /home/$USER/log-classifier
 $ cd /home/$USER/log-classifier
 ```
-
-Congratulations, you have downloaded log-classifier.
 
 ## Configuring log-classifier
 You will need the following:
@@ -44,3 +39,12 @@ NOTE: The -n is important, without it echo will append a newline char and it wil
 
 The above instructions are reflected in the simulated terminal below.
 ![Terminal Example](./log-classifier.svg)
+
+## Stack Instructons
+```
+$ stack build
+$ stack exec log-classifier-exe
+```
+
+## Nix Instructions (CI/Buildkite instructons as well)
+Please see [CI](CI.md) for instructions pertainiing to nix
