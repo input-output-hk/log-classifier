@@ -63,20 +63,10 @@ Get $REV from https://howoldis.herokuapp.com/
 
 ```
 $ REV="d7d31fea7e7eef8ff4495e75be5dcbb37fb215d0"
-$ SHA=`nix-prefetch-url https://github.com/nixos/nixpkgs/archive/${REV}.tar.gz`
-$ SHA-UNPACK=`nix-prefetch-url --unpack https://github.com/nixos/nixpkgs/archive/${REV}.tar.gz`
-$ source nix-pkgs.sh > nix-pkgs.json
+$ nix-prefetch-url https://github.com/nixos/nixpkgs/archive/${REV}.tar.gz
+$ nix-prefetch-url --unpack https://github.com/nixos/nixpkgs/archive/${REV}.tar.gz
 ```
-nix-pkgs-sh
-```
-echo '
-{
-    "rev":            "$REV",
-    "sha256":         "$SHA",
-    "sha256unpacked": "$SHA-UNPACK"
-}'
-
-```
+Copy the outputs into the respective entries in nixpkgs-src.json
 
 ### To get versions of haskell packages
 ```
