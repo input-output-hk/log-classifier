@@ -40,14 +40,14 @@ module DataSource.Types
     -- * General configuration
     , App
     , Config (..)
-    , ZendeskLayer (..)
+    , DataLayer (..)
     , HTTPNetworkLayer (..)
     , IOLayer (..)
     , DBLayer (..)
     , knowledgebasePath
     , tokenPath
     , assignToPath
-    , asksZendeskLayer
+    , asksDataLayer
     , asksHTTPNetworkLayer
     , asksIOLayer
     , asksDBLayer
@@ -115,7 +115,7 @@ data Config = Config
     -- ^ Number of files classifier will analyze
     , cfgIsCommentPublic    :: !Bool
     -- ^ If the comment is public or not, for a test run we use an internal comment.
-    , cfgZendeskLayer       :: !(ZendeskLayer App)
+    , cfgDataLayer          :: !(DataLayer App)
     -- ^ The Zendesk API layer. We will ideally move this into a
     -- separate configuration containing all the layer (yes, there a couple of them).
     , cfgIOLayer            :: !(IOLayer App)
@@ -129,14 +129,14 @@ data Config = Config
     }
 
 
--- | Utility function for getting a function of the @ZendeskLayer@.
-asksZendeskLayer
+-- | Utility function for getting a function of the @DataLayer@.
+asksDataLayer
     :: forall m a. (MonadReader Config m)
-    => (ZendeskLayer App -> a)
+    => (DataLayer App -> a)
     -> m a
-asksZendeskLayer getter = do
+asksDataLayer getter = do
     Config{..} <- ask
-    pure $ getter cfgZendeskLayer
+    pure $ getter cfgDataLayer
 
 -- | Utility function for getting a function of the @cfgHTTPNetworkLayer@.
 asksHTTPNetworkLayer
@@ -183,7 +183,7 @@ assignToPath = "./tmp-secrets/assign_to"
 -- | The Zendesk API interface that we want to expose.
 -- We don't want anything to leak out, so we expose only the most relevant information,
 -- anything relating to how it internaly works should NOT be exposed.
-data ZendeskLayer m = ZendeskLayer
+data DataLayer m = DataLayer
     { zlGetTicketInfo         :: TicketId         -> m (Maybe TicketInfo)
     , zlListDeletedTickets    ::                     m [DeletedTicket]
     , zlListRequestedTickets  :: UserId           -> m [TicketInfo]
