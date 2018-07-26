@@ -1,5 +1,6 @@
 module HttpLayer
     ( HTTPNetworkLayer (..)
+    , JSONParsingException (..)
     , basicHTTPNetworkLayer
     , emptyHTTPNetworkLayer
     , apiRequest
@@ -10,12 +11,24 @@ import           Universum
 
 import           Data.Aeson (FromJSON, ToJSON, Value, encode)
 import           Data.Aeson.Types (Parser, parseEither)
+import           Data.Text (unpack)
 import           Network.HTTP.Simple (Request, addRequestHeader, getResponseBody, httpJSON,
                                       parseRequest_, setRequestBasicAuth, setRequestBodyJSON,
                                       setRequestMethod, setRequestPath)
 
 import           DataSource.Types (Config (..), HTTPNetworkLayer (..))
+import qualified Prelude (Show(..))
 
+------------------------------------------------------------
+-- JSON parsing exceptions
+------------------------------------------------------------
+-- | Exceptions that occur during JSON parsing
+data JSONParsingException
+    = MkJSONParsingException !Text
+
+instance Exception JSONParsingException
+instance Prelude.Show JSONParsingException where
+  show (MkJSONParsingException s) = "JSON parsing exception: " <> (unpack s)
 
 ------------------------------------------------------------
 -- Layer
@@ -66,7 +79,7 @@ addJsonBody body req = setRequestBodyJSON body $ setRequestMethod "PUT" req
 -- | Make an api call
 -- TODO(ks): Switch to @Either@.
 apiCall
-    :: forall m a. (MonadIO m, FromJSON a)
+    :: forall m a. (MonadIO m, MonadThrow m, FromJSON a)
     => (Value -> Parser a)
     -> Request
     -> m a
@@ -75,8 +88,8 @@ apiCall parser req = do
     v <- getResponseBody <$> httpJSON req
     case parseEither parser v of
         Right o -> pure o
-        Left e -> error $ "couldn't parse response "
-            <> toText e <> "\n" <> decodeUtf8 (encode v)
+        Left e -> throwM $ MkJSONParsingException $
+            "couldn't parse response " <> toText e <> "\n" <> decodeUtf8 (encode v)
 
 -- | Make a safe api call.
 apiCallSafe
@@ -88,5 +101,3 @@ apiCallSafe parser req = do
     putTextLn $ show req
     v <- getResponseBody <$> httpJSON req
     pure $ parseEither parser v
-
-

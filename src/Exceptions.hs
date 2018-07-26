@@ -1,7 +1,6 @@
 module Exceptions
     ( ProcessTicketExceptions (..)
     , ZipFileExceptions (..)
-    , JSONParsingException (..)
     ) where
 
 import           Universum
@@ -28,21 +27,13 @@ data ZipFileExceptions
     -- ^ Decompresson of a zip file was not sucessful
     deriving Show
 
--- | Exceptions that occur during JSON parsing
-data JSONParsingException
-    = MkJSONParsingException
-
 instance Exception ProcessTicketExceptions
 instance Exception ZipFileExceptions
-instance Exception JSONParsingException
 
 instance Show ProcessTicketExceptions where
     show (AttachmentNotFound tid)           = "Attachment was not found on ticket ID: " <> showTicketId tid
     show (CommentAndAttachmentNotFound tid) = "Both comment and attachment were not found on ticket ID: " <> showTicketId tid
     show (TicketInfoNotFound tid)           = "Ticket information was not found on ticket ID: " <> showTicketId tid
-
-instance Show JSONParsingException where
-    show MkJSONParsingException = ""
 
 showTicketId :: TicketId -> String
 showTicketId tid = Universum.show (getTicketId tid)

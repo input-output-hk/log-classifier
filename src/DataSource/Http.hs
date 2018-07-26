@@ -19,7 +19,7 @@ import           Data.List (nub)
 import           Network.HTTP.Simple (Request, getResponseBody, httpLBS, parseRequest_)
 
 import           HttpLayer
-
+import           HttpLayer (JSONParsingException (..))
 import           DataSource.Types (Attachment (..), AttachmentContent (..), Comment (..),
                                    CommentBody (..), CommentId (..), Config (..),
                                    DeletedTicket (..), ExportFromTime (..), FromPageResultList (..),
@@ -78,7 +78,7 @@ getTicketInfo
     => TicketId
     -> m TicketInfo
 getTicketInfo ticketId =
-    catch getInfo $ \(e) -> throwM e  -- TODO(md): Change the exception type to JSONParsingException
+    catch getInfo $ \_ -> throwM $ MkJSONParsingException "a" -- TODO(md): Change the exception type to JSONParsingException
   where
     getInfo :: m TicketInfo
     getInfo = do
