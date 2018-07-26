@@ -49,8 +49,9 @@ Get $REV from https://howoldis.herokuapp.com/ (click commit, copy the string nex
 
 ```
 $ REV="d7d31fea7e7eef8ff4495e75be5dcbb37fb215d0"
-$ nix-prefetch-url https://github.com/nixos/nixpkgs/archive/${REV}.tar.gz
-$ nix-prefetch-url --unpack https://github.com/nixos/nixpkgs/archive/${REV}.tar.gz
+cat ./nixpkgs-src.json | jq ".rev = \"${REV}\"" | \
+jq ".sha256 = \"`nix-prefetch-url https://github.com/nixos/nixpkgs/archive/${REV}.tar.gz`\"" | \
+jq ".sha256unpacked = \"`nix-prefetch-url --unpack https://github.com/nixos/nixpkgs/archive/${REV}.tar.gz`\""
 ```
 Copy the outputs into the respective entries in nixpkgs-src.json
 
