@@ -10,12 +10,12 @@ The pipeline that is executed is located in the .buildkite folder.
 | File | How to Make | Description |
 | --- | --- | --- |
 | default.nix | Manually | Contains the primary nix expression used to build log-classifier. This is likely the only nix expression that a developer may need to modify. |
-| cabal2nix.nix | '$ nix build -f default.nix' | The cabal2nix generated output from the log-classifier.cabal file. |
+| cabal2nix.nix | `$ nix build -f default.nix` | The cabal2nix generated output from the log-classifier.cabal file. |
 | fetch-nixpkgs.nix | [cardano sl](https://github.com/input-output-hk/cardano-sl) | Used for pinning a specific version of nixpkgs. Reads nixpkgs-src.json. |
 | fetchNixpkgs.nix | [cardano sl](https://github.com/input-output-hk/cardano-sl) | Used for pinning a specific version of nixpkgs. Verifies and pulls nixpkgs. |
 | lib.nix | [cardano sl](https://github.com/input-output-hk/cardano-sl) | Used for pinning a specific verison of nixpkgs. Checks for cardano sl pkgs and runs fetch-nixpkgs.nix otherwise. |
 | shell.nix | Manually | Used by nix-shell to set nix environment. |
-| universum.nix | '$ cabal2nix cabal://universum-1.1.0 > universum.nix' | Created by cabal2nix, essentially overrides the Universum in nixpkgs. |
+| universum.nix | `$ cabal2nix cabal://universum-1.1.0 > universum.nix` | Created by cabal2nix, essentially overrides the Universum in nixpkgs. |
 | nixpkgs-src.json | See Below | Where version of nixpkgs is defined. See below for instructions to update. |
 
 ## Developing / Building via Nix
