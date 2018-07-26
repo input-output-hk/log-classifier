@@ -8,9 +8,10 @@ module Statistics
   , showTicketAttachments
   ) where
 
-import           DataSource (App, Attachment (..), Comment (..), TicketInfo (..), TicketStatus (..),
-                             ZendeskLayer (..), asksZendeskLayer)
 import           Universum
+
+import           DataSource (App, Attachment (..), Comment (..), DataLayer (..), TicketInfo (..),
+                             TicketStatus (..), asksDataLayer)
 
 -----------------------------------------------------------
 -- Functions
@@ -54,7 +55,7 @@ showCommentAttachments comment = showAttachmentInfo <$> cAttachments comment
 -- | Show attachments of a ticket
 showTicketAttachments :: TicketInfo -> App [Text]
 showTicketAttachments ticket = do
-    getTicketComments <- asksZendeskLayer zlGetTicketComments
+    getTicketComments <- asksDataLayer zlGetTicketComments
     getTicketComments (tiId ticket) >>= \comments -> return $ ticketNumIO : concatMap showCommentAttachments comments
     where
         ticketNumIO = " Ticket #" <> (show $ tiId ticket) <> " : " :: Text
@@ -80,5 +81,5 @@ filterTicketsWithAttachments = filterM ticketsFilter
 
     doesTicketHaveAttachments :: TicketInfo -> App Bool
     doesTicketHaveAttachments ticket = do
-        getTicketComments <- asksZendeskLayer zlGetTicketComments
+        getTicketComments <- asksDataLayer zlGetTicketComments
         any commentHasAttachment <$> getTicketComments (tiId ticket)

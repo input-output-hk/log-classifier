@@ -11,8 +11,8 @@ module DataSource.DB
     -- * Empty layer
     , emptyDBLayer
     -- * Single connection
-    , connZendeskLayer
-    , connPoolZendeskLayer
+    , connDataLayer
+    , connPoolDataLayer
     -- * Connection pool
     , connDBLayer
     , connPoolDBLayer
@@ -34,13 +34,13 @@ import           Database.SQLite.Simple.Internal (Connection, Field (..))
 import           Database.SQLite.Simple.Ok (Ok (..))
 import           Database.SQLite.Simple.ToField (ToField (..))
 
-import           DataSource.Http (basicZendeskLayer)
+import           DataSource.Http (basicDataLayer)
 import           DataSource.Types (Attachment (..), AttachmentContent (..), AttachmentId (..),
                                    Comment (..), CommentBody (..), CommentId (..), Config,
                                    DBLayer (..), TicketField (..), TicketFieldId (..),
                                    TicketFieldValue (..), TicketId (..), TicketInfo (..),
                                    TicketStatus (..), TicketTags (..), TicketURL (..), UserId (..),
-                                   ZendeskLayer (..))
+                                   DataLayer (..))
 
 ------------------------------------------------------------
 -- Single connection, simple
@@ -113,18 +113,18 @@ emptyDBLayer = DBLayer
 
 -- | The simple connection Zendesk layer. Used for database querying.
 -- We need to sync occasionaly.
-connZendeskLayer :: forall m. (MonadIO m, MonadReader Config m) => ZendeskLayer m
-connZendeskLayer = ZendeskLayer
+connDataLayer :: forall m. (MonadIO m, MonadReader Config m) => DataLayer m
+connDataLayer = DataLayer
     { zlGetTicketInfo           = \tId -> withProdDatabase $ \conn -> getTicketInfoByTicketId conn tId
-    , zlListDeletedTickets      = zlListDeletedTickets basicZendeskLayer
+    , zlListDeletedTickets      = zlListDeletedTickets basicDataLayer
     , zlListAssignedTickets     = \uId -> withProdDatabase $ \conn -> getAllAssignedTicketsByUser conn uId
     , zlListRequestedTickets    = \uId -> withProdDatabase $ \conn -> getAllRequestedTicketsByUser conn uId
     , zlListUnassignedTickets   =         withProdDatabase getAllUnassignedTicketsByUser
-    , zlListAdminAgents         = zlListAdminAgents basicZendeskLayer
+    , zlListAdminAgents         = zlListAdminAgents basicDataLayer
     , zlGetAttachment           = \att -> withProdDatabase $ \conn -> DataSource.DB.getAttachmentContent conn att
     , zlGetTicketComments       = \tId -> withProdDatabase $ \conn -> getTicketComments conn tId
-    , zlPostTicketComment       = zlPostTicketComment basicZendeskLayer
-    , zlExportTickets           = zlExportTickets basicZendeskLayer
+    , zlPostTicketComment       = zlPostTicketComment basicDataLayer
+    , zlExportTickets           = zlExportTickets basicDataLayer
     }
 
 
@@ -147,18 +147,18 @@ connDBLayer = DBLayer
 
 -- | The connection pooled Zendesk layer. Used for database querying.
 -- We need to sync occasionaly.
-connPoolZendeskLayer :: forall m. (MonadBaseControl IO m, MonadIO m, MonadReader Config m) => DBConnPool -> ZendeskLayer m
-connPoolZendeskLayer connPool = ZendeskLayer
+connPoolDataLayer :: forall m. (MonadBaseControl IO m, MonadIO m, MonadReader Config m) => DBConnPool -> DataLayer m
+connPoolDataLayer connPool = DataLayer
     { zlGetTicketInfo           = \tId -> withConnPool connPool $ \conn -> getTicketInfoByTicketId conn tId
-    , zlListDeletedTickets      = zlListDeletedTickets basicZendeskLayer
+    , zlListDeletedTickets      = zlListDeletedTickets basicDataLayer
     , zlListAssignedTickets     = \uId -> withConnPool connPool $ \conn -> getAllAssignedTicketsByUser conn uId
     , zlListRequestedTickets    = \uId -> withConnPool connPool $ \conn -> getAllRequestedTicketsByUser conn uId
     , zlListUnassignedTickets   =         withConnPool connPool getAllUnassignedTicketsByUser
-    , zlListAdminAgents         = zlListAdminAgents basicZendeskLayer
+    , zlListAdminAgents         = zlListAdminAgents basicDataLayer
     , zlGetAttachment           = \att -> withConnPool connPool $ \conn -> DataSource.DB.getAttachmentContent conn att
     , zlGetTicketComments       = \tId -> withConnPool connPool $ \conn -> getTicketComments conn tId
-    , zlPostTicketComment       = zlPostTicketComment basicZendeskLayer
-    , zlExportTickets           = zlExportTickets basicZendeskLayer
+    , zlPostTicketComment       = zlPostTicketComment basicDataLayer
+    , zlExportTickets           = zlExportTickets basicDataLayer
     }
 
 
