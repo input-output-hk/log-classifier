@@ -43,20 +43,6 @@ $ nix-shell
 nix-shell $ ghcid -c "runhaskell Setup.hs repl Lib" # or replace log-classifier-exe if preferred
 ```
 
-### If log-classifier.cabal file is modified
-
-Execute the following:
-
-```
-$ cabal2nix . > cabal2nix.nix
-```
-
-### If Universum version needs to be changed
-
-```
-$ cabal2nix cabal://universum-1.1.0 > universum.nix
-```
-
 ### To change version of nixpkgs
 
 Get $REV from https://howoldis.herokuapp.com/ (click commit, copy the string next to commit)
