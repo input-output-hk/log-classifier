@@ -18,7 +18,7 @@
 The buildkite pipeline is automatically triggered by any commits that are pushed to the log-classifier repo.
 The pipeline that is executed is located in the .buildkite folder.
 
-## Nix
+## Building via Nix
 
 These are the instructions for using nix to build log-classifier.
 
@@ -43,7 +43,7 @@ $ nix-shell
 nix-shell $ ghcid -c "runhaskell Setup.hs repl Lib" # or replace log-classifier-exe if preferred
 ```
 
-## If log-classifier.cabal file is modified
+### If log-classifier.cabal file is modified
 
 Execute the following:
 
@@ -51,13 +51,13 @@ Execute the following:
 $ cabal2nix . > cabal2nix.nix
 ```
 
-## If Universum version needs to be changed
+### If Universum version needs to be changed
 
 ```
 $ cabal2nix cabal://universum-1.1.0 > universum.nix
 ```
 
-## To change version of nixpkgs
+### To change version of nixpkgs
 
 Get $REV from https://howoldis.herokuapp.com/
 
@@ -78,7 +78,7 @@ echo '
 
 ```
 
-## To get versions
+### To get versions of haskell packages
 ```
 nix-shell --run 'ghc-pkg list' | grep universum
 ```
