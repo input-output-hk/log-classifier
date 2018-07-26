@@ -1,6 +1,7 @@
 -- Here we need to export just the public info.
 module Configuration
     ( defaultConfig
+    , basicIOLayer
     ) where
 
 import           Universum

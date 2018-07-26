@@ -25,13 +25,13 @@ library
                        LogAnalysis.Types
                        Regex
                        Statistics
+                       DataSource
+                       Configuration
                        Util
   other-modules:       Paths_log_classifier
-                       DataSource
                        DataSource.DB
                        DataSource.Types
                        DataSource.Http
-                       Configuration
                        HttpLayer
   ghc-options:         -Wall
   build-depends:       aeson

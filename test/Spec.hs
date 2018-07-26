@@ -7,12 +7,12 @@ import           Test.Hspec.QuickCheck (modifyMaxSuccess)
 import           Test.QuickCheck (Gen, arbitrary, elements, forAll, listOf, listOf1, property)
 import           Test.QuickCheck.Monadic (assert, monadicIO, pre, run)
 
+import           Configuration (defaultConfig, basicIOLayer)
 import           DataSource (App, Attachment (..), Comment (..), Config (..), DeletedTicket (..),
                              ExportFromTime (..), IOLayer (..), Ticket (..), TicketId (..),
                              TicketInfo (..), TicketStatus (..), TicketTags (..), User, UserId (..),
-                             ZendeskAPIUrl (..), ZendeskLayer (..), ZendeskResponse (..),
-                             basicIOLayer, createResponseTicket, defaultConfig, emptyDBLayer,
-                             emptyZendeskLayer, runApp, showURL)
+                             ZendeskAPIUrl (..), DataLayer (..), ZendeskResponse (..),
+                             createResponseTicket , runApp, showURL, emptyDBLayer, emptyDataLayer)
 import           Exceptions (ProcessTicketExceptions (..))
 
 import           Lib (exportZendeskDataToLocalDB, filterAnalyzedTickets, listAndSortTickets,
@@ -20,7 +20,7 @@ import           Lib (exportZendeskDataToLocalDB, filterAnalyzedTickets, listAnd
 import           Statistics (filterTicketsByStatus, filterTicketsWithAttachments,
                              showAttachmentInfo, showCommentAttachments)
 
--- TODO(ks): What we are really missing is a realistic @Gen ZendeskLayer m@.
+-- TODO(ks): What we are really missing is a realistic @Gen DataLayer m@.
 
 main :: IO ()
 main = hspec spec
@@ -47,11 +47,11 @@ spec =
             exportZendeskDataToLocalDBSpec
 
 -- | A utility function for testing which stubs IO and returns
--- the @Config@ with the @ZendeskLayer@ that was passed into it.
-withStubbedIOAndZendeskLayer :: ZendeskLayer App -> Config
-withStubbedIOAndZendeskLayer stubbedZendeskLayer =
+-- the @Config@ with the @DataLayer@ that was passed into it.
+withStubbedIOAndDataLayer :: DataLayer App -> Config
+withStubbedIOAndDataLayer stubbedDataLayer =
     defaultConfig
-        { cfgZendeskLayer   = stubbedZendeskLayer
+        { cfgDataLayer   = stubbedDataLayer
         , cfgIOLayer        = stubbedIOLayer
         , cfgDBLayer        = emptyDBLayer
         }
@@ -72,16 +72,16 @@ listAndSortTicketsSpec =
 
                 monadicIO $ do
 
-                    let stubbedZendeskLayer :: ZendeskLayer App
-                        stubbedZendeskLayer =
-                            emptyZendeskLayer
+                    let stubbedDataLayer :: DataLayer App
+                        stubbedDataLayer =
+                            emptyDataLayer
                                 { zlListAssignedTickets     = \_     -> pure []
                                 , zlGetTicketInfo           = \_     -> pure $ Just ticketInfo
                                 , zlListAdminAgents         =           pure []
                                 }
 
                     let stubbedConfig :: Config
-                        stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
+                        stubbedConfig = withStubbedIOAndDataLayer stubbedDataLayer
 
                     let appExecution :: IO [TicketInfo]
                         appExecution = runApp listAndSortTickets stubbedConfig
@@ -99,16 +99,16 @@ listAndSortTicketsSpec =
 
                             pre $ any (\TicketInfo{..} -> tiStatus /= TicketStatus "solved") listTickets
 
-                            let stubbedZendeskLayer :: ZendeskLayer App
-                                stubbedZendeskLayer =
-                                    emptyZendeskLayer
+                            let stubbedDataLayer :: DataLayer App
+                                stubbedDataLayer =
+                                    emptyDataLayer
                                         { zlListAssignedTickets     = \_     -> pure listTickets
                                         , zlGetTicketInfo           = \_     -> pure ticketInfo
                                         , zlListAdminAgents         =           pure agents
                                         }
 
                             let stubbedConfig :: Config
-                                stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
+                                stubbedConfig = withStubbedIOAndDataLayer stubbedDataLayer
 
                             let appExecution :: IO [TicketInfo]
                                 appExecution = runApp listAndSortTickets stubbedConfig
@@ -130,9 +130,9 @@ processTicketSpec =
 
                     monadicIO $ do
 
-                        let stubbedZendeskLayer :: ZendeskLayer App
-                            stubbedZendeskLayer =
-                                emptyZendeskLayer
+                        let stubbedDataLayer :: DataLayer App
+                            stubbedDataLayer =
+                                emptyDataLayer
                                     { zlListAssignedTickets     = \_     -> pure listTickets
                                     , zlGetTicketInfo           = \_     -> pure $ Just ticketInfo
                                     , zlPostTicketComment       = \_ _   -> pure ()
@@ -141,7 +141,7 @@ processTicketSpec =
                                     }
 
                         let stubbedConfig :: Config
-                            stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
+                            stubbedConfig = withStubbedIOAndDataLayer stubbedDataLayer
 
                         let appExecution :: IO ZendeskResponse
                             appExecution = runApp (processTicket . tiId $ ticketInfo) stubbedConfig
@@ -156,16 +156,16 @@ processTicketSpec =
                 forAll arbitrary $ \(ticketInfo :: TicketInfo) ->
                     monadicIO $ do
 
-                    let stubbedZendeskLayer :: ZendeskLayer App
-                        stubbedZendeskLayer =
-                            emptyZendeskLayer
+                    let stubbedDataLayer :: DataLayer App
+                        stubbedDataLayer =
+                            emptyDataLayer
                                 { zlGetTicketComments = \_   -> pure commentsWithoutAttachment
                                 , zlGetTicketInfo     = \_   -> pure $ Just ticketInfo
                                 , zlPostTicketComment = \_ _ -> pure ()
                                 }
 
                     let stubbedConfig :: Config
-                        stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
+                        stubbedConfig = withStubbedIOAndDataLayer stubbedDataLayer
 
                     let appExecution :: IO ZendeskResponse
                         appExecution = runApp (processTicket . tiId $ ticketInfo) stubbedConfig
@@ -182,9 +182,9 @@ processTicketSpec =
 
                     pre $ any (not . null . cAttachments) comments
 
-                    let stubbedZendeskLayer :: ZendeskLayer App
-                        stubbedZendeskLayer =
-                            emptyZendeskLayer
+                    let stubbedDataLayer :: DataLayer App
+                        stubbedDataLayer =
+                            emptyDataLayer
                                 { zlGetTicketComments = \_   -> pure comments
                                 , zlGetTicketInfo     = \_   -> pure $ Just ticketInfo
                                 , zlPostTicketComment = \_ _ -> pure ()
@@ -192,7 +192,7 @@ processTicketSpec =
                                 }
 
                     let stubbedConfig :: Config
-                        stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
+                        stubbedConfig = withStubbedIOAndDataLayer stubbedDataLayer
 
                     let appExecution :: IO ZendeskResponse
                         appExecution = runApp (processTicket . tiId $ ticketInfo) stubbedConfig
@@ -207,9 +207,9 @@ processTicketSpec =
 
                 monadicIO $ do
 
-                    let stubbedZendeskLayer :: ZendeskLayer App
-                        stubbedZendeskLayer =
-                            emptyZendeskLayer
+                    let stubbedDataLayer :: DataLayer App
+                        stubbedDataLayer =
+                            emptyDataLayer
                                 { zlGetTicketInfo           = \_     -> pure $ Just ticketInfo
                                 , zlPostTicketComment       = \_ _   -> pure ()
                                 , zlGetTicketComments       = \_     -> pure []
@@ -217,7 +217,7 @@ processTicketSpec =
                                 }
 
                     let stubbedConfig :: Config
-                        stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
+                        stubbedConfig = withStubbedIOAndDataLayer stubbedDataLayer
 
                     let appExecution :: IO ZendeskResponse
                         appExecution = runApp (processTicket . tiId $ ticketInfo) stubbedConfig
@@ -237,9 +237,9 @@ processTicketSpec =
 
                         pre $ any (\Comment{..} -> not $ null cAttachments) comments
 
-                        let stubbedZendeskLayer :: ZendeskLayer App
-                            stubbedZendeskLayer =
-                                emptyZendeskLayer
+                        let stubbedDataLayer :: DataLayer App
+                            stubbedDataLayer =
+                                emptyDataLayer
                                     { zlGetTicketInfo           = \_     -> pure $ Just ticketInfo
                                     , zlPostTicketComment       = \_ _   -> pure ()
                                     , zlGetTicketComments       = \_     -> pure comments
@@ -247,7 +247,7 @@ processTicketSpec =
                                     }
 
                         let stubbedConfig :: Config
-                            stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
+                            stubbedConfig = withStubbedIOAndDataLayer stubbedDataLayer
 
                         let appExecution :: IO ZendeskResponse
                             appExecution = runApp (processTicket . tiId $ ticketInfo) stubbedConfig
@@ -264,16 +264,16 @@ processTicketSpec =
 
                     monadicIO $ do
 
-                        let stubbedZendeskLayer :: ZendeskLayer App
-                            stubbedZendeskLayer =
-                                emptyZendeskLayer
+                        let stubbedDataLayer :: DataLayer App
+                            stubbedDataLayer =
+                                emptyDataLayer
                                     { zlGetTicketInfo           = \_     -> pure Nothing
                                     , zlPostTicketComment       = \_ _   -> pure ()
                                     , zlGetTicketComments       = \_     -> pure empty
                                     }
 
                         let stubbedConfig :: Config
-                            stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
+                            stubbedConfig = withStubbedIOAndDataLayer stubbedDataLayer
 
                         let appExecution :: IO ZendeskResponse
                             appExecution = runApp (processTicket ticketId) stubbedConfig
@@ -392,14 +392,14 @@ filterTicketsWithAttachmentsSpec =
 
                     monadicIO $ do
 
-                        let stubbedZendeskLayer :: ZendeskLayer App
-                            stubbedZendeskLayer =
-                                emptyZendeskLayer
+                        let stubbedDataLayer :: DataLayer App
+                            stubbedDataLayer =
+                                emptyDataLayer
                                     {
                                       zlGetTicketComments       = \_     -> pure comments
                                     }
                         let stubbedConfig :: Config
-                            stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
+                            stubbedConfig = withStubbedIOAndDataLayer stubbedDataLayer
 
                         let appExecution :: IO [TicketInfo]
                             appExecution = runApp (filterTicketsWithAttachments listTickets) stubbedConfig
@@ -414,13 +414,13 @@ filterTicketsWithAttachmentsSpec =
 
                     monadicIO $ do
 
-                        let stubbedZendeskLayer :: ZendeskLayer App
-                            stubbedZendeskLayer =
-                                emptyZendeskLayer
+                        let stubbedDataLayer :: DataLayer App
+                            stubbedDataLayer =
+                                emptyDataLayer
                                     { zlGetTicketComments       = \_     -> pure comments
                                     }
                         let stubbedConfig :: Config
-                            stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
+                            stubbedConfig = withStubbedIOAndDataLayer stubbedDataLayer
 
                         let appExecution :: IO [TicketInfo]
                             appExecution = runApp (filterTicketsWithAttachments listTickets) stubbedConfig
@@ -509,16 +509,16 @@ exportZendeskDataToLocalDBSpec =
 
                monadicIO $ do
 
-                   let stubbedZendeskLayer :: ZendeskLayer App
-                       stubbedZendeskLayer =
-                           emptyZendeskLayer
+                   let stubbedDataLayer :: DataLayer App
+                       stubbedDataLayer =
+                           emptyDataLayer
                                { zlExportTickets           = \_     -> pure []
                                , zlListDeletedTickets      =           pure []
                                , zlGetTicketComments       = \_     -> pure []
                                }
 
                    let stubbedConfig :: Config
-                       stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
+                       stubbedConfig = withStubbedIOAndDataLayer stubbedDataLayer
 
                    let appExecution :: IO [TicketInfo]
                        appExecution = runApp (exportZendeskDataToLocalDB mapNotConcurrent exportFromTime) stubbedConfig
@@ -534,16 +534,16 @@ exportZendeskDataToLocalDBSpec =
 
                     monadicIO $ do
 
-                        let stubbedZendeskLayer :: ZendeskLayer App
-                            stubbedZendeskLayer =
-                                emptyZendeskLayer
+                        let stubbedDataLayer :: DataLayer App
+                            stubbedDataLayer =
+                                emptyDataLayer
                                     { zlExportTickets           = \_     -> pure listTickets
                                     , zlListDeletedTickets      =           pure []
                                     , zlGetTicketComments       = \_     -> pure []
                                     }
 
                         let stubbedConfig :: Config
-                            stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
+                            stubbedConfig = withStubbedIOAndDataLayer stubbedDataLayer
 
                         let appExecution :: IO [TicketInfo]
                             appExecution = runApp (exportZendeskDataToLocalDB mapNotConcurrent exportFromTime) stubbedConfig
@@ -560,16 +560,16 @@ exportZendeskDataToLocalDBSpec =
 
                     monadicIO $ do
 
-                        let stubbedZendeskLayer :: ZendeskLayer App
-                            stubbedZendeskLayer =
-                                emptyZendeskLayer
+                        let stubbedDataLayer :: DataLayer App
+                            stubbedDataLayer =
+                                emptyDataLayer
                                     { zlExportTickets           = \_     -> pure listTickets
                                     , zlListDeletedTickets      =           pure $ map (DeletedTicket . tiId) listTickets
                                     , zlGetTicketComments       = \_     -> pure []
                                     }
 
                         let stubbedConfig :: Config
-                            stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
+                            stubbedConfig = withStubbedIOAndDataLayer stubbedDataLayer
 
                         let appExecution :: IO [TicketInfo]
                             appExecution = runApp (exportZendeskDataToLocalDB mapNotConcurrent exportFromTime) stubbedConfig
@@ -588,16 +588,16 @@ exportZendeskDataToLocalDBSpec =
                         -- Here we duplicate them to check if the function works.
                         let duplicatedListTickets = concat $ replicate 10 listTickets
 
-                        let stubbedZendeskLayer :: ZendeskLayer App
-                            stubbedZendeskLayer =
-                                emptyZendeskLayer
+                        let stubbedDataLayer :: DataLayer App
+                            stubbedDataLayer =
+                                emptyDataLayer
                                     { zlExportTickets           = \_     -> pure duplicatedListTickets
                                     , zlListDeletedTickets      =           pure []
                                     , zlGetTicketComments       = \_     -> pure []
                                     }
 
                         let stubbedConfig :: Config
-                            stubbedConfig = withStubbedIOAndZendeskLayer stubbedZendeskLayer
+                            stubbedConfig = withStubbedIOAndDataLayer stubbedDataLayer
 
                         let appExecution :: IO [TicketInfo]
                             appExecution = runApp (exportZendeskDataToLocalDB mapNotConcurrent exportFromTime) stubbedConfig
