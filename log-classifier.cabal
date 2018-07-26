@@ -31,6 +31,7 @@ library
                        DataSource.DB
                        DataSource.Types
                        DataSource.Http
+                       HttpLayer
   ghc-options:         -Wall
   build-depends:       aeson
                      , array
