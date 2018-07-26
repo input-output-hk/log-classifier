@@ -30,9 +30,23 @@ nix-shell $ ghcid -c "runhaskell Setup.hs repl Lib"
 ```
 
 ## To change version of nixpkgs
+Get $REV from https://howoldis.herokuapp.com/
+```
+$ REV="d7d31fea7e7eef8ff4495e75be5dcbb37fb215d0"
+$ SHA=`nix-prefetch-url https://github.com/nixos/nixpkgs/archive/${REV}.tar.gz`
+$ SHA-UNPACK=`nix-prefetch-url --unpack https://github.com/nixos/nixpkgs/archive/${REV}.tar.gz`
+$ source nix-pkgs.sh > nix-pkgs.json
+```
+nix-pkgs-sh
+```
+echo '
+{
+    "rev":            "$REV",
+    "sha256":         "$SHA",
+    "sha256unpacked": "$SHA-UNPACK"
+}'
 
-
-:wq
+```
 
 ## To get versions
 ```
