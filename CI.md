@@ -2,22 +2,16 @@
 
 ## Nix related files and their purposes
 
-default.nix 
-  - Contains the primary nix expression used to build log-classifier. This is the only nix expression that a developer may need to modify.
-cabal2nix.nix 
-  - The cabal2nix generated output from the log-classifier.cabal file.
-fetch-nixpkgs.nix 
-  - Used for pinning a specific version of nixpkgs
-fetchNixpkgs.nix
-  - Used for pinning a specific version of nixpkgs
-lib.nix
-  - Used for pinning a specific verison of nixpkgs
-shell.nix
-  - Used by nix-shell to set nix environment
-universum.nix
-  - created by cabal2nix, essentially overrides the Universum in nixpkgs
-nixpkgs-src.json
-  - Where version of nixpkgs is defined. See below for instructions to update.
+| File | Description |
+| --- | --- |
+| default.nix | Contains the primary nix expression used to build log-classifier. This is the only nix expression that a developer may need to modify. |
+| cabal2nix.nix | The cabal2nix generated output from the log-classifier.cabal file. |
+| fetch-nixpkgs.nix | Used for pinning a specific version of nixpkgs |
+| fetchNixpkgs.nix | Used for pinning a specific version of nixpkgs |
+| lib.nix | Used for pinning a specific verison of nixpkgs |
+| shell.nix | Used by nix-shell to set nix environment |
+| universum.nix | Created by cabal2nix, essentially overrides the Universum in nixpkgs |
+| nixpkgs-src.json | Where version of nixpkgs is defined. See below for instructions to update. |
 
 
 ## Buildkite
