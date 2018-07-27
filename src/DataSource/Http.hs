@@ -78,7 +78,7 @@ getTicketInfo
     => TicketId
     -> m TicketInfo
 getTicketInfo ticketId =
-    catch getInfo $ \_ -> throwM $ MkJSONParsingException "a" -- TODO(md): Change the exception type to JSONParsingException
+    catch getInfo $ \(e :: JSONParsingException) -> throwM e -- TODO(md): Change the exception type to JSONParsingException
   where
     getInfo :: m TicketInfo
     getInfo = do
@@ -155,7 +155,7 @@ listAdminAgents = do
 -- NOTE: If count is less than 1000, then stop paginating.
 -- Otherwise, use the next_page URL to get the next page of results.
 getExportedTickets
-    :: forall m. (MonadIO m, MonadReader Config m)
+    :: forall m. (MonadIO m, MonadReader Config m, MonadThrow m)
     => ExportFromTime
     -> m [TicketInfo]
 getExportedTickets time = do
@@ -197,7 +197,7 @@ getExportedTickets time = do
 
 -- | Send API request to post comment
 postTicketComment
-    :: (MonadIO m, MonadReader Config m)
+    :: (MonadIO m, MonadReader Config m, MonadThrow m)
     => TicketInfo
     -> ZendeskResponse
     -> m ()
@@ -232,7 +232,7 @@ createResponseTicket agentId TicketInfo{..} ZendeskResponse{..} =
 
 -- | Get user information.
 _getUser
-    :: (MonadIO m, MonadReader Config m)
+    :: (MonadIO m, MonadReader Config m, MonadThrow m)
     => m User
 _getUser = do
     cfg <- ask
