@@ -3,8 +3,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module DataSource.Http
-    ( basicZendeskLayer
-    , emptyZendeskLayer
+    ( basicDataLayer
+    , emptyDataLayer
     , createResponseTicket
     ) where
 
@@ -25,7 +25,7 @@ import           DataSource.Types (Attachment (..), AttachmentContent (..), Comm
                                    DeletedTicket (..), ExportFromTime (..), FromPageResultList (..),
                                    PageResultList (..), Ticket (..), TicketId (..), TicketInfo (..),
                                    TicketTag (..), TicketTags (..), User, UserId (..),
-                                   ZendeskAPIUrl (..), ZendeskLayer (..), ZendeskResponse (..),
+                                   ZendeskAPIUrl (..), DataLayer (..), ZendeskResponse (..),
                                    asksHTTPNetworkLayer, parseComments, renderTicketStatus, showURL)
 
 -- ./mitmproxy --mode reverse:https://iohk.zendesk.com -p 4001
@@ -39,8 +39,8 @@ import           DataSource.Types (Attachment (..), AttachmentContent (..), Comm
 --   - get returns a single result (wrapped in @Maybe@)
 --   - list returns multiple results
 --   - post submits a result (maybe PUT?!)
-basicZendeskLayer :: (MonadIO m, MonadReader Config m, MonadCatch m) => ZendeskLayer m
-basicZendeskLayer = ZendeskLayer
+basicDataLayer :: (MonadIO m, MonadReader Config m, MonadCatch m) => DataLayer m
+basicDataLayer = DataLayer
     { zlGetTicketInfo           = getTicketInfo
     , zlListDeletedTickets      = listDeletedTickets
     , zlListRequestedTickets    = listRequestedTickets
@@ -54,8 +54,8 @@ basicZendeskLayer = ZendeskLayer
     }
 
 -- | The non-implemented Zendesk layer.
-emptyZendeskLayer :: forall m. (Monad m) => ZendeskLayer m
-emptyZendeskLayer = ZendeskLayer
+emptyDataLayer :: forall m. (Monad m) => DataLayer m
+emptyDataLayer = DataLayer
     { zlGetTicketInfo           = \_     -> error "Not implemented zlGetTicketInfo!"
     , zlListDeletedTickets      =           pure []
     , zlListRequestedTickets    = \_     -> error "Not implemented zlListRequestedTickets!"

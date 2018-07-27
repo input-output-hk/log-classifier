@@ -30,14 +30,15 @@ import           System.Directory (createDirectoryIfMissing)
 import           System.IO (BufferMode (..), hSetBuffering)
 
 import           CLI (CLI (..), getCliArgs)
+import           Configuration (defaultConfig)
 import           DataSource (App, Attachment (..), AttachmentContent (..), Comment (..),
-                             CommentBody (..), Config (..), DBLayer (..), DeletedTicket (..),
-                             ExportFromTime (..), IOLayer (..), TicketId (..), TicketInfo (..),
-                             TicketStatus (..), TicketTag (..), TicketTags (..), User (..),
-                             UserId (..), ZendeskLayer (..), ZendeskResponse (..), asksDBLayer,
-                             asksIOLayer, asksZendeskLayer, assignToPath, connPoolDBLayer,
-                             createProdConnectionPool, defaultConfig, knowledgebasePath,
-                             renderTicketStatus, runApp, tokenPath)
+                             CommentBody (..), Config (..), DBLayer (..), DataLayer (..),
+                             DeletedTicket (..), ExportFromTime (..), IOLayer (..), TicketId (..),
+                             TicketInfo (..), TicketStatus (..), TicketTag (..), TicketTags (..),
+                             User (..), UserId (..), ZendeskResponse (..), asksDBLayer,
+                             asksDataLayer, asksIOLayer, assignToPath, connPoolDBLayer,
+                             createProdConnectionPool, knowledgebasePath, renderTicketStatus,
+                             runApp, tokenPath)
 
 import           Exceptions (ProcessTicketExceptions (..), ZipFileExceptions (..))
 import           LogAnalysis.Classifier (extractErrorCodes, extractIssuesFromLogs,
@@ -151,7 +152,7 @@ exportZendeskDataToLocalDB mapConcurrentlyWithDelay' exportFromTime = do
     fetchTicketData :: TicketInfo -> App (TicketInfo,[Comment])
     fetchTicketData ticket = do
 
-        getTicketComments           <- asksZendeskLayer zlGetTicketComments
+        getTicketComments           <- asksDataLayer zlGetTicketComments
 
         -- First fetch comments, FAIL-FAST
         ticketComments              <- getTicketComments $ tiId ticket
@@ -162,8 +163,8 @@ exportZendeskDataToLocalDB mapConcurrentlyWithDelay' exportFromTime = do
 fetchTicketsExportedFromTime :: ExportFromTime -> App [TicketInfo]
 fetchTicketsExportedFromTime exportFromTime = do
 
-    listDeletedTickets          <- asksZendeskLayer zlListDeletedTickets
-    exportTickets               <- asksZendeskLayer zlExportTickets
+    listDeletedTickets          <- asksDataLayer zlListDeletedTickets
+    exportTickets               <- asksDataLayer zlExportTickets
 
     -- Yeah, not sure why this happens. Very weird.
     exportedTickets             <- nub <$> exportTickets exportFromTime
@@ -220,7 +221,7 @@ collectEmails = do
     let userId  = UserId . fromIntegral $ cfgAgentId cfg
 
     -- We first fetch the function from the configuration
-    listTickets <- asksZendeskLayer zlListAssignedTickets
+    listTickets <- asksDataLayer zlListAssignedTickets
     putTextLn $ "Classifier is going to extract emails requested by: " <> email
     tickets     <- listTickets userId
     putTextLn $ "There are " <> show (length tickets) <> " tickets requested by this user."
@@ -230,7 +231,7 @@ collectEmails = do
 fetchAgents :: App [User]
 fetchAgents = do
     Config{..}      <- ask
-    listAdminAgents <- asksZendeskLayer zlListAdminAgents
+    listAdminAgents <- asksDataLayer zlListAdminAgents
     printText       <- asksIOLayer iolPrintText
 
     printText "Fetching Zendesk agents"
@@ -256,9 +257,9 @@ processTicket :: TicketId -> App ZendeskResponse
 processTicket tId = do
 
     -- We see 3 HTTP calls here.
-    getTicketInfo       <- asksZendeskLayer zlGetTicketInfo
-    getTicketComments   <- asksZendeskLayer zlGetTicketComments
-    postTicketComment   <- asksZendeskLayer zlPostTicketComment
+    getTicketInfo       <- asksDataLayer zlGetTicketInfo
+    getTicketComments   <- asksDataLayer zlGetTicketComments
+    postTicketComment   <- asksDataLayer zlPostTicketComment
 
     mTicketInfo         <- getTicketInfo tId
     comments            <- getTicketComments tId
@@ -377,13 +378,13 @@ listAndSortTickets = do
 
     Config{..}  <- ask
 
-    listAgents <- asksZendeskLayer zlListAdminAgents
+    listAgents <- asksDataLayer zlListAdminAgents
     agents <- listAgents
 
     let agentIds :: [UserId]
         agentIds = map uId agents
     -- We first fetch the function from the configuration
-    listTickets <- asksZendeskLayer zlListAssignedTickets
+    listTickets <- asksDataLayer zlListAssignedTickets
     printText   <- asksIOLayer iolPrintText
 
     printText "Classifier is going to process tickets assigned to agents"
@@ -402,7 +403,7 @@ listAndSortUnassignedTickets :: App [TicketInfo]
 listAndSortUnassignedTickets = do
 
     -- We first fetch the function from the configuration
-    listUnassignedTickets   <- asksZendeskLayer zlListUnassignedTickets
+    listUnassignedTickets   <- asksDataLayer zlListUnassignedTickets
     printText               <- asksIOLayer iolPrintText
 
     printText "Classifier is going to process tickets assigned to agents"
@@ -430,7 +431,7 @@ setupKnowledgebaseEnv path = do
 extractEmailAddress :: TicketId -> App ()
 extractEmailAddress ticketId = do
     -- Fetch the function from the configuration.
-    getTicketComments <- asksZendeskLayer zlGetTicketComments
+    getTicketComments <- asksDataLayer zlGetTicketComments
 
     comments <- getTicketComments ticketId
     let (CommentBody commentWithEmail) = cBody $ fromMaybe (error "No comment") (safeHead comments)
@@ -474,7 +475,7 @@ inspectAttachments :: TicketInfo -> [Attachment] -> App ZendeskResponse
 inspectAttachments ticketInfo attachments = do
 
     config          <- ask
-    getAttachment   <- asksZendeskLayer zlGetAttachment
+    getAttachment   <- asksDataLayer zlGetAttachment
 
     lastAttach <- handleMaybe . safeHead . reverse . sort $ attachments
     att <- handleMaybe =<< getAttachment lastAttach
