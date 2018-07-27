@@ -23,8 +23,7 @@ import qualified Prelude (Show(..))
 -- JSON parsing exceptions
 ------------------------------------------------------------
 -- | Exceptions that occur during JSON parsing
-data JSONParsingException
-    = MkJSONParsingException !Text
+newtype JSONParsingException = MkJSONParsingException Text
 
 instance Exception JSONParsingException
 instance Prelude.Show JSONParsingException where

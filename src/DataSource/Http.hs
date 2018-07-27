@@ -78,7 +78,7 @@ getTicketInfo
     => TicketId
     -> m (Maybe TicketInfo)
 getTicketInfo ticketId =
-    catch getInfo $ \(e :: JSONParsingException) -> throwM e -- TODO(md): Change the exception type to JSONParsingException
+    catch getInfo $ \(e :: JSONParsingException) -> throwM e
   where
     getInfo :: m (Maybe TicketInfo)
     getInfo = do
