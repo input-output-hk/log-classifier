@@ -18,15 +18,15 @@ import           Data.Aeson.Text (encodeToLazyText)
 import           Data.List (nub)
 import           Network.HTTP.Simple (Request, getResponseBody, httpLBS, parseRequest_)
 
-import           HttpLayer
+import           HttpLayer (HTTPNetworkLayer (..), apiRequest, apiRequestAbsolute)
 
 import           DataSource.Types (Attachment (..), AttachmentContent (..), Comment (..),
-                                   CommentBody (..), CommentId (..), Config (..),
+                                   CommentBody (..), CommentId (..), Config (..), DataLayer (..),
                                    DeletedTicket (..), ExportFromTime (..), FromPageResultList (..),
                                    PageResultList (..), Ticket (..), TicketId (..), TicketInfo (..),
                                    TicketTag (..), TicketTags (..), User, UserId (..),
-                                   ZendeskAPIUrl (..), DataLayer (..), ZendeskResponse (..),
-                                   asksHTTPNetworkLayer, parseComments, renderTicketStatus, showURL)
+                                   ZendeskAPIUrl (..), ZendeskResponse (..), asksHTTPNetworkLayer,
+                                   parseComments, parseTicket, renderTicketStatus, showURL)
 
 -- ./mitmproxy --mode reverse:https://iohk.zendesk.com -p 4001
 
@@ -74,7 +74,7 @@ emptyDataLayer = DataLayer
 
 -- | Get single ticket info.
 getTicketInfo
-    :: (MonadIO m, MonadReader Config m)
+    :: (HasCallStack, MonadIO m, MonadReader Config m)
     => TicketId
     -> m (Maybe TicketInfo)
 getTicketInfo ticketId = do
@@ -85,7 +85,7 @@ getTicketInfo ticketId = do
 
     apiCall <- asksHTTPNetworkLayer hnlApiCall
 
-    Just <$> apiCall parseJSON req
+    Just <$> apiCall parseTicket req
 
 -- | Return list of deleted tickets.
 listDeletedTickets
@@ -211,7 +211,7 @@ postTicketComment ticketInfo zendeskResponse = do
 -- | Create response ticket
 createResponseTicket :: Integer -> TicketInfo -> ZendeskResponse -> Ticket
 createResponseTicket agentId TicketInfo{..} ZendeskResponse{..} =
-    let analyzedTag = renderTicketStatus AnalyzedByScriptV1_2
+    let analyzedTag = renderTicketStatus AnalyzedByScriptV1_3
     -- Nub so it won't post duplicate tags
         mergedTags = TicketTags . nub $ [analyzedTag] <> getTicketTags tiTags <> getTicketTags zrTags
     in (Ticket

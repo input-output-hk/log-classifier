@@ -254,7 +254,7 @@ processTicketSafe tId = catch (void $ processTicket tId)
         appendF "./logs/errors.log" (show e <> "\n"))
 
 -- | Process ticket with given 'TicketId'
-processTicket :: TicketId -> App ZendeskResponse
+processTicket :: HasCallStack => TicketId -> App ZendeskResponse
 processTicket tId = do
 
     -- We first fetch the function from the configuration
@@ -334,7 +334,7 @@ processTicketsFromTime exportFromTime = do
 
 
 -- | When we want to process all possible tickets.
-processTickets :: App ()
+processTickets :: HasCallStack => App ()
 processTickets = do
 
     allTickets          <- fetchTickets
@@ -390,7 +390,7 @@ fetchAndShowTicketsFrom exportFromTime = do
     putTextLn "All the tickets has been processed."
 
 -- TODO(ks): Extract repeating code, generalize.
-listAndSortTickets :: App [TicketInfo]
+listAndSortTickets :: HasCallStack => App [TicketInfo]
 listAndSortTickets = do
 
     Config{..}  <- ask
@@ -416,7 +416,7 @@ listAndSortTickets = do
 
     pure sortedTicketIds
 
-listAndSortUnassignedTickets :: App [TicketInfo]
+listAndSortUnassignedTickets :: HasCallStack => App [TicketInfo]
 listAndSortUnassignedTickets = do
 
     -- We first fetch the function from the configuration
@@ -616,6 +616,7 @@ filterAnalyzedTickets ticketsInfo =
                         [ AnalyzedByScriptV1_0
                         , AnalyzedByScriptV1_1
                         , AnalyzedByScriptV1_2
+                        , AnalyzedByScriptV1_3
                         ]
 
     isTicketAnalyzed :: TicketInfo -> Bool
