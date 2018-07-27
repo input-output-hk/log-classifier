@@ -184,7 +184,7 @@ assignToPath = "./tmp-secrets/assign_to"
 -- We don't want anything to leak out, so we expose only the most relevant information,
 -- anything relating to how it internaly works should NOT be exposed.
 data DataLayer m = DataLayer
-    { zlGetTicketInfo         :: TicketId         -> m TicketInfo
+    { zlGetTicketInfo         :: TicketId         -> m (Maybe TicketInfo)
     , zlListDeletedTickets    ::                     m [DeletedTicket]
     , zlListRequestedTickets  :: UserId           -> m [TicketInfo]
     , zlListAssignedTickets   :: UserId           -> m [TicketInfo]

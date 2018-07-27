@@ -448,4 +448,3 @@ deleteAllData conn = do
     deleteCommentAttachments conn
     deleteTicketComments conn
     deleteTickets conn
-

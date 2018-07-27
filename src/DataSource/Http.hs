@@ -76,11 +76,11 @@ emptyDataLayer = DataLayer
 getTicketInfo
     :: forall m. (MonadIO m, MonadReader Config m, MonadCatch m)
     => TicketId
-    -> m TicketInfo
+    -> m (Maybe TicketInfo)
 getTicketInfo ticketId =
     catch getInfo $ \(e :: JSONParsingException) -> throwM e -- TODO(md): Change the exception type to JSONParsingException
   where
-    getInfo :: m TicketInfo
+    getInfo :: m (Maybe TicketInfo)
     getInfo = do
         cfg <- ask
 
@@ -89,7 +89,7 @@ getTicketInfo ticketId =
 
         apiCall <- asksHTTPNetworkLayer hnlApiCall
 
-        apiCall parseJSON req
+        Just <$> apiCall parseJSON req
 
 -- | Return list of deleted tickets.
 listDeletedTickets
