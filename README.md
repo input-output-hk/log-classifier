@@ -7,7 +7,7 @@ Original version by Hiroto Shioi (https://github.com/HirotoShioi).
 The purpose of this project is to analyze Cardano log file and provide a solution to the end user while collecting statistics so Cardano developers can prioritize the issues.
 
 ## Installation and Configuration Instructions
-Please read the instructions available in [INSTALL.md](INSTALL.md)
+Installation Instructions are available at [INSTALL.md](INSTALL.md)
 
 ## What it is
 
