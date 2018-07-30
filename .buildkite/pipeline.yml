@@ -1,5 +1,5 @@
 steps:
   - label: 'log-classifier-x86_64-linux-nix'
-    command: 'nix-shell --command "runhaskell Setup.hs configure --enable-tests; runhaskell Setup.hs build; runhaskell Setup.hs test"' 
+    command: 'nix-build' 
     agents:
       system: x86_64-linux
