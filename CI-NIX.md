@@ -22,10 +22,10 @@ The pipeline that is executed is located in the .buildkite folder.
 
 All the commands below are executed in the cloned log-classifier directory.
 
+Build with test output:
 ```
 $ nix-build
 ```
-
 
 You can also build within nix-shell: 
 
