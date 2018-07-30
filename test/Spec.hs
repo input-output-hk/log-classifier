@@ -605,7 +605,7 @@ exportZendeskDataToLocalDBSpec =
                         ticketsToExport <- run appExecution
 
                         -- Check that we have tickets.
-                        assert . not . null $ ticketsToExport
+                        assert . null $ ticketsToExport
                         assert $ length ticketsToExport == length listTickets
   where
     -- [a] -> Int -> Int -> (a -> m b) -> m [b]
