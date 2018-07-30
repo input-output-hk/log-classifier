@@ -22,16 +22,11 @@ The pipeline that is executed is located in the .buildkite folder.
 
 All the commands below are executed in the cloned log-classifier directory.
 
-Build with verbose output:
-```
-$ nix-shell --command "runhaskell Setup.hs configure --enable-tests; runhaskell Setup.hs build; runhaskell Setup.hs test"
-```
 
-Build without verbose output:
+Build with test output:
 ```
-$ nix build -f default.nix
+$ nix-build
 ```
-
 
 You can also build within nix-shell: 
 
