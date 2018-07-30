@@ -165,7 +165,6 @@ asksDBLayer getter = do
     Config{..} <- ask
     pure $ getter cfgDBLayer
 
-
 -- TODO(ks): Move these three below to CLI!
 -- | Path to knowledgebase
 knowledgebasePath :: FilePath
@@ -446,6 +445,8 @@ data TicketTag
     | AnalyzedByScriptV1_0  -- ^ Ticket has been analyzed by the version 1.0
     | AnalyzedByScriptV1_1  -- ^ Ticket has been analyzed by the version 1.1
     | AnalyzedByScriptV1_2  -- ^ Ticket has been analyzed by the version 1.2
+    | AnalyzedByScriptV1_3  -- ^ Ticket has been analyzed by the version 1.3
+    | ToBeAnalyzed          -- ^ Ticket needs to be analyzed
     | NoKnownIssue          -- ^ Ticket had no known issue
     | NoLogAttached         -- ^ Log file not attached
 
@@ -847,5 +848,7 @@ renderTicketStatus AnalyzedByScript     = "analyzed-by-script"
 renderTicketStatus AnalyzedByScriptV1_0 = "analyzed-by-script-v1.0"
 renderTicketStatus AnalyzedByScriptV1_1 = "analyzed-by-script-v1.1"
 renderTicketStatus AnalyzedByScriptV1_2 = "analyzed-by-script-v1.2"
+renderTicketStatus AnalyzedByScriptV1_3 = "analyzed-by-script-v1.3"
+renderTicketStatus ToBeAnalyzed         = "to_be_analysed" -- https://iohk.zendesk.com/agent/admin/tags
 renderTicketStatus NoKnownIssue         = "no-known-issues"
 renderTicketStatus NoLogAttached        = "no-log-files"

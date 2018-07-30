@@ -245,6 +245,7 @@ fetchAgents = do
 processTicketSafe :: TicketId -> App ()
 processTicketSafe tId = catch (void $ processTicket tId)
     -- Print and log any exceptions related to process ticket
+    -- TODO(ks): Remove IO from here, return the error.
     (\(e :: ProcessTicketExceptions) -> do
         printText <- asksIOLayer iolPrintText
         printText $ show e
@@ -253,8 +254,12 @@ processTicketSafe tId = catch (void $ processTicket tId)
         appendF "./logs/errors.log" (show e <> "\n"))
 
 -- | Process ticket with given 'TicketId'
-processTicket :: TicketId -> App ZendeskResponse
+processTicket :: HasCallStack => TicketId -> App ZendeskResponse
 processTicket tId = do
+
+    -- We first fetch the function from the configuration
+    printText           <- asksIOLayer iolPrintText
+    appendF             <- asksIOLayer iolAppendFile -- We need to remove this.
 
     -- We see 3 HTTP calls here.
     getTicketInfo       <- asksDataLayer zlGetTicketInfo
@@ -271,6 +276,16 @@ processTicket tId = do
             zendeskResponse <- getZendeskResponses comments attachments ticketInfo
 
             postTicketComment ticketInfo zendeskResponse
+
+            -- TODO(ks): Moved back so we can run it in single-threaded mode. Requires a lot of
+            -- refactoring to run it in a multi-threaded mode.
+            let ticketId = getTicketId $ zrTicketId zendeskResponse
+            -- Append ticket result.
+            let tags = getTicketTags $ zrTags zendeskResponse
+            forM_ tags $ \tag -> do
+                let formattedTicketIdAndTag = show ticketId <> " " <> tag
+                printText formattedTicketIdAndTag
+                appendF "logs/analysis-result.log" (formattedTicketIdAndTag <> "\n")
 
             pure zendeskResponse
 
@@ -319,7 +334,7 @@ processTicketsFromTime exportFromTime = do
 
 
 -- | When we want to process all possible tickets.
-processTickets :: App ()
+processTickets :: HasCallStack => App ()
 processTickets = do
 
     allTickets          <- fetchTickets
@@ -334,7 +349,9 @@ fetchTickets = do
     sortedUnassignedTicketIds   <- listAndSortUnassignedTickets
 
     let allTickets = sortedTicketIds <> sortedUnassignedTicketIds
-    return allTickets
+
+    -- Anything that has a "to_be_analysed" tag
+    pure $ filter (elem (renderTicketStatus ToBeAnalyzed) . getTicketTags . tiTags) allTickets
 
 fetchAndShowTickets :: App ()
 fetchAndShowTickets = do
@@ -373,7 +390,7 @@ fetchAndShowTicketsFrom exportFromTime = do
     putTextLn "All the tickets has been processed."
 
 -- TODO(ks): Extract repeating code, generalize.
-listAndSortTickets :: App [TicketInfo]
+listAndSortTickets :: HasCallStack => App [TicketInfo]
 listAndSortTickets = do
 
     Config{..}  <- ask
@@ -399,7 +416,7 @@ listAndSortTickets = do
 
     pure sortedTicketIds
 
-listAndSortUnassignedTickets :: App [TicketInfo]
+listAndSortUnassignedTickets :: HasCallStack => App [TicketInfo]
 listAndSortUnassignedTickets = do
 
     -- We first fetch the function from the configuration
@@ -477,8 +494,8 @@ inspectAttachments ticketInfo attachments = do
     config          <- ask
     getAttachment   <- asksDataLayer zlGetAttachment
 
-    lastAttach <- handleMaybe . safeHead . reverse . sort $ attachments
-    att <- handleMaybe =<< getAttachment lastAttach
+    lastAttach      <- handleMaybe . safeHead . reverse . sort $ attachments
+    att             <- handleMaybe =<< getAttachment lastAttach
     inspectAttachment config ticketInfo att
   where
     handleMaybe :: Maybe a -> App a
@@ -599,6 +616,7 @@ filterAnalyzedTickets ticketsInfo =
                         [ AnalyzedByScriptV1_0
                         , AnalyzedByScriptV1_1
                         , AnalyzedByScriptV1_2
+                        , AnalyzedByScriptV1_3
                         ]
 
     isTicketAnalyzed :: TicketInfo -> Bool
