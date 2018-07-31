@@ -13,7 +13,6 @@ module LogAnalysis.Classifier
 
 import           Universum
 
-import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Map.Strict as Map
 import           Data.Text (isInfixOf)
 import           Data.Text.Encoding.Error (ignore)
@@ -27,17 +26,17 @@ numberOfErrorText :: Int
 numberOfErrorText = 3
 
 -- | Analyze each log file based on the knowlodgebases' data.
-extractIssuesFromLogs :: (MonadCatch m) => [LByteString] -> Analysis -> m Analysis
+extractIssuesFromLogs :: (MonadCatch m) => [ByteString] -> Analysis -> m Analysis
 extractIssuesFromLogs files analysis = do
     analysisResult <- foldlM runClassifiers analysis files
     filterAnalysis analysisResult
 
 -- | Run analysis on given file
-runClassifiers :: (MonadCatch m) => Analysis -> LByteString -> m Analysis
+runClassifiers :: (MonadCatch m) => Analysis -> ByteString -> m Analysis
 runClassifiers analysis logfile = do
     -- Force the evaluation of the whole file.
     strictLogfile <- catchAnyStrict (pure logfile) $ \_ -> throwM LogReadException
-    pure . foldl' analyzeLine analysis . lines . decodeUtf8With ignore . LBS.toStrict $ strictLogfile
+    pure . foldl' analyzeLine analysis . lines . decodeUtf8With ignore $ strictLogfile
   where
 
     -- | A helpful utility function.
