@@ -41,6 +41,7 @@ library
                      , bytestring
                      , containers
                      , directory
+                     , either
                      , http-conduit
                      -- Effects & company
                      , mtl

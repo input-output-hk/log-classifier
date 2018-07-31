@@ -11,6 +11,7 @@ import           Universum
 
 import           Data.Aeson (FromJSON, ToJSON, Value, encode)
 import           Data.Aeson.Types (Parser, parseEither)
+import           Data.Either.Combinators (mapLeft)
 import           Data.Text (unpack)
 import           Network.HTTP.Simple (Request, addRequestHeader, getResponseBody, httpJSON,
                                       parseRequest_, setRequestBasicAuth, setRequestBodyJSON,
@@ -72,8 +73,12 @@ apiRequestAbsolute Config{..} u =
     parseRequest_(toString u)
 
 -- | Request PUT
-addJsonBody :: forall a. ToJSON a => a -> Request -> Request
-addJsonBody body req = setRequestBodyJSON body $ setRequestMethod "PUT" req
+addJsonBody :: forall a. ToJSON a => a -> Request -> Either String Request
+addJsonBody body req = mapLeft show $ catch updateReq Left
+  where
+    updateReq :: Exception e => Either e Request
+    updateReq = Right <$> setRequestBodyJSON body $ setRequestMethod "PUT" req
+
 
 -- | Make an api call
 -- TODO(ks): Switch to @Either@.

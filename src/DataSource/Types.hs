@@ -204,7 +204,7 @@ data DataLayer m = DataLayer
 -- the @Http@ module, say in the @ZendeskaLayer@, but it's good enough for now.
 -- We need to use RankNTypes due to some complications that appeared.
 data HTTPNetworkLayer = HTTPNetworkLayer
-    { hnlAddJsonBody    :: forall a.    (ToJSON a) => a -> Request -> Request
+    { hnlAddJsonBody    :: forall a.    (ToJSON a) => a -> Request -> Either String Request
     -- TODO(ks): These two below are basically the same, will fix in future PR, requires refactoring.
     , hnlApiCall        :: forall m a.  (MonadIO m, MonadThrow m, FromJSON a) => (Value -> Parser a) -> Request -> m a
     , hnlApiCallSafe    :: forall m a.  (MonadIO m, FromJSON a) => (Value -> Parser a) -> Request -> m (Either String a)

@@ -1,5 +1,5 @@
 { mkDerivation, aeson, array, attoparsec, base, bytestring
-, containers, directory, generics-sop, hspec, http-conduit
+, containers, directory, either, generics-sop, hspec, http-conduit
 , monad-control, mtl, optparse-applicative, QuickCheck, reflection
 , regex-tdfa, resource-pool, sqlite-simple, stdenv, text, time
 , transformers-base, universum, unliftio, zip-archive
