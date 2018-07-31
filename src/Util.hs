@@ -6,16 +6,18 @@ module Util
 import           Universum
 
 import qualified Codec.Archive.Zip as Zip
+import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Map.Strict as Map
 
 import           Exceptions (ZipFileExceptions (..))
 
 -- | Extract log file from given zip file
 -- TODO(ks): What happens with the other files? We just ignore them?
-extractLogsFromZip :: Int -> LByteString -> Either ZipFileExceptions [LByteString]
+extractLogsFromZip :: Int -> LByteString -> Either ZipFileExceptions [ByteString]
 extractLogsFromZip numberOfFiles file = do
     zipMap <- readZip file  -- Read File
-    let extractedLogs = Map.elems $ mTake numberOfFiles zipMap  -- Extract selected logs
+    let extractedLogs :: [ByteString]
+        extractedLogs = map LBS.toStrict . Map.elems . mTake numberOfFiles $ zipMap
     return extractedLogs
   where
     mTake :: Int -> Map k a -> Map k a
