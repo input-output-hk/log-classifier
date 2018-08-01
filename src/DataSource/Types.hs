@@ -206,7 +206,7 @@ data DataLayer m = DataLayer
 data HTTPNetworkLayer = HTTPNetworkLayer
     { hnlAddJsonBody    :: forall a.    (ToJSON a) => a -> Request -> Either String Request
     -- TODO(ks): These two below are basically the same, will fix in future PR, requires refactoring.
-    , hnlApiCall        :: forall m a.  (MonadIO m, MonadThrow m, FromJSON a) => (Value -> Parser a) -> Request -> m a
+    , hnlApiCall        :: forall m a.  (MonadIO m, FromJSON a) => (Value -> Parser a) -> Request -> m (Either String a)
     , hnlApiCallSafe    :: forall m a.  (MonadIO m, FromJSON a) => (Value -> Parser a) -> Request -> m (Either String a)
     }
 

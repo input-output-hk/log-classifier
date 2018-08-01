@@ -1,6 +1,6 @@
 module HttpLayer
     ( HTTPNetworkLayer (..)
-    , JSONParsingException (..)
+    , JSONException (..)
     , basicHTTPNetworkLayer
     , emptyHTTPNetworkLayer
     , apiRequest
@@ -15,7 +15,7 @@ import           Data.Either.Combinators (mapLeft)
 import           Data.Text (unpack)
 import           Network.HTTP.Simple (Request, addRequestHeader, getResponseBody, httpJSON,
                                       parseRequest_, setRequestBasicAuth, setRequestBodyJSON,
-                                      setRequestMethod, setRequestPath)
+                                      setRequestMethod, setRequestPath, parseRequest)
 
 import           DataSource.Types (Config (..), HTTPNetworkLayer (..))
 import qualified Prelude (Show(..))
@@ -24,11 +24,14 @@ import qualified Prelude (Show(..))
 -- JSON parsing exceptions
 ------------------------------------------------------------
 -- | Exceptions that occur during JSON parsing
-newtype JSONParsingException = MkJSONParsingException Text
+data JSONException
+    = JSONParsingException Text
+    | JSONEncodingException Text
 
-instance Exception JSONParsingException
-instance Prelude.Show JSONParsingException where
-  show (MkJSONParsingException s) = "JSON parsing exception: " <> (unpack s)
+instance Exception JSONException
+instance Prelude.Show JSONException where
+  show (JSONParsingException s)  = "JSON parsing exception: " <> (unpack s)
+  show (JSONEncodingException s) = "JSON encoding exception: " <> (unpack s)
 
 ------------------------------------------------------------
 -- Layer
@@ -53,15 +56,17 @@ emptyHTTPNetworkLayer = HTTPNetworkLayer
 ------------------------------------------------------------
 
 -- | General api request function
-apiRequest :: Config -> Text -> Request
-apiRequest Config{..} u =
-    setRequestPath (encodeUtf8 path) $
-    addRequestHeader "Content-Type" "application/json" $
-    setRequestBasicAuth
-        (encodeUtf8 cfgEmail <> "/token")
-        (encodeUtf8 cfgToken) $
-    parseRequest_ (toString (cfgZendesk <> path))
+apiRequest :: Config -> Text -> Either String Request
+apiRequest Config{..} u = mapLeft show $ catch buildRequest Left
   where
+    buildRequest :: MonadThrow m => m Request
+    buildRequest = do
+        req <- parseRequest (toString (cfgZendesk <> path))
+        return $ setRequestPath (encodeUtf8 path) $
+                 addRequestHeader "Content-Type" "application/json" $
+                 setRequestBasicAuth
+                     (encodeUtf8 cfgEmail <> "/token")
+                     (encodeUtf8 cfgToken) $ req
     path :: Text
     path = "/api/v2" <> u
 
@@ -83,17 +88,18 @@ addJsonBody body req = mapLeft show $ catch updateReq Left
 -- | Make an api call
 -- TODO(ks): Switch to @Either@.
 apiCall
-    :: forall m a. (MonadIO m, MonadThrow m, FromJSON a)
+    :: forall m a. (MonadIO m, FromJSON a)
     => (Value -> Parser a)
     -> Request
-    -> m a
+    -> m (Either String a)
 apiCall parser req = do
     putTextLn $ show req
     v <- getResponseBody <$> httpJSON req
-    case parseEither parser v of
-        Right o -> pure o
-        Left e -> throwM $ MkJSONParsingException $
-            "couldn't parse response " <> toText e <> "\n" <> decodeUtf8 (encode v)
+    pure $ parseEither parser v
+    -- case parseEither parser v of
+    --     Right o -> pure o
+    --     Left e -> Left $ MkJSONParsingException $
+    --         "couldn't parse response " <> toText e <> "\n" <> decodeUtf8 (encode v)
 
 -- | Make a safe api call.
 apiCallSafe

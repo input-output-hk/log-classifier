@@ -16,10 +16,11 @@ import           Control.Monad.Reader (ask)
 import           Data.Aeson (parseJSON)
 import           Data.Aeson.Text (encodeToLazyText)
 import           Data.List (nub)
+import           Data.Text (pack)
 import           Network.HTTP.Simple (Request, getResponseBody, httpLBS, parseRequest_)
 
 import           HttpLayer (HTTPNetworkLayer (..), apiRequest, apiRequestAbsolute,
-                            JSONParsingException (..))
+                            JSONException (..))
 
 import           DataSource.Types (Attachment (..), AttachmentContent (..), Comment (..),
                                    CommentBody (..), CommentId (..), Config (..), DataLayer (..),
@@ -79,7 +80,7 @@ getTicketInfo
     => TicketId
     -> m (Maybe TicketInfo)
 getTicketInfo ticketId =
-    catch getInfo $ \(e :: JSONParsingException) -> throwM e
+    catch getInfo $ \(e :: JSONException) -> throwM e
   where
     getInfo :: m (Maybe TicketInfo)
     getInfo = do
@@ -90,7 +91,7 @@ getTicketInfo ticketId =
 
         apiCall <- asksHTTPNetworkLayer hnlApiCall
 
-        Just <$> apiCall parseTicket req
+        rightToMaybe <$> apiCall parseTicket req
 
 -- | Return list of deleted tickets.
 listDeletedTickets
@@ -211,7 +212,10 @@ postTicketComment ticketInfo zendeskResponse = do
     let responseTicket = createResponseTicket (cfgAgentId cfg) ticketInfo zendeskResponse
     let url  = showURL $ TicketsURL (zrTicketId zendeskResponse)
     let req = addJsonBody responseTicket (apiRequest cfg url)
-    void $ apiCall (pure . encodeToLazyText) req
+    case req of
+      Left e  -> throwM $ JSONEncodingException $ pack e
+      Right r -> void $ apiCall (pure . encodeToLazyText) r
+
 
 -- | Create response ticket
 createResponseTicket :: Integer -> TicketInfo -> ZendeskResponse -> Ticket
@@ -242,8 +246,9 @@ _getUser = do
 
     let url = showURL UserInfoURL
     let req = apiRequest cfg url
-
-    apiCall parseJSON req
+    case req of
+      Left e  -> throwM $ JSONParsingException e
+      Right r -> apiCall parseJSON r
 
 -- | Given attachmentUrl, return attachment in bytestring
 getAttachment
