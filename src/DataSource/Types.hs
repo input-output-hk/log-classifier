@@ -499,7 +499,8 @@ instance Arbitrary Attachment where
     arbitrary = Attachment
         <$> arbitrary
         <*> pure "http://attach.com"
-        <*> pure "application/zip"  -- TODO(ks): More random...
+        -- TODO(ks): More random...
+        <*> elements ["application/zip", "application/x-zip-compressed"]
         <*> arbitrary
 
 instance Arbitrary CommentBody where
