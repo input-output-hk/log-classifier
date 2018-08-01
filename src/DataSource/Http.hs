@@ -95,7 +95,7 @@ getTicketInfo ticketId =
 
 -- | Return list of deleted tickets.
 listDeletedTickets
-    :: forall m. (MonadIO m, MonadReader Config m)
+    :: forall m. (MonadIO m, MonadReader Config m, MonadThrow m)
     => m [DeletedTicket]
 listDeletedTickets = do
     cfg <- ask
@@ -103,11 +103,11 @@ listDeletedTickets = do
     let url = showURL $ DeletedTicketsURL
     let req = apiRequest cfg url
 
-    iteratePages req
+    wrapIteratePages req
 
 -- | Return list of ticketIds that has been requested by config user.
 listRequestedTickets
-    :: forall m. (MonadIO m, MonadReader Config m)
+    :: forall m. (MonadIO m, MonadReader Config m, MonadThrow m)
     => UserId
     -> m [TicketInfo]
 listRequestedTickets userId = do
@@ -116,11 +116,11 @@ listRequestedTickets userId = do
     let url = showURL $ UserRequestedTicketsURL userId
     let req = apiRequest cfg url
 
-    iteratePages req
+    wrapIteratePages req
 
 -- | Return list of ticketIds that has been assigned by config user.
 listAssignedTickets
-    :: forall m. (MonadIO m, MonadReader Config m)
+    :: forall m. (MonadIO m, MonadReader Config m, MonadThrow m)
     => UserId
     -> m [TicketInfo]
 listAssignedTickets userId = do
@@ -129,11 +129,11 @@ listAssignedTickets userId = do
     let url = showURL $ UserAssignedTicketsURL userId
     let req = apiRequest cfg url
 
-    iteratePages req
+    wrapIteratePages req
 
 -- | Return list of ticketIds that has been unassigned.
 listUnassignedTickets
-    :: forall m. (MonadIO m, MonadReader Config m)
+    :: forall m. (MonadIO m, MonadReader Config m, MonadThrow m)
     => m [TicketInfo]
 listUnassignedTickets = do
     cfg <- ask
@@ -141,17 +141,17 @@ listUnassignedTickets = do
     let url = showURL $ UserUnassignedTicketsURL
     let req = apiRequest cfg url
 
-    iteratePages req
+    wrapIteratePages req
 
 listAdminAgents
-    :: forall m. (MonadIO m, MonadReader Config m)
+    :: forall m. (MonadIO m, MonadReader Config m, MonadThrow m)
     => m [User]
 listAdminAgents = do
     cfg <- ask
     let url = showURL AgentGroupURL
     let req = apiRequest cfg url
 
-    iteratePages req
+    wrapIteratePages req
 
 -- | Export tickets from Zendesk - https://developer.zendesk.com/rest_api/docs/core/incremental_export
 -- NOTE: If count is less than 1000, then stop paginating.
@@ -211,10 +211,13 @@ postTicketComment ticketInfo zendeskResponse = do
 
     let responseTicket = createResponseTicket (cfgAgentId cfg) ticketInfo zendeskResponse
     let url  = showURL $ TicketsURL (zrTicketId zendeskResponse)
-    let req = addJsonBody responseTicket (apiRequest cfg url)
+    -- either (throwM . JSONEncodingException . pack)
+    let req = apiRequest cfg url
     case req of
       Left e  -> throwM $ JSONEncodingException $ pack e
-      Right r -> void $ apiCall (pure . encodeToLazyText) r
+      Right r -> do
+                      r' <- addJsonBody responseTicket r
+                      void $ apiCall (pure . encodeToLazyText) r'
 
 
 -- | Create response ticket
@@ -291,6 +294,13 @@ iteratePages
     => Request
     -> m [a]
 iteratePages req = iteratePagesWithDelay 0 req
+
+-- | Wraps a call to iteratePages with error handling for a failed request
+wrapIteratePages
+    :: (MonadIO m, MonadReader Config m, MonadThrow m, FromPageResultList a)
+    => Either String Request
+    -> m [a]
+wrapIteratePages = either (throwM . JSONParsingException . pack) iteratePages
 
 -- | Iterate all the ticket pages and combine into a result. Wait for
 -- some time in-between the requests.
