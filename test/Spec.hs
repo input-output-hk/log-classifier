@@ -2,16 +2,18 @@ module Main where
 
 import           Universum
 
+import           Data.List (nub)
+
 import           Test.Hspec (Spec, describe, hspec, it, pending, shouldBe)
 import           Test.Hspec.QuickCheck (modifyMaxSuccess)
-import           Test.QuickCheck (Gen, arbitrary, elements, forAll, listOf, listOf1, property)
+import           Test.QuickCheck (Gen, arbitrary, elements, forAll, listOf, listOf1, property, (===))
 import           Test.QuickCheck.Monadic (assert, monadicIO, pre, run)
 
 import           Configuration (defaultConfig, basicIOLayer)
 import           DataSource (App, Attachment (..), Comment (..), Config (..), DeletedTicket (..),
                              ExportFromTime (..), IOLayer (..), Ticket (..), TicketId (..),
-                             TicketInfo (..), TicketStatus (..), TicketTags (..), User, UserId (..),
-                             ZendeskAPIUrl (..), DataLayer (..), ZendeskResponse (..),
+                             TicketInfo (..), TicketStatus (..), TicketTags (..), TicketTag (..), User, UserId (..),
+                             ZendeskAPIUrl (..), DataLayer (..), ZendeskResponse (..), renderTicketStatus,
                              createResponseTicket , runApp, showURL, emptyDBLayer, emptyDataLayer)
 import           Exceptions (ProcessTicketExceptions (..))
 
@@ -494,11 +496,11 @@ createResponseTicketSpec =
         it "should preserve tags from ticketinfo and zendeskresponse" $
             property $ \agentId ticketInfo zendeskResponse ->
                 let responseTicket      = createResponseTicket agentId ticketInfo zendeskResponse
-                    ticketInfoTags      = getTicketTags (tiTags ticketInfo)
-                    zendeskResponseTags = getTicketTags (zrTags zendeskResponse)
-                    mergedTags          = ticketInfoTags <> zendeskResponseTags
+                    mergedTags          = getTicketTags $ tiTags ticketInfo <> zrTags zendeskResponse
                     responseTags        = getTicketTags $ tTag responseTicket
-                in all (`elem` responseTags) mergedTags
+                -- in summary, the response tags have the debuggers `analyzed-by-script-version` tag AND
+                -- they remove the `to_be_analysed` tag AND they are unique.
+                in (filter (/= renderTicketStatus ToBeAnalyzed) . nub $ renderTicketStatus AnalyzedByScriptV1_3 : mergedTags) === responseTags
 
 
 exportZendeskDataToLocalDBSpec :: Spec

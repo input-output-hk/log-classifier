@@ -212,8 +212,11 @@ postTicketComment ticketInfo zendeskResponse = do
 createResponseTicket :: Integer -> TicketInfo -> ZendeskResponse -> Ticket
 createResponseTicket agentId TicketInfo{..} ZendeskResponse{..} =
     let analyzedTag = renderTicketStatus AnalyzedByScriptV1_3
-    -- Nub so it won't post duplicate tags
-        mergedTags = TicketTags . nub $ [analyzedTag] <> getTicketTags tiTags <> getTicketTags zrTags
+        -- Nub so it won't post duplicate tags
+        allTags    = nub $ [analyzedTag] <> getTicketTags tiTags <> getTicketTags zrTags
+        -- We remove the @ToBeAnalyzed@ tag.
+        mergedTags = TicketTags . filter (/= renderTicketStatus ToBeAnalyzed) $ allTags
+
     in (Ticket
             (Comment (CommentId 0)
                 (CommentBody zrComment)
