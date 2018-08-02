@@ -56,17 +56,19 @@ emptyHTTPNetworkLayer = HTTPNetworkLayer
 ------------------------------------------------------------
 
 -- | General api request function
-apiRequest :: Config -> Text -> Either String Request
+apiRequest :: forall m. MonadThrow m => Config -> Text -> Either String Request
 apiRequest Config{..} u = mapLeft show $ catch buildRequest Left
   where
-    buildRequest :: MonadThrow m => m Request
+    buildRequest :: m Request
     buildRequest = do
-        req <- parseRequest (toString (cfgZendesk <> path))
+        req <- parseRequest (toString (cfgZendesk <> path)) -- TODO(md): Get a list of exceptions that parseRequest can throw
         return $ setRequestPath (encodeUtf8 path) $
                  addRequestHeader "Content-Type" "application/json" $
                  setRequestBasicAuth
                      (encodeUtf8 cfgEmail <> "/token")
                      (encodeUtf8 cfgToken) $ req
+    catchException :: Exception e => e -> Either String Request
+    catchException (JSONParseException s) = Left s
     path :: Text
     path = "/api/v2" <> u
 
