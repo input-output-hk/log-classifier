@@ -6,15 +6,17 @@ import           Data.List (nub)
 
 import           Test.Hspec (Spec, describe, hspec, it, pending, shouldBe)
 import           Test.Hspec.QuickCheck (modifyMaxSuccess)
-import           Test.QuickCheck (Gen, arbitrary, elements, forAll, listOf, listOf1, property, (===))
+import           Test.QuickCheck (Gen, arbitrary, elements, forAll, listOf, listOf1, property,
+                                  (===))
 import           Test.QuickCheck.Monadic (assert, monadicIO, pre, run)
 
-import           Configuration (defaultConfig, basicIOLayer)
-import           DataSource (App, Attachment (..), Comment (..), Config (..), DeletedTicket (..),
-                             ExportFromTime (..), IOLayer (..), Ticket (..), TicketId (..),
-                             TicketInfo (..), TicketStatus (..), TicketTags (..), TicketTag (..), User, UserId (..),
-                             ZendeskAPIUrl (..), DataLayer (..), ZendeskResponse (..), renderTicketStatus,
-                             createResponseTicket , runApp, showURL, emptyDBLayer, emptyDataLayer)
+import           Configuration (basicIOLayer, defaultConfig)
+import           DataSource (App, Attachment (..), Comment (..), Config (..), DataLayer (..),
+                             DeletedTicket (..), ExportFromTime (..), IOLayer (..), Ticket (..),
+                             TicketId (..), TicketInfo (..), TicketStatus (..), TicketTag (..),
+                             TicketTags (..), User, UserId (..), ZendeskAPIUrl (..),
+                             ZendeskResponse (..), createResponseTicket, emptyDBLayer,
+                             emptyDataLayer, renderTicketStatus, runApp, showURL)
 import           Exceptions (ProcessTicketExceptions (..))
 
 import           Lib (exportZendeskDataToLocalDB, filterAnalyzedTickets, listAndSortTickets,
