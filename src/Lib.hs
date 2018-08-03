@@ -395,8 +395,8 @@ listAndSortTickets = do
 
     Config{..}  <- ask
 
-    listAgents <- asksDataLayer zlListAdminAgents
-    agents <- listAgents
+    listAgents  <- asksDataLayer zlListAdminAgents
+    agents      <- listAgents
 
     let agentIds :: [UserId]
         agentIds = map uId agents
@@ -406,7 +406,7 @@ listAndSortTickets = do
 
     printText "Classifier is going to process tickets assigned to agents"
 
-    ticketInfos     <- map concat $ traverse listTickets agentIds
+    ticketInfos <- map concat $ traverse listTickets agentIds
 
     let filteredTicketIds = filterAnalyzedTickets ticketInfos
     let sortedTicketIds   = sortBy compare filteredTicketIds

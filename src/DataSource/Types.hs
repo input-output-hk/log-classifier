@@ -71,7 +71,7 @@ import           Network.HTTP.Simple (Request)
 
 import           LogAnalysis.Types (Knowledge)
 
-import           Test.QuickCheck (Arbitrary (..), elements, listOf1, vectorOf)
+import           Test.QuickCheck (Arbitrary (..), sublistOf, elements, listOf1)
 
 ------------------------------------------------------------
 -- Configuration
@@ -420,7 +420,7 @@ newtype TicketURL = TicketURL
 
 newtype TicketTags = TicketTags
     { getTicketTags :: [Text] -- TODO(ks): We need to fix the @TicketTag@ / @TicketTags@ story.
-    } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
+    } deriving (Eq, Show, Ord, Generic, Semigroup, FromJSON, ToJSON)
 
 newtype TicketStatus = TicketStatus
     { getTicketStatus :: Text
@@ -535,8 +535,108 @@ instance Arbitrary TicketStatus where
 
 instance Arbitrary TicketTags where
     arbitrary = do
-        numberOfTag <- arbitrary
-        tagsList    <- map fromString <$> vectorOf numberOfTag arbitrary
+        -- curl https://iohk.zendesk.com/api/v2/tags.json -v -u $EMAIL/token:$TOKEN | jq '.tags | .[] | .name'
+        -- Without `analyzed-by-script` and `goguen_testnets`
+        let possibleTags :: [Text]
+            possibleTags =
+                [ "english"
+                , "sev_3"
+                , "daedalus_0.10.1_cardano_1.2.1"
+                , "windows_10"
+                , "daedalus_wallet"
+                , "s3"
+                , "wallet_application"
+                , "connection"
+                , "no-log-files"
+                , "generic"
+                , "cannot_sync_blocks"
+                , "japanese"
+                , "cannot_connect"
+                , "delayed_reply"
+                , "reply_resolved"
+                , "install_latest_release"
+                , "syncing"
+                , "no-known-issues"
+                , "web_widget"
+                , "network-error"
+                , "miscellaneous"
+                , "connection-refused"
+                , "cannot-connect"
+                , "closed_by_merge"
+                , "ask_for_info"
+                , "time-out-of-sync"
+                , "directory-not-found"
+                , "db-corrupted"
+                , "iohks-28"
+                , "unknown"
+                , "stale-lock-file"
+                , "resource-vanished"
+                , "error"
+                , "global-time"
+                , "sent-log-corrupted"
+                , "pass_to_dev"
+                , "cannot_connect_to_wallet_using_network"
+                , "to_be_analysed"
+                , "lite_wallet"
+                , "operation"
+                , "restore"
+                , "traffic_censored"
+                , "lost_recovery_prase"
+                , "chinese"
+                , "lost_password"
+                , "already_exists"
+                , "cannot_see_transaction"
+                , "support"
+                , "lost_ada"
+                , "macos_10.13"
+                , "user-name-error"
+                , "windows_7"
+                , "daniel_categorization"
+                , "installation"
+                , "short-storage"
+                , "transaction"
+                , "go_to_cardano_hub"
+                , "issue_with_using_the_wallet"
+                , "balance"
+                , "login_feature"
+                , "daedalus"
+                , "spam"
+                , "backup"
+                , "app_cannot_sync_to_network"
+                , "incorrect-balance"
+                , "software_release"
+                , "windows_8"
+                , "wallet-backup"
+                , "reply"
+                , "coin_redemption"
+                , "cannot-sync"
+                , "how_to_buy_ada"
+                , "missing_field_config_file"
+                , "balance_mismatch"
+                , "macos_10.11"
+                , "wallet_balance_zero"
+                , "iohks-44"
+                , "where_is_cert"
+                , "other"
+                , "testnet_goguen_v1.0"
+                , "scam"
+                , "port_in_use"
+                , "open.lock_file"
+                , "cannot-download"
+                , "testnet_goguen"
+                , "staking"
+                , "macos_10.12"
+                , "security"
+                , "no_disk_space"
+                , "cannot-restore"
+                , "can-not-sync"
+                , "linux"
+                , "problem_solved_by_release"
+                , "sev3"
+                , "linux_beta"
+                , "russian"
+                ]
+        tagsList    <- sublistOf possibleTags
         pure . TicketTags $ tagsList
 
 instance Arbitrary TicketURL where
