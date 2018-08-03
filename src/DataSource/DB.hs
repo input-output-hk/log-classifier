@@ -22,18 +22,20 @@ module DataSource.DB
 
 import           Universum
 
+import           Control.Exception.Safe (Handler(..), catches)
 import           Control.Monad.Trans.Control (MonadBaseControl)
 
 import           Data.Pool (Pool, createPool, withResource)
 import           Data.Text (split)
 
 import           Database.SQLite.Simple (FromRow (..), NamedParam (..), SQLData (..), close,
-                                         executeNamed, execute_, field, open, queryNamed, query_)
+                                         executeNamed, execute_, field, open, queryNamed, query_, FormatError(..))
 import           Database.SQLite.Simple.FromField (FromField (..), ResultError (..), returnError)
 import           Database.SQLite.Simple.Internal (Connection, Field (..))
 import           Database.SQLite.Simple.Ok (Ok (..))
 import           Database.SQLite.Simple.ToField (ToField (..))
 
+import           DataSource.Exceptions (DBLayerException(..), DBException(..))
 import           DataSource.Http (basicDataLayer)
 import           DataSource.Types (Attachment (..), AttachmentContent (..), AttachmentId (..),
                                    Comment (..), CommentBody (..), CommentId (..), Config,
@@ -57,7 +59,7 @@ withDatabase dbName dbOperation =
         dbOperation
 
 -- | A production resource closing function.
-withProdDatabase :: forall m a. (MonadIO m) => (Connection -> IO a) -> m a
+withProdDatabase :: forall m a. (MonadIO m, MonadCatch m) => (Connection -> IO a) -> m a
 withProdDatabase = liftIO . withDatabase "./prod.db"
 
 ------------------------------------------------------------
@@ -87,7 +89,7 @@ createProdConnectionPool :: forall m. (MonadIO m) => m DBConnPool
 createProdConnectionPool = createConnectionPool "prod.db" 100
 
 -- | A utility function for unwrapping the connections.
-withConnPool :: forall m a. (MonadBaseControl IO m) => DBConnPool -> (Connection -> m a) -> m a
+withConnPool :: forall m a. (MonadBaseControl IO m, MonadCatch m) => DBConnPool -> (Connection -> m a) -> m a
 withConnPool dbConnPool dbFunc =
     withResource (getDBConnectionPool dbConnPool) dbFunc
 
@@ -113,7 +115,7 @@ emptyDBLayer = DBLayer
 
 -- | The simple connection Zendesk layer. Used for database querying.
 -- We need to sync occasionaly.
-connDataLayer :: forall m. (MonadIO m, MonadReader Config m) => DataLayer m
+connDataLayer :: forall m. (MonadIO m, MonadReader Config m, MonadCatch m) => DataLayer m
 connDataLayer = DataLayer
     { zlGetTicketInfo           = \tId -> withProdDatabase $ \conn -> getTicketInfoByTicketId conn tId
     , zlListDeletedTickets      = zlListDeletedTickets basicDataLayer
@@ -129,7 +131,7 @@ connDataLayer = DataLayer
 
 
 -- | The simple connection database layer. Used for database modification.
-connDBLayer :: forall m. (MonadIO m, MonadReader Config m) => DBLayer m
+connDBLayer :: forall m. (MonadIO m, MonadReader Config m, MonadCatch m) => DBLayer m
 connDBLayer = DBLayer
     { dlInsertTicketInfo          = \tIn        -> withProdDatabase $ \conn -> insertTicketInfo conn tIn
     , dlInsertTicketComments      = \tId comm   -> withProdDatabase $ \conn -> insertTicketComments conn tId comm
@@ -147,7 +149,13 @@ connDBLayer = DBLayer
 
 -- | The connection pooled Zendesk layer. Used for database querying.
 -- We need to sync occasionaly.
-connPoolDataLayer :: forall m. (MonadBaseControl IO m, MonadIO m, MonadReader Config m) => DBConnPool -> DataLayer m
+connPoolDataLayer :: forall m. (MonadBaseControl IO m
+                               , MonadIO m
+                               , MonadReader Config m
+                               , MonadCatch m
+                               )
+                               => DBConnPool
+                               -> DataLayer m
 connPoolDataLayer connPool = DataLayer
     { zlGetTicketInfo           = \tId -> withConnPool connPool $ \conn -> getTicketInfoByTicketId conn tId
     , zlListDeletedTickets      = zlListDeletedTickets basicDataLayer
@@ -163,7 +171,13 @@ connPoolDataLayer connPool = DataLayer
 
 
 -- | The connection pooled database layer. Used for database modification.
-connPoolDBLayer :: forall m. (MonadBaseControl IO m, MonadIO m, MonadReader Config m) => DBConnPool -> DBLayer m
+connPoolDBLayer :: forall m. ( MonadBaseControl IO m
+                             , MonadIO m
+                             , MonadReader Config m
+                             , MonadCatch m
+                             ) 
+                             => DBConnPool
+                             -> DBLayer m
 connPoolDBLayer connPool = DBLayer
     { dlInsertTicketInfo          = \tIn        -> withConnPool connPool $ \conn -> insertTicketInfo conn tIn
     , dlInsertTicketComments      = \tId comm   -> withConnPool connPool $ \conn -> insertTicketComments conn tId comm
@@ -398,9 +412,9 @@ createSchema conn = liftIO $ execute_ conn
 \       FOREIGN KEY(`attachment_id`) REFERENCES comment_attachment(aId)     \
 \    )"
 
-insertTicketInfo :: forall m. (MonadIO m) => Connection -> TicketInfo -> m ()
+insertTicketInfo :: forall m. (MonadIO m, MonadCatch m) => Connection -> TicketInfo -> m ()
 insertTicketInfo conn TicketInfo{..} =
-    liftIO $ executeNamed conn "INSERT INTO ticket_info (tiId, tiRequesterId, tiAssigneeId, tiUrl, tiTags, tiStatus) \
+    checkError (InsertTicketInfoException tiId) $ executeNamed conn "INSERT INTO ticket_info (tiId, tiRequesterId, tiAssigneeId, tiUrl, tiTags, tiStatus) \
         \VALUES (:tiId, :tiRequesterId, :tiAssigneeId, :tiUrl, :tiTags, :tiStatus)"
         [ ":tiId"           := tiId
         , ":tiRequesterId"  := tiRequesterId
@@ -410,9 +424,9 @@ insertTicketInfo conn TicketInfo{..} =
         , ":tiStatus"       := tiStatus
         ]
 
-insertTicketComments :: forall m. (MonadIO m) => Connection -> TicketId -> Comment -> m ()
+insertTicketComments :: forall m. (MonadIO m, MonadCatch m) => Connection -> TicketId -> Comment -> m ()
 insertTicketComments conn ticketId Comment{..} =
-    liftIO $ executeNamed conn "INSERT INTO ticket_comment (id, ticket_id, body, is_public, author_id) \
+    checkError (InsertTicketCommentException ticketId cId) $ executeNamed conn "INSERT INTO ticket_comment (id, ticket_id, body, is_public, author_id) \
         \VALUES (:id, :ticket_id, :body, :is_public, :author_id)"
         [ ":id"             := cId
         , ":ticket_id"      := ticketId
@@ -421,9 +435,9 @@ insertTicketComments conn ticketId Comment{..} =
         , ":author_id"      := cAuthor
         ]
 
-insertCommentAttachments :: forall m. (MonadIO m) => Connection -> Comment -> Attachment -> m ()
+insertCommentAttachments :: forall m. (MonadIO m, MonadCatch m) => Connection -> Comment -> Attachment -> m ()
 insertCommentAttachments conn Comment{..} Attachment{..} =
-    liftIO $ executeNamed conn "INSERT INTO comment_attachment (aId, comment_id, aURL, aContentType, aSize) \
+    checkError (InsertCommentAttachmentException cId aId) $ executeNamed conn "INSERT INTO comment_attachment (aId, comment_id, aURL, aContentType, aSize) \
         \VALUES (:aId, :comment_id, :aURL, :aContentType, :aSize)"
         [ ":aId"            := aId
         , ":comment_id"     := cId
@@ -432,22 +446,31 @@ insertCommentAttachments conn Comment{..} Attachment{..} =
         , ":aSize"          := aSize
         ]
 
-deleteCommentAttachments :: forall m. (MonadIO m) => Connection -> m ()
+deleteCommentAttachments :: forall m. (MonadIO m, MonadCatch m) => Connection -> m ()
 deleteCommentAttachments conn =
-    liftIO $ execute_ conn "DELETE FROM comment_attachment"
+    checkError DBDeleteException $ execute_ conn "DELETE FROM comment_attachment"
 
-deleteTicketComments :: forall m. (MonadIO m) => Connection -> m ()
+deleteTicketComments :: forall m. (MonadIO m, MonadCatch m) => Connection -> m ()
 deleteTicketComments conn =
-    liftIO $ execute_ conn "DELETE FROM ticket_comment"
+    checkError DBDeleteException $ execute_ conn "DELETE FROM ticket_comment"
 
-deleteTickets :: forall m. (MonadIO m) => Connection -> m ()
+deleteTickets :: forall m. (MonadIO m, MonadCatch m) => Connection -> m ()
 deleteTickets conn =
-    liftIO $ execute_ conn "DELETE FROM ticket_info"
+    checkError DBDeleteException $ execute_ conn "DELETE FROM ticket_info"
 
 -- | Delete all data.
-deleteAllData :: forall m. (MonadIO m) => Connection -> m ()
+deleteAllData :: forall m. (MonadIO m, MonadCatch m) => Connection -> m ()
 deleteAllData conn = do
     deleteCommentAttachments conn
     deleteTicketComments conn
     deleteTickets conn
 
+checkError :: (MonadIO m, MonadCatch m) => DBException -> IO () -> m ()
+checkError err action = liftIO action `catches`
+    [Handler formatError, Handler $ someHandler err]
+  where
+    -- Don't do anything on 'FormatError'
+    formatError :: (MonadThrow m) => FormatError -> m ()
+    formatError = throwM
+    someHandler :: (MonadThrow m) => DBException -> SomeException -> m ()
+    someHandler dberr someErr = throwM $ DBLayerException dberr someErr

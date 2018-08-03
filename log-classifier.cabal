@@ -30,6 +30,7 @@ library
                        Util
   other-modules:       Paths_log_classifier
                        DataSource.DB
+                       DataSource.Exceptions
                        DataSource.Types
                        DataSource.Http
                        HttpLayer
@@ -51,6 +52,7 @@ library
                      , optparse-applicative
                      , reflection
                      , regex-tdfa
+                     , safe-exceptions
                      , text
                      , time
                      , universum
