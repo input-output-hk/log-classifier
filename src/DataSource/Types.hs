@@ -446,6 +446,7 @@ data TicketTag
     | AnalyzedByScriptV1_1  -- ^ Ticket has been analyzed by the version 1.1
     | AnalyzedByScriptV1_2  -- ^ Ticket has been analyzed by the version 1.2
     | AnalyzedByScriptV1_3  -- ^ Ticket has been analyzed by the version 1.3
+    | AnalyzedByScriptV1_4  -- ^ Ticket has been analyzed by the version 1.4
     | ToBeAnalyzed          -- ^ Ticket needs to be analyzed
     | NoKnownIssue          -- ^ Ticket had no known issue
     | NoLogAttached         -- ^ Log file not attached
@@ -499,7 +500,8 @@ instance Arbitrary Attachment where
     arbitrary = Attachment
         <$> arbitrary
         <*> pure "http://attach.com"
-        <*> pure "application/zip"  -- TODO(ks): More random...
+        -- TODO(ks): More random...
+        <*> elements ["application/zip", "application/x-zip-compressed"]
         <*> arbitrary
 
 instance Arbitrary CommentBody where
@@ -949,6 +951,7 @@ renderTicketStatus AnalyzedByScriptV1_0 = "analyzed-by-script-v1.0"
 renderTicketStatus AnalyzedByScriptV1_1 = "analyzed-by-script-v1.1"
 renderTicketStatus AnalyzedByScriptV1_2 = "analyzed-by-script-v1.2"
 renderTicketStatus AnalyzedByScriptV1_3 = "analyzed-by-script-v1.3"
+renderTicketStatus AnalyzedByScriptV1_4 = "analyzed-by-script-v1.4"
 renderTicketStatus ToBeAnalyzed         = "to_be_analysed" -- https://iohk.zendesk.com/agent/admin/tags
 renderTicketStatus NoKnownIssue         = "no-known-issues"
 renderTicketStatus NoLogAttached        = "no-log-files"
