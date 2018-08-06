@@ -11,12 +11,14 @@ module DataSource.Http
 import           Universum
 
 import           Control.Concurrent (threadDelay)
+import           Control.Exception.Safe (throwM)
 import           Control.Monad.Reader (ask)
 
 import           Data.Aeson (parseJSON)
 import           Data.Aeson.Text (encodeToLazyText)
 import           Data.List (nub)
 import           Data.Text (pack)
+import           Network.HTTP.Client.Conduit (HttpException (..))
 import           Network.HTTP.Simple (Request, getResponseBody, httpLBS, parseRequest_)
 
 import           HttpLayer (HTTPNetworkLayer (..), apiRequest, apiRequestAbsolute,
@@ -88,10 +90,11 @@ getTicketInfo ticketId =
 
         let url = showURL $ TicketsURL ticketId
         let req = apiRequest cfg url
-
-        apiCall <- asksHTTPNetworkLayer hnlApiCall
-
-        rightToMaybe <$> apiCall parseTicket req
+        case req of
+            Left e -> return Nothing -- TODO(md): see how to propagate 'e'
+            Right r -> do
+                apiCall <- asksHTTPNetworkLayer hnlApiCall
+                rightToMaybe <$> apiCall parseTicket r
 
 -- | Return list of deleted tickets.
 listDeletedTickets
@@ -168,12 +171,20 @@ getExportedTickets time = do
     let url = showURL $ ExportDataByTimestamp time
     let req = apiRequestAbsolute cfg url
 
-    iterateExportedTicketsWithDelay req (apiCall parseJSON)
+    -- iterateExportedTicketsWithDelay req (apiCall parseJSON)
+    wrappedIterate req (apiCall parseJSON)
   where
+
+    wrappedIterate
+        :: Either String Request
+        -> (Request -> m (Either String (PageResultList TicketInfo)))
+        -> m [TicketInfo]
+    wrappedIterate (Left e) _  = throwM $ InvalidUrlException "" "" -- TODO(md): See how to convert a String 'e' to an appropriate exception
+    wrappedIterate (Right r) f = iterateExportedTicketsWithDelay r f
 
     iterateExportedTicketsWithDelay
         :: Request
-        -> (Request -> m (PageResultList TicketInfo))
+        -> (Request -> m (Either String (PageResultList TicketInfo)))
         -> m [TicketInfo]
     iterateExportedTicketsWithDelay req apiCall = do
         cfg <- ask
@@ -183,19 +194,28 @@ getExportedTickets time = do
                 liftIO $ threadDelay $ 10 * 1000000 -- Wait, Zendesk allows for 10 per minute.
 
                 let req'      = apiRequestAbsolute cfg nextPage'
-                (PageResultList pagen nextPagen count) <- apiCall req'
-                case nextPagen of
-                    Just nextUrl -> if maybe False (>= 1000) count
-                                        then go (list' <> pagen) nextUrl
-                                        else pure (list' <> pagen)
+                case req' of
+                    Left e      -> throwM $ InvalidUrlException "" "" -- TODO(md): See how to convert a String 'e' to an appropriate exception
+                    Right req'' -> do
+                        req''' <- apiCall req''
+                        case req''' of
+                            Right (PageResultList pagen nextPagen count) ->
+                                case nextPagen of
+                                    Just nextUrl -> if maybe False (>= 1000) count
+                                                        then go (list' <> pagen) nextUrl
+                                                        else pure (list' <> pagen)
 
-                    Nothing      -> pure (list' <> pagen)
+                                    Nothing      -> pure (list' <> pagen)
+                            Left e -> throwM $ InvalidUrlException "" "" -- TODO(md): See how to convert a String 'e' to an appropriate exception
 
 
-        (PageResultList page0 nextPage _) <- apiCall req
-        case nextPage of
-            Just nextUrl -> go page0 nextUrl
-            Nothing      -> pure page0
+        req' <- apiCall req
+        case req' of
+            Right (PageResultList page0 nextPage _) -> do
+                case nextPage of
+                    Just nextUrl -> go page0 nextUrl
+                    Nothing      -> pure page0
+            Left e -> throwM $ InvalidUrlException "" "" -- TODO(md): See how to convert a String 'e' to an appropriate exception
 
 -- | Send API request to post comment
 postTicketComment

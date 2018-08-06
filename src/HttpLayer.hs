@@ -74,7 +74,7 @@ apiRequest Config{..} u = mapLeft show $ catches buildRequest handlerList --catc
   where
     buildRequest :: forall m. MonadThrow m => m Request
     buildRequest = do
-        req <- parseUrlThrow (toString (cfgZendesk <> path)) -- TODO(md): Get a list of exceptions that parseRequest can throw
+        req <- parseUrlThrow (toString (cfgZendesk <> path)) -- TODO(md): Get a list of exceptions that parseUrlThrow can throw
         return $ setRequestPath (encodeUtf8 path) $
                  addRequestHeader "Content-Type" "application/json" $
                  setRequestBasicAuth
@@ -96,9 +96,12 @@ apiRequest Config{..} u = mapLeft show $ catches buildRequest handlerList --catc
     path = "/api/v2" <> u
 
 -- | Api request but use absolute path
-apiRequestAbsolute :: Config -> Text -> Request
+apiRequestAbsolute
+    :: Config
+    -> Text
+    -> Either String Request
 apiRequestAbsolute Config{..} u =
-    addRequestHeader "Content-Type" "application/json" $
+    Right <$> addRequestHeader "Content-Type" "application/json" $
     setRequestBasicAuth (encodeUtf8 cfgEmail <> "/token") (encodeUtf8 cfgToken) $
     parseRequest_(toString u)
 
