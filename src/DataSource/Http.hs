@@ -234,10 +234,12 @@ postTicketComment ticketInfo zendeskResponse = do
     -- either (throwM . JSONEncodingException . pack)
     let req = apiRequest cfg url
     case req of
-      Left e  -> throwM $ JSONEncodingException $ pack e
-      Right r -> do
-                      r' <- addJsonBody responseTicket r
-                      void $ apiCall (pure . encodeToLazyText) r'
+        Left e  -> throwM $ InvalidUrlException "" "" -- TODO(md): See how to convert a String 'e' to an appropriate exception
+        Right r -> do
+            let r' = addJsonBody responseTicket r
+            case r' of
+                Left e    -> throwM $ InvalidUrlException "" "" -- TODO(md): See how to convert a String 'e' to an appropriate exception
+                Right r'' -> void $ apiCall (pure . encodeToLazyText) r''
 
 
 -- | Create response ticket
