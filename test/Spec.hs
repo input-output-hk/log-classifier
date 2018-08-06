@@ -5,7 +5,7 @@ import           Universum
 import           Data.List (nub)
 
 import           Test.Hspec (Spec, describe, hspec, it, pending, shouldBe)
-import           Test.Hspec.QuickCheck (modifyMaxSuccess)
+import           Test.Hspec.QuickCheck (modifyMaxSuccess, prop)
 import           Test.QuickCheck (Gen, arbitrary, elements, forAll, listOf, listOf1, property,
                                   (===))
 import           Test.QuickCheck.Monadic (assert, monadicIO, pre, run)
@@ -20,7 +20,7 @@ import           DataSource (App, Attachment (..), Comment (..), Config (..), Da
 import           Exceptions (ProcessTicketExceptions (..))
 
 import           Lib (exportZendeskDataToLocalDB, filterAnalyzedTickets, listAndSortTickets,
-                      processTicket)
+                      processTicket, getAttachmentsFromComment)
 import           Statistics (filterTicketsByStatus, filterTicketsWithAttachments,
                              showAttachmentInfo, showCommentAttachments)
 
@@ -49,6 +49,7 @@ spec =
             filterAnalyzedTicketsSpec
             createResponseTicketSpec
             exportZendeskDataToLocalDBSpec
+            getAttachmentsFromCommentSpec
 
 -- | A utility function for testing which stubs IO and returns
 -- the @Config@ with the @DataLayer@ that was passed into it.
@@ -620,3 +621,14 @@ exportZendeskDataToLocalDBSpec =
         -> (TicketInfo -> App (TicketInfo, [Comment]))
         -> App [(TicketInfo, [Comment])]
     mapNotConcurrent tickets _ _ fetchTicketData = forM tickets fetchTicketData
+
+getAttachmentsFromCommentSpec :: Spec
+getAttachmentsFromCommentSpec =
+    describe "getAttachmentsFromComment" $ modifyMaxSuccess (const 200) $
+        prop "should return zip file attachments" $
+          \(comments :: [Comment]) -> do
+            let filteredAttachments = getAttachmentsFromComment comments
+            all (\att -> aContentType att `elem` zipFileContentTypes) filteredAttachments
+          where
+            zipFileContentTypes :: [Text]
+            zipFileContentTypes = ["application/zip", "application/x-zip-compressed"]

@@ -5,6 +5,7 @@ module Lib
     ( runZendeskMain
     , collectEmails
     , getZendeskResponses
+    , getAttachmentsFromComment
     , processTicket
     , processTicketSafe
     , processTickets
@@ -477,7 +478,8 @@ getAttachmentsFromComment comments = do
 
     -- Readability
     isAttachmentZip :: Attachment -> Bool
-    isAttachmentZip attachment = "application/zip" == aContentType attachment
+    isAttachmentZip attachment = aContentType attachment `elem`
+        ["application/zip", "application/x-zip-compressed"]
 
 -- | Inspects the comment, attachment, ticket info and create 'ZendeskResponse'
 getZendeskResponses :: [Comment] -> [Attachment] -> TicketInfo -> App ZendeskResponse
