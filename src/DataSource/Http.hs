@@ -275,7 +275,7 @@ _getUser = do
     let url = showURL UserInfoURL
     let req = apiRequest cfg url
     case req of
-      Left e  -> throwM $ JSONParsingException e
+      Left e  -> throwM $ InvalidUrlException "" "" -- TODO(md): See how to convert a String 'e' to an appropriate exception
       Right r -> apiCall parseJSON r
 
 -- | Given attachmentUrl, return attachment in bytestring
