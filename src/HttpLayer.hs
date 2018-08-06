@@ -10,15 +10,22 @@ module HttpLayer
 import           Universum
 
 import           Control.Exception.Safe
-                 ( catches
+                 (
+                   catches
                  , Handler (..)
+                 , throwM
                  )
 import           Data.Aeson (FromJSON, ToJSON, Value)
 import           Data.Aeson.Types (Parser, parseEither)
 import           Data.Either.Combinators (mapLeft)
+import           Network.HTTP.Client.Conduit
+                 (
+                   HttpException (..)
+                 , parseUrlThrow
+                 )
 import           Network.HTTP.Simple (Request, addRequestHeader, getResponseBody, httpJSON,
                                       parseRequest_, setRequestBasicAuth, setRequestBodyJSON,
-                                      setRequestMethod, setRequestPath, parseRequest,
+                                      setRequestMethod, setRequestPath,
                                       JSONException(..))
 
 import           DataSource.Types (Config (..), HTTPNetworkLayer (..))
@@ -67,16 +74,21 @@ apiRequest Config{..} u = mapLeft show $ catches buildRequest handlerList --catc
   where
     buildRequest :: forall m. MonadThrow m => m Request
     buildRequest = do
-        req <- parseRequest (toString (cfgZendesk <> path)) -- TODO(md): Get a list of exceptions that parseRequest can throw
+        req <- parseUrlThrow (toString (cfgZendesk <> path)) -- TODO(md): Get a list of exceptions that parseRequest can throw
         return $ setRequestPath (encodeUtf8 path) $
                  addRequestHeader "Content-Type" "application/json" $
                  setRequestBasicAuth
                      (encodeUtf8 cfgEmail <> "/token")
                      (encodeUtf8 cfgToken) $ req
     handlerList :: MonadThrow m => [Handler m Request]
-    handlerList = [handlerJSON]
+    handlerList = [
+                    handlerJSON
+                  , handlerHTTP
+                  ]
     handlerJSON :: MonadThrow m => Handler m Request
     handlerJSON = Handler $ \(ex :: JSONException) -> throwM ex
+    handlerHTTP :: MonadThrow m => Handler m Request
+    handlerHTTP = Handler $ \(ex :: HttpException) -> throwM ex
     -- here we're catching only synchronous exceptions
     -- catchException :: (Exception e, MonadThrow m) => e -> m Request
     -- catchException p@(JSONParseException _ _ _) = throwM p
