@@ -30,7 +30,6 @@ library
                        Util
   other-modules:       Paths_log_classifier
                        DataSource.DB
-                       DataSource.Exceptions
                        DataSource.Types
                        DataSource.Http
                        HttpLayer

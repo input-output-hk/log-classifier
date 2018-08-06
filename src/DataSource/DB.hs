@@ -22,27 +22,28 @@ module DataSource.DB
 
 import           Universum
 
-import           Control.Exception.Safe (Handler(..), catches)
+import           Control.Exception.Safe (Handler (..), catches)
 import           Control.Monad.Trans.Control (MonadBaseControl)
 
 import           Data.Pool (Pool, createPool, withResource)
 import           Data.Text (split)
+import           Prelude (Show (..))
 
-import           Database.SQLite.Simple (FromRow (..), NamedParam (..), SQLData (..), close,
-                                         executeNamed, execute_, field, open, queryNamed, query_, FormatError(..))
+import           Database.SQLite.Simple (FormatError (..), FromRow (..), NamedParam (..),
+                                         SQLData (..), close, executeNamed, execute_, field, open,
+                                         queryNamed, query_)
 import           Database.SQLite.Simple.FromField (FromField (..), ResultError (..), returnError)
 import           Database.SQLite.Simple.Internal (Connection, Field (..))
 import           Database.SQLite.Simple.Ok (Ok (..))
 import           Database.SQLite.Simple.ToField (ToField (..))
 
-import           DataSource.Exceptions (DBLayerException(..), DBException(..))
 import           DataSource.Http (basicDataLayer)
 import           DataSource.Types (Attachment (..), AttachmentContent (..), AttachmentId (..),
                                    Comment (..), CommentBody (..), CommentId (..), Config,
-                                   DBLayer (..), TicketField (..), TicketFieldId (..),
-                                   TicketFieldValue (..), TicketId (..), TicketInfo (..),
-                                   TicketStatus (..), TicketTags (..), TicketURL (..), UserId (..),
-                                   DataLayer (..))
+                                   DBLayer (..), DataLayer (..), TicketField (..),
+                                   TicketFieldId (..), TicketFieldValue (..), TicketId (..),
+                                   TicketInfo (..), TicketStatus (..), TicketTags (..),
+                                   TicketURL (..), UserId (..))
 
 ------------------------------------------------------------
 -- Single connection, simple
@@ -149,13 +150,9 @@ connDBLayer = DBLayer
 
 -- | The connection pooled Zendesk layer. Used for database querying.
 -- We need to sync occasionaly.
-connPoolDataLayer :: forall m. (MonadBaseControl IO m
-                               , MonadIO m
-                               , MonadReader Config m
-                               , MonadCatch m
-                               )
-                               => DBConnPool
-                               -> DataLayer m
+connPoolDataLayer :: forall m. (MonadBaseControl IO m, MonadIO m, MonadReader Config m, MonadCatch m)
+                  => DBConnPool
+                  -> DataLayer m
 connPoolDataLayer connPool = DataLayer
     { zlGetTicketInfo           = \tId -> withConnPool connPool $ \conn -> getTicketInfoByTicketId conn tId
     , zlListDeletedTickets      = zlListDeletedTickets basicDataLayer
@@ -175,7 +172,7 @@ connPoolDBLayer :: forall m. ( MonadBaseControl IO m
                              , MonadIO m
                              , MonadReader Config m
                              , MonadCatch m
-                             ) 
+                             )
                              => DBConnPool
                              -> DBLayer m
 connPoolDBLayer connPool = DBLayer
@@ -218,8 +215,8 @@ instance FromField UserId where
     fromField f                             = returnError ConversionFailed f "need an integer, user id"
 
 instance FromField TicketURL where
-    fromField (Field (SQLText tURL) _)      = Ok . TicketURL $ tURL
-    fromField f                             = returnError ConversionFailed f "need a text, ticket url"
+    fromField (Field (SQLText tURL) _) = Ok . TicketURL $ tURL
+    fromField f                        = returnError ConversionFailed f "need a text, ticket url"
 
 -- | TODO(ks): Yes, yes, normal form...
 instance FromField TicketTags where
@@ -465,6 +462,11 @@ deleteAllData conn = do
     deleteTicketComments conn
     deleteTickets conn
 
+
+------------------------------------------------------------
+-- Exception handling
+------------------------------------------------------------
+
 checkError :: (MonadIO m, MonadCatch m) => DBException -> IO () -> m ()
 checkError err action = liftIO action `catches`
     [Handler formatError, Handler $ someHandler err]
@@ -474,3 +476,31 @@ checkError err action = liftIO action `catches`
     formatError = throwM
     someHandler :: (MonadThrow m) => DBException -> SomeException -> m ()
     someHandler dberr someErr = throwM $ DBLayerException dberr someErr
+
+-- | Exceptions that can occur in 'DBLayer'
+data DBException =
+    DBDeleteException
+  | InsertCommentAttachmentException CommentId AttachmentId
+  | InsertTicketCommentException TicketId CommentId
+  | InsertTicketInfoException TicketId
+  deriving Show
+
+-- | This is used to throw both 'DBLayerException and 'SomeException'
+-- 'Error' from sqlite-simple has no instance of 'Exception'
+-- therefore the only way to catching it is by 'SomeException'
+-- Both of these exception are need in case the program crashes and we need to
+-- find the root cause of it.
+data DBLayerException = DBLayerException DBException SomeException
+
+instance Exception DBException
+
+instance Exception DBLayerException
+
+instance Show DBLayerException where
+  show (DBLayerException dberr someErr) =
+      concat
+      [ "Error occured on DBlayer: "
+      , Universum.show dberr
+      , " with reason: "
+      , Universum.show someErr
+      ]
