@@ -27,11 +27,11 @@ import           Control.Monad.Trans.Control (MonadBaseControl)
 
 import           Data.Pool (Pool, createPool, withResource)
 import           Data.Text (split)
-import           Prelude (Show (..))
+import           Prelude as P (Show (..))
 
 import           Database.SQLite.Simple (FormatError (..), FromRow (..), NamedParam (..),
-                                         SQLData (..), close, executeNamed, execute_, field, open,
-                                         queryNamed, query_)
+                                         Query (..), SQLData (..), close, executeNamed, execute_,
+                                         field, open, queryNamed, query_)
 import           Database.SQLite.Simple.FromField (FromField (..), ResultError (..), returnError)
 import           Database.SQLite.Simple.Internal (Connection, Field (..))
 import           Database.SQLite.Simple.Ok (Ok (..))
@@ -168,13 +168,9 @@ connPoolDataLayer connPool = DataLayer
 
 
 -- | The connection pooled database layer. Used for database modification.
-connPoolDBLayer :: forall m. ( MonadBaseControl IO m
-                             , MonadIO m
-                             , MonadReader Config m
-                             , MonadCatch m
-                             )
-                             => DBConnPool
-                             -> DBLayer m
+connPoolDBLayer :: forall m. ( MonadBaseControl IO m, MonadIO m, MonadReader Config m, MonadCatch m)
+                => DBConnPool
+                -> DBLayer m
 connPoolDBLayer connPool = DBLayer
     { dlInsertTicketInfo          = \tIn        -> withConnPool connPool $ \conn -> insertTicketInfo conn tIn
     , dlInsertTicketComments      = \tId comm   -> withConnPool connPool $ \conn -> insertTicketComments conn tId comm
@@ -411,7 +407,8 @@ createSchema conn = liftIO $ execute_ conn
 
 insertTicketInfo :: forall m. (MonadIO m, MonadCatch m) => Connection -> TicketInfo -> m ()
 insertTicketInfo conn TicketInfo{..} =
-    checkError (InsertTicketInfoException tiId) $ executeNamed conn "INSERT INTO ticket_info (tiId, tiRequesterId, tiAssigneeId, tiUrl, tiTags, tiStatus) \
+    liftIO $ executeNamedSafe (InsertTicketInfoException tiId)
+        conn "INSERT INTO ticket_info (tiId, tiRequesterId, tiAssigneeId, tiUrl, tiTags, tiStatus) \
         \VALUES (:tiId, :tiRequesterId, :tiAssigneeId, :tiUrl, :tiTags, :tiStatus)"
         [ ":tiId"           := tiId
         , ":tiRequesterId"  := tiRequesterId
@@ -423,7 +420,8 @@ insertTicketInfo conn TicketInfo{..} =
 
 insertTicketComments :: forall m. (MonadIO m, MonadCatch m) => Connection -> TicketId -> Comment -> m ()
 insertTicketComments conn ticketId Comment{..} =
-    checkError (InsertTicketCommentException ticketId cId) $ executeNamed conn "INSERT INTO ticket_comment (id, ticket_id, body, is_public, author_id) \
+    liftIO $ executeNamedSafe (InsertTicketCommentException ticketId cId)
+        conn "INSERT INTO ticket_comment (id, ticket_id, body, is_public, author_id) \
         \VALUES (:id, :ticket_id, :body, :is_public, :author_id)"
         [ ":id"             := cId
         , ":ticket_id"      := ticketId
@@ -434,7 +432,8 @@ insertTicketComments conn ticketId Comment{..} =
 
 insertCommentAttachments :: forall m. (MonadIO m, MonadCatch m) => Connection -> Comment -> Attachment -> m ()
 insertCommentAttachments conn Comment{..} Attachment{..} =
-    checkError (InsertCommentAttachmentException cId aId) $ executeNamed conn "INSERT INTO comment_attachment (aId, comment_id, aURL, aContentType, aSize) \
+    liftIO $ executeNamedSafe (InsertCommentAttachmentException cId aId)
+        conn "INSERT INTO comment_attachment (aId, comment_id, aURL, aContentType, aSize) \
         \VALUES (:aId, :comment_id, :aURL, :aContentType, :aSize)"
         [ ":aId"            := aId
         , ":comment_id"     := cId
@@ -445,15 +444,15 @@ insertCommentAttachments conn Comment{..} Attachment{..} =
 
 deleteCommentAttachments :: forall m. (MonadIO m, MonadCatch m) => Connection -> m ()
 deleteCommentAttachments conn =
-    checkError DBDeleteException $ execute_ conn "DELETE FROM comment_attachment"
+    liftIO $ executeSafe_ DBDeleteException conn "DELETE FROM comment_attachment"
 
 deleteTicketComments :: forall m. (MonadIO m, MonadCatch m) => Connection -> m ()
 deleteTicketComments conn =
-    checkError DBDeleteException $ execute_ conn "DELETE FROM ticket_comment"
+    liftIO $ executeSafe_ DBDeleteException conn "DELETE FROM ticket_comment"
 
 deleteTickets :: forall m. (MonadIO m, MonadCatch m) => Connection -> m ()
 deleteTickets conn =
-    checkError DBDeleteException $ execute_ conn "DELETE FROM ticket_info"
+    liftIO $ executeSafe_ DBDeleteException conn "DELETE FROM ticket_info"
 
 -- | Delete all data.
 deleteAllData :: forall m. (MonadIO m, MonadCatch m) => Connection -> m ()
@@ -467,15 +466,26 @@ deleteAllData conn = do
 -- Exception handling
 ------------------------------------------------------------
 
-checkError :: (MonadIO m, MonadCatch m) => DBException -> IO () -> m ()
-checkError err action = liftIO action `catches`
-    [Handler formatError, Handler $ someHandler err]
-  where
-    -- Don't do anything on 'FormatError'
-    formatError :: (MonadThrow m) => FormatError -> m ()
-    formatError = throwM
-    someHandler :: (MonadThrow m) => DBException -> SomeException -> m ()
-    someHandler dberr someErr = throwM $ DBLayerException dberr someErr
+-- | 'executeNamed' with exception handling
+executeNamedSafe :: DBException -> Connection -> Query -> [NamedParam] -> IO ()
+executeNamedSafe err conn query nm = executeNamed conn query nm `catches`
+    [Handler formatError, Handler $ errorHandler err]
+
+-- | 'execute_' with exception handling
+executeSafe_ :: DBException -> Connection -> Query -> IO ()
+executeSafe_ err conn query = execute_ conn query `catches`
+    [Handler formatError, Handler $ errorHandler err]
+
+-- | Exception handling on 'FormatError'
+-- For now, we don't do anything with it
+formatError :: FormatError -> IO ()
+formatError = throwM
+
+-- | Exception handling on 'Error'
+-- Since 'Error' from sqlite-simple does not have instance of Exception,
+-- the only way of catching it by 'SomeException'
+errorHandler :: DBException -> SomeException -> IO ()
+errorHandler dberr someErr = throwM $ DBLayerException dberr someErr
 
 -- | Exceptions that can occur in 'DBLayer'
 data DBException =
@@ -483,7 +493,6 @@ data DBException =
   | InsertCommentAttachmentException CommentId AttachmentId
   | InsertTicketCommentException TicketId CommentId
   | InsertTicketInfoException TicketId
-  deriving Show
 
 -- | This is used to throw both 'DBLayerException and 'SomeException'
 -- 'Error' from sqlite-simple has no instance of 'Exception'
@@ -496,11 +505,29 @@ instance Exception DBException
 
 instance Exception DBLayerException
 
+instance Show DBException where
+    show = \case
+        DBDeleteException ->
+            "Exception occured while trying to delete from databse"
+        InsertCommentAttachmentException cid aid -> concat
+            [ "Exception occured while inserting comment and attachment on commentId: "
+            , P.show (getCommentId cid)
+            , ", attachmentId: "
+            , P.show (getAttachmentId aid)
+            ]
+        InsertTicketCommentException tid cid -> concat
+            [ "Exception occured while inserting ticket and comment on commentId: "
+            , P.show (getCommentId cid)
+            , ", ticketId: "
+            , P.show (getTicketId tid)
+            ]
+        InsertTicketInfoException tid ->
+            "Exception occured while inserting TicketInfo with ticketId" <> P.show (getTicketId tid)
+
 instance Show DBLayerException where
-  show (DBLayerException dberr someErr) =
-      concat
+  show (DBLayerException dberr someErr) = concat
       [ "Error occured on DBlayer: "
-      , Universum.show dberr
+      , P.show dberr
       , " with reason: "
-      , Universum.show someErr
+      , P.show someErr
       ]

@@ -72,6 +72,7 @@ library
                       ScopedTypeVariables
                       FlexibleInstances
                       FlexibleContexts
+                      LambdaCase
                       TypeFamilies
                       TypeApplications
                       TypeOperators
