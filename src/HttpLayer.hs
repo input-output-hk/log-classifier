@@ -9,29 +9,32 @@ module HttpLayer
 
 import           Universum
 
-import           Data.Aeson (FromJSON, ToJSON, Value, encode)
+import           Control.Exception.Safe
+                 ( catches
+                 , Handler (..)
+                 )
+import           Data.Aeson (FromJSON, ToJSON, Value)
 import           Data.Aeson.Types (Parser, parseEither)
 import           Data.Either.Combinators (mapLeft)
-import           Data.Text (unpack)
 import           Network.HTTP.Simple (Request, addRequestHeader, getResponseBody, httpJSON,
                                       parseRequest_, setRequestBasicAuth, setRequestBodyJSON,
-                                      setRequestMethod, setRequestPath, parseRequest)
+                                      setRequestMethod, setRequestPath, parseRequest,
+                                      JSONException(..))
 
 import           DataSource.Types (Config (..), HTTPNetworkLayer (..))
-import qualified Prelude (Show(..))
 
 ------------------------------------------------------------
 -- JSON parsing exceptions
 ------------------------------------------------------------
 -- | Exceptions that occur during JSON parsing
-data JSONException
-    = JSONParsingException Text
-    | JSONEncodingException Text
-
-instance Exception JSONException
-instance Prelude.Show JSONException where
-  show (JSONParsingException s)  = "JSON parsing exception: " <> (unpack s)
-  show (JSONEncodingException s) = "JSON encoding exception: " <> (unpack s)
+-- data JSONException
+--     = JSONParsingException Text
+--     | JSONEncodingException Text
+--
+-- instance Exception JSONException
+-- instance Prelude.Show JSONException where
+--   show (JSONParsingException s)  = "JSON parsing exception: " <> (unpack s)
+--   show (JSONEncodingException s) = "JSON encoding exception: " <> (unpack s)
 
 ------------------------------------------------------------
 -- Layer
@@ -56,10 +59,13 @@ emptyHTTPNetworkLayer = HTTPNetworkLayer
 ------------------------------------------------------------
 
 -- | General api request function
-apiRequest :: forall m. MonadThrow m => Config -> Text -> Either String Request
-apiRequest Config{..} u = mapLeft show $ catch buildRequest Left
+apiRequest
+    :: Config
+    -> Text
+    -> Either String Request
+apiRequest Config{..} u = mapLeft show $ catches buildRequest handlerList --catchException
   where
-    buildRequest :: m Request
+    buildRequest :: forall m. MonadThrow m => m Request
     buildRequest = do
         req <- parseRequest (toString (cfgZendesk <> path)) -- TODO(md): Get a list of exceptions that parseRequest can throw
         return $ setRequestPath (encodeUtf8 path) $
@@ -67,8 +73,13 @@ apiRequest Config{..} u = mapLeft show $ catch buildRequest Left
                  setRequestBasicAuth
                      (encodeUtf8 cfgEmail <> "/token")
                      (encodeUtf8 cfgToken) $ req
-    catchException :: Exception e => e -> Either String Request
-    catchException (JSONParseException s) = Left s
+    handlerList :: MonadThrow m => [Handler m Request]
+    handlerList = [handlerJSON]
+    handlerJSON :: MonadThrow m => Handler m Request
+    handlerJSON = Handler $ \(ex :: JSONException) -> throwM ex
+    -- here we're catching only synchronous exceptions
+    -- catchException :: (Exception e, MonadThrow m) => e -> m Request
+    -- catchException p@(JSONParseException _ _ _) = throwM p
     path :: Text
     path = "/api/v2" <> u
 

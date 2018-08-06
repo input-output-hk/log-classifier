@@ -57,6 +57,7 @@ library
                      , universum
                      , zip-archive
                      , QuickCheck
+                     , safe-exceptions
                      -- Database backend
                      , sqlite-simple 
                      , resource-pool
