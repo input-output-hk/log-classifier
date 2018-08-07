@@ -151,8 +151,8 @@ connDBLayer = DBLayer
 -- | The connection pooled Zendesk layer. Used for database querying.
 -- We need to sync occasionaly.
 connPoolDataLayer :: forall m. (MonadBaseControl IO m, MonadIO m, MonadReader Config m, MonadCatch m)
-                  => DBConnPool
-                  -> DataLayer m
+    => DBConnPool
+    -> DataLayer m
 connPoolDataLayer connPool = DataLayer
     { zlGetTicketInfo           = \tId -> withConnPool connPool $ \conn -> getTicketInfoByTicketId conn tId
     , zlListDeletedTickets      = zlListDeletedTickets basicDataLayer
@@ -169,8 +169,8 @@ connPoolDataLayer connPool = DataLayer
 
 -- | The connection pooled database layer. Used for database modification.
 connPoolDBLayer :: forall m. ( MonadBaseControl IO m, MonadIO m, MonadReader Config m, MonadCatch m)
-                => DBConnPool
-                -> DBLayer m
+    => DBConnPool
+    -> DBLayer m
 connPoolDBLayer connPool = DBLayer
     { dlInsertTicketInfo          = \tIn        -> withConnPool connPool $ \conn -> insertTicketInfo conn tIn
     , dlInsertTicketComments      = \tId comm   -> withConnPool connPool $ \conn -> insertTicketComments conn tId comm
@@ -211,8 +211,8 @@ instance FromField UserId where
     fromField f                             = returnError ConversionFailed f "need an integer, user id"
 
 instance FromField TicketURL where
-    fromField (Field (SQLText tURL) _) = Ok . TicketURL $ tURL
-    fromField f                        = returnError ConversionFailed f "need a text, ticket url"
+    fromField (Field (SQLText tURL) _)      = Ok . TicketURL $ tURL
+    fromField f                             = returnError ConversionFailed f "need a text, ticket url"
 
 -- | TODO(ks): Yes, yes, normal form...
 instance FromField TicketTags where
