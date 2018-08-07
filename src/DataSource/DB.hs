@@ -495,8 +495,8 @@ errorHandler :: DBException -> SomeException -> IO ()
 errorHandler dberr someErr = throwM $ DBLayerException dberr someErr
 
 -- | Exceptions that can occur in 'DBLayer'
-data DBException =
-     DBDeleteFailed
+data DBException
+   =  DBDeleteFailed
    -- ^ Exception upon data deletion
    | InsertCommentAttachmentFailed CommentId AttachmentId
    -- ^ Exception upon inserting 'Comment' and it's associated 'Attachment' to the database
