@@ -276,7 +276,11 @@ _getUser = do
     let req = apiRequest cfg url
     case req of
       Left e  -> throwM $ InvalidUrlException "" "" -- TODO(md): See how to convert a String 'e' to an appropriate exception
-      Right r -> apiCall parseJSON r
+      Right r -> do
+          r' <- apiCall parseJSON r
+          case r' of
+              Left e  -> throwM $ InvalidUrlException "" "" -- TODO(md): See how to convert a String 'e' to an appropriate exception
+              Right u -> pure u
 
 -- | Given attachmentUrl, return attachment in bytestring
 getAttachment
@@ -290,7 +294,7 @@ getAttachment Attachment{..} = Just . AttachmentContent . getResponseBody <$> ht
 
 -- | Get ticket's comments
 getTicketComments
-    :: (MonadIO m, MonadReader Config m)
+    :: (MonadIO m, MonadReader Config m, MonadThrow m)
     => TicketId
     -> m [Comment]
 getTicketComments tId = do
@@ -300,14 +304,16 @@ getTicketComments tId = do
 
     let url = showURL $ TicketCommentsURL tId
     let req = apiRequest cfg url
+    case req of
+        Left e  -> throwM $ InvalidUrlException "" "" -- TODO(md): See how to convert a String 'e' to an appropriate exception
+        Right r -> do
+            result <- apiCallSafe parseComments r
 
-    result          <- apiCallSafe parseComments req
-
-    -- TODO(ks): For now return empty if there is an exception.
-    -- After we have exception handling, we propagate this up.
-    case result of
-        Left _  -> pure []
-        Right r -> pure r
+            -- TODO(ks): For now return empty if there is an exception.
+            -- After we have exception handling, we propagate this up.
+            case result of
+                Left _  -> pure []
+                Right r -> pure r
 
 ------------------------------------------------------------
 -- Utility
@@ -325,7 +331,10 @@ wrapIteratePages
     :: (MonadIO m, MonadReader Config m, MonadThrow m, FromPageResultList a)
     => Either String Request
     -> m [a]
-wrapIteratePages = either (throwM . JSONParsingException . pack) iteratePages
+wrapIteratePages = either (throwM . throwFun) iteratePages
+  where
+    throwFun :: String -> HttpException -- TODO(md): Fix this HttpException type to an appropriate one
+    throwFun _ = InvalidUrlException "" "" -- TODO(md): See how to convert a String 'e' to an appropriate exception
 
 -- | Iterate all the ticket pages and combine into a result. Wait for
 -- some time in-between the requests.
@@ -345,10 +354,16 @@ iteratePagesWithDelay seconds req = do
             threadDelay $ seconds * 1000000
 
             let req'      = apiRequestAbsolute cfg nextPage'
-            (PageResultList pagen nextPagen _) <- apiCall parseJSON req'
-            case nextPagen of
-                Just nextUrl -> go (list' <> pagen) nextUrl
-                Nothing      -> pure (list' <> pagen)
+            case req' of
+                Left e  -> throwM $ InvalidUrlException "" "" -- TODO(md): See how to convert a String 'e' to an appropriate exception
+                Right req'' -> do
+                    req''' <- apiCall parseJSON req''
+                    case req''' of
+                        Left e  -> throwM $ InvalidUrlException "" "" -- TODO(md): See how to convert a String 'e' to an appropriate exception
+                        Right (PageResultList pagen nextPagen _) -> do
+                            case nextPagen of
+                                Just nextUrl -> go (list' <> pagen) nextUrl
+                                Nothing      -> pure (list' <> pagen)
 
     (PageResultList page0 nextPage _) <- liftIO $ apiCall parseJSON req
     case nextPage of
