@@ -131,6 +131,7 @@ test-suite log-classifier-test
                      , log-classifier
                      , mtl
                      , reflection
+                     , sqlite-simple
                      , regex-tdfa
                      , text
                      , universum

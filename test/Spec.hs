@@ -3,6 +3,7 @@ module Main where
 import           Universum
 
 import           Data.List (nub)
+import           Database.SQLite.Simple (withConnection)
 
 import           Test.Hspec (Spec, describe, hspec, it, pending, shouldBe)
 import           Test.Hspec.QuickCheck (modifyMaxSuccess, prop)
@@ -11,16 +12,18 @@ import           Test.QuickCheck (Gen, arbitrary, elements, forAll, listOf, list
 import           Test.QuickCheck.Monadic (assert, monadicIO, pre, run)
 
 import           Configuration (basicIOLayer, defaultConfig)
-import           DataSource (App, Attachment (..), Comment (..), Config (..), DataLayer (..),
-                             DeletedTicket (..), ExportFromTime (..), IOLayer (..), Ticket (..),
-                             TicketId (..), TicketInfo (..), TicketStatus (..), TicketTag (..),
-                             TicketTags (..), User, UserId (..), ZendeskAPIUrl (..),
-                             ZendeskResponse (..), createResponseTicket, emptyDBLayer,
-                             emptyDataLayer, renderTicketStatus, runApp, showURL)
+import           DataSource (App, Attachment (..), Comment (..), Config (..), DBLayerException (..),
+                             DataLayer (..), DeletedTicket (..), ExportFromTime (..), IOLayer (..),
+                             Ticket (..), TicketId (..), TicketInfo (..), TicketStatus (..),
+                             TicketTag (..), TicketTags (..), User, UserId (..), ZendeskAPIUrl (..),
+                             ZendeskResponse (..), createResponseTicket, deleteAllData,
+                             emptyDBLayer, emptyDataLayer, insertCommentAttachments,
+                             insertTicketComments, insertTicketInfo, renderTicketStatus, runApp,
+                             showURL)
 import           Exceptions (ProcessTicketExceptions (..))
 
-import           Lib (exportZendeskDataToLocalDB, filterAnalyzedTickets, listAndSortTickets,
-                      processTicket, getAttachmentsFromComment)
+import           Lib (exportZendeskDataToLocalDB, filterAnalyzedTickets, getAttachmentsFromComment,
+                      listAndSortTickets, processTicket)
 import           Statistics (filterTicketsByStatus, filterTicketsWithAttachments,
                              showAttachmentInfo, showCommentAttachments)
 
@@ -50,6 +53,12 @@ spec =
             createResponseTicketSpec
             exportZendeskDataToLocalDBSpec
             getAttachmentsFromCommentSpec
+
+        describe "Database" $ do
+            deleteAllDataSpec
+            insertCommentAttachmentsSpec
+            insertTicketInfoSpec
+            insertTicketCommentsSpec
 
 -- | A utility function for testing which stubs IO and returns
 -- the @Config@ with the @DataLayer@ that was passed into it.
@@ -632,3 +641,50 @@ getAttachmentsFromCommentSpec =
           where
             zipFileContentTypes :: [Text]
             zipFileContentTypes = ["application/zip", "application/x-zip-compressed"]
+
+------------------------------------------------------------
+-- Tests for database operations
+------------------------------------------------------------
+
+deleteAllDataSpec :: Spec
+deleteAllDataSpec =
+    describe "deleteAllData" $ modifyMaxSuccess (const 200) $
+       prop "should try to delete datas from database without tables, throws exception" $
+           monadicIO $ do
+               eResult <- run . try $ withConnection ":memory:" deleteAllData
+
+               assert $ isLeft (eResult :: Either DBLayerException ())
+
+insertCommentAttachmentsSpec :: Spec
+insertCommentAttachmentsSpec =
+    describe "insertCommentAttachmentsSpec" $ modifyMaxSuccess (const 200) $
+        prop "should try to insert comment and its attachment to the database without tables, throws exception" $
+            \(comment :: Comment) (attachment :: Attachment) ->
+                monadicIO $ do
+                    eResult <- run . try $ 
+                        withConnection ":memory:"
+                        (\conn -> insertCommentAttachments conn comment attachment)
+
+                    assert $ isLeft (eResult :: Either DBLayerException ())
+
+insertTicketInfoSpec :: Spec
+insertTicketInfoSpec =
+    describe "insertTicketInfo" $ modifyMaxSuccess (const 200) $
+      prop "should try to insert ticketInfo to the database without tables, throws exception" $
+          \(ticketInfo :: TicketInfo) ->
+              monadicIO $ do
+                eResult <- run . try $ 
+                    withConnection ":memory:" (\conn -> insertTicketInfo conn ticketInfo)
+
+                assert $ isLeft (eResult :: Either DBLayerException ())
+
+insertTicketCommentsSpec :: Spec
+insertTicketCommentsSpec =
+    describe "insertTicketComments" $ modifyMaxSuccess (const 200) $
+      prop "should try to insert ticketId and comment to the database without tables, throws exception" $
+          \(ticketId :: TicketId) (comment :: Comment) ->
+              monadicIO $ do
+                eResult <- run . try $ 
+                    withConnection ":memory:" (\conn -> insertTicketComments conn ticketId comment)
+
+                assert $ isLeft (eResult :: Either DBLayerException ())

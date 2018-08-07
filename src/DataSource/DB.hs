@@ -6,6 +6,12 @@
 
 module DataSource.DB
     ( DBConnPool
+    , DBException(..)
+    , DBLayerException(..)
+    , deleteAllData
+    , insertCommentAttachments
+    , insertTicketComments
+    , insertTicketInfo
     , withDatabase
     , withProdDatabase
     -- * Empty layer
@@ -407,7 +413,7 @@ createSchema conn = liftIO $ execute_ conn
 
 insertTicketInfo :: forall m. (MonadIO m, MonadCatch m) => Connection -> TicketInfo -> m ()
 insertTicketInfo conn TicketInfo{..} =
-    liftIO $ executeNamedSafe (InsertTicketInfoException tiId)
+    liftIO $ executeNamedSafe (InsertTicketInfoFailed tiId)
         conn "INSERT INTO ticket_info (tiId, tiRequesterId, tiAssigneeId, tiUrl, tiTags, tiStatus) \
         \VALUES (:tiId, :tiRequesterId, :tiAssigneeId, :tiUrl, :tiTags, :tiStatus)"
         [ ":tiId"           := tiId
@@ -420,7 +426,7 @@ insertTicketInfo conn TicketInfo{..} =
 
 insertTicketComments :: forall m. (MonadIO m, MonadCatch m) => Connection -> TicketId -> Comment -> m ()
 insertTicketComments conn ticketId Comment{..} =
-    liftIO $ executeNamedSafe (InsertTicketCommentException ticketId cId)
+    liftIO $ executeNamedSafe (InsertTicketCommentsFailed ticketId cId)
         conn "INSERT INTO ticket_comment (id, ticket_id, body, is_public, author_id) \
         \VALUES (:id, :ticket_id, :body, :is_public, :author_id)"
         [ ":id"             := cId
@@ -432,7 +438,7 @@ insertTicketComments conn ticketId Comment{..} =
 
 insertCommentAttachments :: forall m. (MonadIO m, MonadCatch m) => Connection -> Comment -> Attachment -> m ()
 insertCommentAttachments conn Comment{..} Attachment{..} =
-    liftIO $ executeNamedSafe (InsertCommentAttachmentException cId aId)
+    liftIO $ executeNamedSafe (InsertCommentAttachmentFailed cId aId)
         conn "INSERT INTO comment_attachment (aId, comment_id, aURL, aContentType, aSize) \
         \VALUES (:aId, :comment_id, :aURL, :aContentType, :aSize)"
         [ ":aId"            := aId
@@ -444,15 +450,15 @@ insertCommentAttachments conn Comment{..} Attachment{..} =
 
 deleteCommentAttachments :: forall m. (MonadIO m, MonadCatch m) => Connection -> m ()
 deleteCommentAttachments conn =
-    liftIO $ executeSafe_ DBDeleteException conn "DELETE FROM comment_attachment"
+    liftIO $ executeSafe_ DBDeleteFailed conn "DELETE FROM comment_attachment"
 
 deleteTicketComments :: forall m. (MonadIO m, MonadCatch m) => Connection -> m ()
 deleteTicketComments conn =
-    liftIO $ executeSafe_ DBDeleteException conn "DELETE FROM ticket_comment"
+    liftIO $ executeSafe_ DBDeleteFailed conn "DELETE FROM ticket_comment"
 
 deleteTickets :: forall m. (MonadIO m, MonadCatch m) => Connection -> m ()
 deleteTickets conn =
-    liftIO $ executeSafe_ DBDeleteException conn "DELETE FROM ticket_info"
+    liftIO $ executeSafe_ DBDeleteFailed conn "DELETE FROM ticket_info"
 
 -- | Delete all data.
 deleteAllData :: forall m. (MonadIO m, MonadCatch m) => Connection -> m ()
@@ -484,15 +490,20 @@ formatError = throwM
 -- | Exception handling on 'Error'
 -- Since 'Error' from sqlite-simple does not have instance of Exception,
 -- the only way of catching it by 'SomeException'
+-- We want to throw it with additional info (TicketId, Comment data, etc.)
 errorHandler :: DBException -> SomeException -> IO ()
 errorHandler dberr someErr = throwM $ DBLayerException dberr someErr
 
 -- | Exceptions that can occur in 'DBLayer'
 data DBException =
-    DBDeleteException
-  | InsertCommentAttachmentException CommentId AttachmentId
-  | InsertTicketCommentException TicketId CommentId
-  | InsertTicketInfoException TicketId
+     DBDeleteFailed
+   -- ^ Exception upon data deletion
+   | InsertCommentAttachmentFailed CommentId AttachmentId
+   -- ^ Exception upon inserting 'Comment' and it's associated 'Attachment' to the database
+   | InsertTicketCommentsFailed TicketId CommentId
+   -- ^ Exception upon inserting 'TicketId' and it's associated 'Comment' to the database
+   | InsertTicketInfoFailed TicketId
+   -- ^ Exception upon inserting 'TicketInfo' to the database
 
 -- | This is used to throw both 'DBLayerException and 'SomeException'
 -- 'Error' from sqlite-simple has no instance of 'Exception'
@@ -507,21 +518,21 @@ instance Exception DBLayerException
 
 instance Show DBException where
     show = \case
-        DBDeleteException ->
+        DBDeleteFailed ->
             "Exception occured while trying to delete from databse"
-        InsertCommentAttachmentException cid aid -> concat
+        InsertCommentAttachmentFailed cid aid -> concat
             [ "Exception occured while inserting comment and attachment on commentId: "
             , P.show (getCommentId cid)
             , ", attachmentId: "
             , P.show (getAttachmentId aid)
             ]
-        InsertTicketCommentException tid cid -> concat
+        InsertTicketCommentsFailed tid cid -> concat
             [ "Exception occured while inserting ticket and comment on commentId: "
             , P.show (getCommentId cid)
             , ", ticketId: "
             , P.show (getTicketId tid)
             ]
-        InsertTicketInfoException tid ->
+        InsertTicketInfoFailed tid ->
             "Exception occured while inserting TicketInfo with ticketId" <> P.show (getTicketId tid)
 
 instance Show DBLayerException where
