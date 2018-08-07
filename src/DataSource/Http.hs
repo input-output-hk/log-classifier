@@ -321,7 +321,7 @@ getTicketComments tId = do
 
 -- | Iterate all the ticket pages and combine into a result.
 iteratePages
-    :: forall m a. (MonadIO m, MonadReader Config m, FromPageResultList a)
+    :: forall m a. (MonadIO m, MonadReader Config m, MonadThrow m, FromPageResultList a)
     => Request
     -> m [a]
 iteratePages req = iteratePagesWithDelay 0 req
@@ -339,7 +339,7 @@ wrapIteratePages = either (throwM . throwFun) iteratePages
 -- | Iterate all the ticket pages and combine into a result. Wait for
 -- some time in-between the requests.
 iteratePagesWithDelay
-    :: forall m a. (MonadIO m, MonadReader Config m, FromPageResultList a)
+    :: forall m a. (MonadIO m, MonadReader Config m, MonadThrow m, FromPageResultList a)
     => Int
     -> Request
     -> m [a]
@@ -365,7 +365,11 @@ iteratePagesWithDelay seconds req = do
                                 Just nextUrl -> go (list' <> pagen) nextUrl
                                 Nothing      -> pure (list' <> pagen)
 
-    (PageResultList page0 nextPage _) <- liftIO $ apiCall parseJSON req
-    case nextPage of
-        Just nextUrl -> liftIO $ go page0 nextUrl
-        Nothing      -> pure page0
+    -- <- liftIO $ apiCall parseJSON req
+    req' <- liftIO $ apiCall parseJSON req
+    case req' of
+        Left e  -> throwM $ InvalidUrlException "" "" -- TODO(md): See how to convert a String 'e' to an appropriate exception
+        Right (PageResultList page0 nextPage _) -> do
+            case nextPage of
+                Just nextUrl -> liftIO $ go page0 nextUrl
+                Nothing      -> pure page0
