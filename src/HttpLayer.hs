@@ -9,39 +9,25 @@ module HttpLayer
 
 import           Universum
 
-import           Control.Exception.Safe
-                 (
-                   catches
-                 , Handler (..)
-                 , throwM
-                 )
+import           Control.Exception.Safe (throwM)
 import           Data.Aeson (FromJSON, ToJSON, Value)
 import           Data.Aeson.Types (Parser, parseEither)
-import           Data.Either.Combinators (mapLeft)
-import           Network.HTTP.Client.Conduit
-                 (
-                   HttpException (..)
-                 , parseUrlThrow
-                 )
-import           Network.HTTP.Simple (Request, addRequestHeader, getResponseBody, httpJSON,
-                                      parseRequest_, setRequestBasicAuth, setRequestBodyJSON,
-                                      setRequestMethod, setRequestPath,
-                                      JSONException(..))
+import           Data.Text (pack)
+import           Network.HTTP.Client.Conduit (parseUrlThrow)
+import           Network.HTTP.Simple (JSONException (..), Request, addRequestHeader,
+                                      getResponseBody, httpJSON, parseRequest_, setRequestBasicAuth,
+                                      setRequestBodyJSON, setRequestMethod, setRequestPath)
 
 import           DataSource.Types (Config (..), HTTPNetworkLayer (..))
 
+
 ------------------------------------------------------------
--- JSON parsing exceptions
+-- Internal Exceptions
 ------------------------------------------------------------
--- | Exceptions that occur during JSON parsing
--- data JSONException
---     = JSONParsingException Text
---     | JSONEncodingException Text
---
--- instance Exception JSONException
--- instance Prelude.Show JSONException where
---   show (JSONParsingException s)  = "JSON parsing exception: " <> (unpack s)
---   show (JSONEncodingException s) = "JSON encoding exception: " <> (unpack s)
+newtype APICallException
+    = MkAPICallException Text deriving Show
+
+instance Exception APICallException
 
 ------------------------------------------------------------
 -- Layer
@@ -66,32 +52,29 @@ emptyHTTPNetworkLayer = HTTPNetworkLayer
 ------------------------------------------------------------
 
 -- | General api request function
+-- This function can throw a 'JSONException' and an 'HttpException'.
 apiRequest
-    :: Config
+    :: MonadThrow m
+    => Config
     -> Text
-    -> Either String Request
-apiRequest Config{..} u = mapLeft show $ catches buildRequest handlerList --catchException
+    -> m Request
+apiRequest Config{..} u = do
+    req <- parseUrlThrow (toString (cfgZendesk <> path)) -- TODO(md): Get a list of exceptions that parseUrlThrow can throw
+    return $ setRequestPath (encodeUtf8 path) $
+             addRequestHeader "Content-Type" "application/json" $
+             setRequestBasicAuth
+                 (encodeUtf8 cfgEmail <> "/token")
+                 (encodeUtf8 cfgToken) $ req
   where
-    buildRequest :: forall m. MonadThrow m => m Request
-    buildRequest = do
-        req <- parseUrlThrow (toString (cfgZendesk <> path)) -- TODO(md): Get a list of exceptions that parseUrlThrow can throw
-        return $ setRequestPath (encodeUtf8 path) $
-                 addRequestHeader "Content-Type" "application/json" $
-                 setRequestBasicAuth
-                     (encodeUtf8 cfgEmail <> "/token")
-                     (encodeUtf8 cfgToken) $ req
-    handlerList :: MonadThrow m => [Handler m Request]
-    handlerList = [
-                    handlerJSON
-                  , handlerHTTP
-                  ]
-    handlerJSON :: MonadThrow m => Handler m Request
-    handlerJSON = Handler $ \(ex :: JSONException) -> throwM ex
-    handlerHTTP :: MonadThrow m => Handler m Request
-    handlerHTTP = Handler $ \(ex :: HttpException) -> throwM ex
-    -- here we're catching only synchronous exceptions
-    -- catchException :: (Exception e, MonadThrow m) => e -> m Request
-    -- catchException p@(JSONParseException _ _ _) = throwM p
+    -- handlerList :: [Handler m Request]
+    -- handlerList = [
+    --                 handlerJSON
+    --               , handlerHTTP
+    --               ]
+    -- handlerJSON :: Handler m Request
+    -- handlerJSON = Handler $ \(ex :: JSONException) -> throwM ex
+    -- handlerHTTP :: Handler m Request
+    -- handlerHTTP = Handler $ \(ex :: HttpException) -> throwM ex
     path :: Text
     path = "/api/v2" <> u
 
@@ -106,24 +89,29 @@ apiRequestAbsolute Config{..} u =
     parseRequest_(toString u)
 
 -- | Request PUT
-addJsonBody :: forall a. ToJSON a => a -> Request -> Either String Request
-addJsonBody body req = mapLeft show $ catch updateReq Left
-  where
-    updateReq :: Exception e => Either e Request
-    updateReq = Right <$> setRequestBodyJSON body $ setRequestMethod "PUT" req
+addJsonBody
+    :: forall m a. (ToJSON a, MonadThrow m)
+    => a
+    -> Request
+    -> m Request
+addJsonBody body req =
+    return <$> setRequestBodyJSON body $ setRequestMethod "PUT" req
 
 
 -- | Make an api call
--- TODO(ks): Switch to @Either@.
 apiCall
-    :: forall m a. (MonadIO m, FromJSON a)
+    :: forall m a. (MonadIO m, MonadThrow m, FromJSON a)
     => (Value -> Parser a)
     -> Request
-    -> m (Either String a)
+    -> m a
 apiCall parser req = do
     putTextLn $ show req
     v <- getResponseBody <$> httpJSON req
-    pure $ parseEither parser v
+    either (throwEx v) return (parseEither parser v)
+  where
+    throwEx :: Value -> String -> m a
+    throwEx v msg = throwM $ MkAPICallException . pack $
+        "Exception occured when parsing " ++ (show v) ++ ": " ++ msg
     -- case parseEither parser v of
     --     Right o -> pure o
     --     Left e -> Left $ MkJSONParsingException $
@@ -131,11 +119,8 @@ apiCall parser req = do
 
 -- | Make a safe api call.
 apiCallSafe
-    :: forall m a. (MonadIO m, FromJSON a)
+    :: forall m a. (MonadIO m, MonadThrow m, FromJSON a)
     => (Value -> Parser a)
     -> Request
-    -> m (Either String a)
-apiCallSafe parser req = do
-    putTextLn $ show req
-    v <- getResponseBody <$> httpJSON req
-    pure $ parseEither parser v
+    -> m a
+apiCallSafe = apiCall

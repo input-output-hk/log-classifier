@@ -11,7 +11,7 @@ module DataSource.Http
 import           Universum
 
 import           Control.Concurrent (threadDelay)
-import           Control.Exception.Safe (throwM)
+import           Control.Exception.Safe (catches, throwM, Handler (..))
 import           Control.Monad.Reader (ask)
 
 import           Data.Aeson (parseJSON)
@@ -78,35 +78,43 @@ emptyDataLayer = DataLayer
 
 -- | Get single ticket info.
 getTicketInfo
-    :: forall m. (HasCallStack, MonadIO m, MonadReader Config m, MonadCatch m)
+    :: forall m. (MonadIO m, MonadReader Config m, MonadCatch m)
     => TicketId
     -> m (Maybe TicketInfo)
 getTicketInfo ticketId =
-    catch getInfo $ \(e :: JSONException) -> throwM e
+    catches getInfo handlerList
   where
     getInfo :: m (Maybe TicketInfo)
     getInfo = do
         cfg <- ask
 
         let url = showURL $ TicketsURL ticketId
-        let req = apiRequest cfg url
-        case req of
-            Left e -> return Nothing -- TODO(md): see how to propagate 'e'
-            Right r -> do
-                apiCall <- asksHTTPNetworkLayer hnlApiCall
-                rightToMaybe <$> apiCall parseTicket r
+        req <- apiRequest cfg url
+
+        apiCall <- asksHTTPNetworkLayer hnlApiCall
+        Just <$> apiCall parseTicket req
+
+    handlerList :: [Handler m (Maybe TicketInfo)]
+    handlerList = [handlerJSON, handlerHTTP]
+    handlerJSON :: Handler m (Maybe TicketInfo)
+    handlerJSON = Handler $ \(ex :: JSONException) -> return Nothing
+    handlerHTTP :: Handler m (Maybe TicketInfo)
+    handlerHTTP = Handler $ \(ex :: HttpException) -> return Nothing
 
 -- | Return list of deleted tickets.
 listDeletedTickets
     :: forall m. (MonadIO m, MonadReader Config m, MonadThrow m)
     => m [DeletedTicket]
-listDeletedTickets = do
-    cfg <- ask
+listDeletedTickets = go
+  where
+    go :: m [DeletedTicket]
+    go = do
+        cfg <- ask
 
-    let url = showURL $ DeletedTicketsURL
-    let req = apiRequest cfg url
+        let url = showURL $ DeletedTicketsURL
+        req <- apiRequest cfg url
 
-    wrapIteratePages req
+        wrapIteratePages req
 
 -- | Return list of ticketIds that has been requested by config user.
 listRequestedTickets
