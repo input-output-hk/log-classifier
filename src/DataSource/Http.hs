@@ -331,11 +331,13 @@ getTicketComments tId = do
 iteratePages
     :: forall m a. (MonadIO m, MonadReader Config m, MonadThrow m, FromPageResultList a)
     => Request
-    -> m [Maybe a]
-iteratePages req = catches (iteratePagesWithDelay 0 req) handlerList
+    -> m (Maybe [Request])
+iteratePages req = catches tryIteratePages handlerList
   where
-    handlerList :: Handler m (Maybe a)
-    handlerList = Handler $ \(ex :: InvalidUrlException) -> return Nothing
+    tryIteratePages = iteratePagesWithDelay 0 req
+    handlerList :: Handler m (Maybe Request)
+    handlerList = handlerInvalidUrl
+    handlerInvalidUrl = Handler $ \(ex :: InvalidUrlException ) -> return Nothing
 
 -- | Iterate all the ticket pages and combine into a result. Wait for
 -- some time in-between the requests.
