@@ -9,12 +9,7 @@ module HttpLayer
 
 import           Universum
 
-import           Control.Exception.Safe
-                 (
-                   catches
-                 , Handler (..)
-                 , throwM
-                 )
+import           Control.Exception.Safe (catches, Handler (..))
 import           Data.Aeson (FromJSON, ToJSON, Value)
 import           Data.Aeson.Types (Parser, parseEither)
 import           Data.Either.Combinators (mapLeft)
@@ -29,19 +24,6 @@ import           Network.HTTP.Simple (Request, addRequestHeader, getResponseBody
                                       JSONException(..))
 
 import           DataSource.Types (Config (..), HTTPNetworkLayer (..))
-
-------------------------------------------------------------
--- JSON parsing exceptions
-------------------------------------------------------------
--- | Exceptions that occur during JSON parsing
--- data JSONException
---     = JSONParsingException Text
---     | JSONEncodingException Text
---
--- instance Exception JSONException
--- instance Prelude.Show JSONException where
---   show (JSONParsingException s)  = "JSON parsing exception: " <> (unpack s)
---   show (JSONEncodingException s) = "JSON encoding exception: " <> (unpack s)
 
 ------------------------------------------------------------
 -- Layer
@@ -70,9 +52,9 @@ apiRequest
     :: Config
     -> Text
     -> Either String Request
-apiRequest Config{..} u = mapLeft show $ catches buildRequest handlerList --catchException
+apiRequest Config{..} u = mapLeft show $ catches buildRequest handlerList
   where
-    buildRequest :: forall m. MonadThrow m => m Request
+    buildRequest :: forall m. MonadCatch m => m Request
     buildRequest = do
         req <- parseUrlThrow (toString (cfgZendesk <> path)) -- TODO(md): Get a list of exceptions that parseUrlThrow can throw
         return $ setRequestPath (encodeUtf8 path) $
@@ -80,18 +62,15 @@ apiRequest Config{..} u = mapLeft show $ catches buildRequest handlerList --catc
                  setRequestBasicAuth
                      (encodeUtf8 cfgEmail <> "/token")
                      (encodeUtf8 cfgToken) $ req
-    handlerList :: MonadThrow m => [Handler m Request]
+    handlerList :: MonadCatch m => [Handler m Request]
     handlerList = [
                     handlerJSON
                   , handlerHTTP
                   ]
-    handlerJSON :: MonadThrow m => Handler m Request
-    handlerJSON = Handler $ \(ex :: JSONException) -> throwM ex
-    handlerHTTP :: MonadThrow m => Handler m Request
-    handlerHTTP = Handler $ \(ex :: HttpException) -> throwM ex
-    -- here we're catching only synchronous exceptions
-    -- catchException :: (Exception e, MonadThrow m) => e -> m Request
-    -- catchException p@(JSONParseException _ _ _) = throwM p
+    handlerJSON :: MonadCatch m => Handler m Request
+    handlerJSON = Handler $ \(ex :: JSONException) -> error $ show ex
+    handlerHTTP :: MonadCatch m => Handler m Request
+    handlerHTTP = Handler $ \(ex :: HttpException) -> error $ show ex
     path :: Text
     path = "/api/v2" <> u
 

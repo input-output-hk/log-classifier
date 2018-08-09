@@ -17,7 +17,6 @@ import           Control.Monad.Reader (ask)
 import           Data.Aeson (parseJSON)
 import           Data.Aeson.Text (encodeToLazyText)
 import           Data.List (nub)
-import           Data.Text (pack)
 import           Network.HTTP.Client.Conduit (HttpException (..))
 import           Network.HTTP.Simple (Request, getResponseBody, httpLBS, parseRequest_)
 
