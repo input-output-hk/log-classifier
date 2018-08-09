@@ -41,6 +41,7 @@ library
                      , bytestring
                      , containers
                      , directory
+                     , either
                      , http-conduit
                      -- Effects & company
                      , mtl
@@ -56,6 +57,7 @@ library
                      , universum
                      , zip-archive
                      , QuickCheck
+                     , safe-exceptions
                      -- Database backend
                      , sqlite-simple 
                      , resource-pool
