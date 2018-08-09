@@ -11,7 +11,7 @@ module DataSource.Http
 import           Universum
 
 import           Control.Concurrent (threadDelay)
-import           Control.Exception.Safe (catches, throwM, Handler (..))
+import           Control.Exception.Safe (Handler (..), catches, throwM)
 import           Control.Monad.Reader (ask)
 
 import           Data.Aeson (parseJSON)
@@ -21,8 +21,8 @@ import           Data.Text (pack)
 import           Network.HTTP.Client.Conduit (HttpException (..))
 import           Network.HTTP.Simple (Request, getResponseBody, httpLBS, parseRequest_)
 
-import           HttpLayer (HTTPNetworkLayer (..), apiRequest, apiRequestAbsolute,
-                            JSONException (..))
+import           HttpLayer (HTTPNetworkLayer (..), JSONException (..), apiRequest,
+                            apiRequestAbsolute)
 
 import           DataSource.Types (Attachment (..), AttachmentContent (..), Comment (..),
                                    CommentBody (..), CommentId (..), Config (..), DataLayer (..),
@@ -331,18 +331,11 @@ getTicketComments tId = do
 iteratePages
     :: forall m a. (MonadIO m, MonadReader Config m, MonadThrow m, FromPageResultList a)
     => Request
-    -> m [a]
-iteratePages req = iteratePagesWithDelay 0 req
-
--- | Wraps a call to iteratePages with error handling for a failed request
-wrapIteratePages
-    :: (MonadIO m, MonadReader Config m, MonadThrow m, FromPageResultList a)
-    => Either String Request
-    -> m [a]
-wrapIteratePages = either (throwM . throwFun) iteratePages
+    -> m [Maybe a]
+iteratePages req = catches (iteratePagesWithDelay 0 req) handlerList
   where
-    throwFun :: String -> HttpException -- TODO(md): Fix this HttpException type to an appropriate one
-    throwFun _ = InvalidUrlException "" "" -- TODO(md): See how to convert a String 'e' to an appropriate exception
+    handlerList :: Handler m (Maybe a)
+    handlerList = Handler $ \(ex :: InvalidUrlException) -> return Nothing
 
 -- | Iterate all the ticket pages and combine into a result. Wait for
 -- some time in-between the requests.
