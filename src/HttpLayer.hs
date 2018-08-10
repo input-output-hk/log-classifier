@@ -12,7 +12,6 @@ import           Universum
 import           Control.Exception.Safe (catches, Handler (..))
 import           Data.Aeson (FromJSON, ToJSON, Value)
 import           Data.Aeson.Types (Parser, parseEither)
-import           Data.Either.Combinators (mapLeft)
 import           Network.HTTP.Client.Conduit
                  (
                    HttpException (..)
@@ -61,7 +60,7 @@ apiRequest Config{..} u = mapLeft show $ catches buildRequest handlerList
                  addRequestHeader "Content-Type" "application/json" $
                  setRequestBasicAuth
                      (encodeUtf8 cfgEmail <> "/token")
-                     (encodeUtf8 cfgToken) $ req
+                     (encodeUtf8 cfgToken) req
     handlerList :: MonadCatch m => [Handler m Request]
     handlerList = [
                     handlerJSON
@@ -103,10 +102,6 @@ apiCall parser req = do
     putTextLn $ show req
     v <- getResponseBody <$> httpJSON req
     pure $ parseEither parser v
-    -- case parseEither parser v of
-    --     Right o -> pure o
-    --     Left e -> Left $ MkJSONParsingException $
-    --         "couldn't parse response " <> toText e <> "\n" <> decodeUtf8 (encode v)
 
 -- | Make a safe api call.
 apiCallSafe
@@ -118,3 +113,9 @@ apiCallSafe parser req = do
     putTextLn $ show req
     v <- getResponseBody <$> httpJSON req
     pure $ parseEither parser v
+
+-- | The mapLeft function takes a function and applies it to an Either value
+-- iff the value takes the form Left _.
+mapLeft :: (a -> c) -> Either a b -> Either c b
+mapLeft f (Left x)  = Left $ f x
+mapLeft _ (Right x) = Right x
