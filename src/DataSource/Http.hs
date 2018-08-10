@@ -75,7 +75,7 @@ emptyDataLayer = DataLayer
 
 -- | Get single ticket info.
 getTicketInfo
-    :: forall m. (HasCallStack, MonadIO m, MonadReader Config m)
+    :: (HasCallStack, MonadIO m, MonadReader Config m)
     => TicketId
     -> m (Maybe TicketInfo)
 getTicketInfo ticketId = do
@@ -164,7 +164,6 @@ getExportedTickets time = do
     let url = showURL $ ExportDataByTimestamp time
     let req = apiRequestAbsolute cfg url
 
-    -- iterateExportedTicketsWithDelay req (apiCall parseJSON)
     wrappedIterate req (apiCall parseJSON)
   where
 
@@ -224,7 +223,6 @@ postTicketComment ticketInfo zendeskResponse = do
 
     let responseTicket = createResponseTicket (cfgAgentId cfg) ticketInfo zendeskResponse
     let url  = showURL $ TicketsURL (zrTicketId zendeskResponse)
-    -- either (throwM . JSONEncodingException . pack)
     let req = apiRequest cfg url
     case req of
         Left e  -> error $ pack e
