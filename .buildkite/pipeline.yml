@@ -1,5 +1,5 @@
 steps:
   - label: 'log-classifier-x86_64-linux-nix'
-    command: 'nix-build && nix-shell --run "weeder . --build"' 
+    command: 'nix-build; nix-shell --command "echo Hello"' 
     agents:
       system: x86_64-linux
