@@ -71,7 +71,7 @@ import           Network.HTTP.Simple (Request)
 
 import           LogAnalysis.Types (Knowledge)
 
-import           Test.QuickCheck (Arbitrary (..), sublistOf, elements, listOf1)
+import           Test.QuickCheck (Arbitrary (..), elements, listOf1, sublistOf)
 
 ------------------------------------------------------------
 -- Configuration

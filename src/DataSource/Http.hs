@@ -303,7 +303,7 @@ getTicketComments tId = do
             -- TODO(ks): For now return empty if there is an exception.
             -- After we have exception handling, we propagate this up.
             case result of
-                Left _  -> pure []
+                Left _   -> pure []
                 Right r' -> pure r'
 
 ------------------------------------------------------------

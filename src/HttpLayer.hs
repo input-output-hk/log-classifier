@@ -9,18 +9,13 @@ module HttpLayer
 
 import           Universum
 
-import           Control.Exception.Safe (catches, Handler (..))
+import           Control.Exception.Safe (Handler (..), catches)
 import           Data.Aeson (FromJSON, ToJSON, Value, encode)
 import           Data.Aeson.Types (Parser, parseEither)
-import           Network.HTTP.Client.Conduit
-                 (
-                   HttpException (..)
-                 , parseUrlThrow
-                 )
-import           Network.HTTP.Simple (Request, addRequestHeader, getResponseBody, httpJSON,
-                                      parseRequest_, setRequestBasicAuth, setRequestBodyJSON,
-                                      setRequestMethod, setRequestPath,
-                                      JSONException(..))
+import           Network.HTTP.Client.Conduit (HttpException (..), parseUrlThrow)
+import           Network.HTTP.Simple (JSONException (..), Request, addRequestHeader,
+                                      getResponseBody, httpJSON, parseRequest_, setRequestBasicAuth,
+                                      setRequestBodyJSON, setRequestMethod, setRequestPath)
 
 import           DataSource.Types (Config (..), HTTPNetworkLayer (..))
 
