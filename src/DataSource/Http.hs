@@ -11,17 +11,15 @@ module DataSource.Http
 import           Universum
 
 import           Control.Concurrent (threadDelay)
-import           Control.Exception.Safe (throwM)
 import           Control.Monad.Reader (ask)
 
 import           Data.Aeson (parseJSON)
 import           Data.Aeson.Text (encodeToLazyText)
 import           Data.List (nub)
-import           Network.HTTP.Client.Conduit (HttpException (..))
+import           Data.Text (pack)
 import           Network.HTTP.Simple (Request, getResponseBody, httpLBS, parseRequest_)
 
-import           HttpLayer (HTTPNetworkLayer (..), apiRequest, apiRequestAbsolute,
-                            JSONException (..))
+import           HttpLayer (HTTPNetworkLayer (..), apiRequest, apiRequestAbsolute)
 
 import           DataSource.Types (Attachment (..), AttachmentContent (..), Comment (..),
                                    CommentBody (..), CommentId (..), Config (..), DataLayer (..),
@@ -42,7 +40,7 @@ import           DataSource.Types (Attachment (..), AttachmentContent (..), Comm
 --   - get returns a single result (wrapped in @Maybe@)
 --   - list returns multiple results
 --   - post submits a result (maybe PUT?!)
-basicDataLayer :: (MonadIO m, MonadReader Config m, MonadCatch m) => DataLayer m
+basicDataLayer :: (MonadIO m, MonadReader Config m) => DataLayer m
 basicDataLayer = DataLayer
     { zlGetTicketInfo           = getTicketInfo
     , zlListDeletedTickets      = listDeletedTickets
@@ -77,27 +75,23 @@ emptyDataLayer = DataLayer
 
 -- | Get single ticket info.
 getTicketInfo
-    :: forall m. (HasCallStack, MonadIO m, MonadReader Config m, MonadCatch m)
+    :: forall m. (HasCallStack, MonadIO m, MonadReader Config m)
     => TicketId
     -> m (Maybe TicketInfo)
-getTicketInfo ticketId =
-    catch getInfo $ \(e :: JSONException) -> throwM e
-  where
-    getInfo :: m (Maybe TicketInfo)
-    getInfo = do
-        cfg <- ask
+getTicketInfo ticketId = do
+    cfg <- ask
 
-        let url = showURL $ TicketsURL ticketId
-        let req = apiRequest cfg url
-        case req of
-            Left e -> return Nothing -- TODO(md): see how to propagate 'e'
-            Right r -> do
-                apiCall <- asksHTTPNetworkLayer hnlApiCall
-                rightToMaybe <$> apiCall parseTicket r
+    let url = showURL $ TicketsURL ticketId
+    let req = apiRequest cfg url
+    case req of
+        Left e -> error $ pack e
+        Right r -> do
+            apiCall <- asksHTTPNetworkLayer hnlApiCall
+            rightToMaybe <$> apiCall parseTicket r
 
 -- | Return list of deleted tickets.
 listDeletedTickets
-    :: forall m. (MonadIO m, MonadReader Config m, MonadThrow m)
+    :: forall m. (MonadIO m, MonadReader Config m)
     => m [DeletedTicket]
 listDeletedTickets = do
     cfg <- ask
@@ -109,7 +103,7 @@ listDeletedTickets = do
 
 -- | Return list of ticketIds that has been requested by config user.
 listRequestedTickets
-    :: forall m. (MonadIO m, MonadReader Config m, MonadThrow m)
+    :: forall m. (MonadIO m, MonadReader Config m)
     => UserId
     -> m [TicketInfo]
 listRequestedTickets userId = do
@@ -122,7 +116,7 @@ listRequestedTickets userId = do
 
 -- | Return list of ticketIds that has been assigned by config user.
 listAssignedTickets
-    :: forall m. (MonadIO m, MonadReader Config m, MonadThrow m)
+    :: forall m. (MonadIO m, MonadReader Config m)
     => UserId
     -> m [TicketInfo]
 listAssignedTickets userId = do
@@ -135,7 +129,7 @@ listAssignedTickets userId = do
 
 -- | Return list of ticketIds that has been unassigned.
 listUnassignedTickets
-    :: forall m. (MonadIO m, MonadReader Config m, MonadThrow m)
+    :: forall m. (MonadIO m, MonadReader Config m)
     => m [TicketInfo]
 listUnassignedTickets = do
     cfg <- ask
@@ -146,7 +140,7 @@ listUnassignedTickets = do
     wrapIteratePages req
 
 listAdminAgents
-    :: forall m. (MonadIO m, MonadReader Config m, MonadThrow m)
+    :: forall m. (MonadIO m, MonadReader Config m)
     => m [User]
 listAdminAgents = do
     cfg <- ask
@@ -159,7 +153,7 @@ listAdminAgents = do
 -- NOTE: If count is less than 1000, then stop paginating.
 -- Otherwise, use the next_page URL to get the next page of results.
 getExportedTickets
-    :: forall m. (MonadIO m, MonadReader Config m, MonadThrow m)
+    :: forall m. (MonadIO m, MonadReader Config m)
     => ExportFromTime
     -> m [TicketInfo]
 getExportedTickets time = do
@@ -178,7 +172,7 @@ getExportedTickets time = do
         :: Either String Request
         -> (Request -> m (Either String (PageResultList TicketInfo)))
         -> m [TicketInfo]
-    wrappedIterate (Left e) _  = throwM $ InvalidUrlException "" "" -- TODO(md): See how to convert a String 'e' to an appropriate exception
+    wrappedIterate (Left e) _  = error $ pack e
     wrappedIterate (Right r) f = iterateExportedTicketsWithDelay r f
 
     iterateExportedTicketsWithDelay
@@ -194,7 +188,7 @@ getExportedTickets time = do
 
                 let req'      = apiRequestAbsolute cfg nextPage'
                 case req' of
-                    Left e      -> throwM $ InvalidUrlException "" "" -- TODO(md): See how to convert a String 'e' to an appropriate exception
+                    Left e      -> error $ pack e
                     Right req'' -> do
                         req''' <- apiCall req''
                         case req''' of
@@ -205,7 +199,7 @@ getExportedTickets time = do
                                                         else pure (list' <> pagen)
 
                                     Nothing      -> pure (list' <> pagen)
-                            Left e -> throwM $ InvalidUrlException "" "" -- TODO(md): See how to convert a String 'e' to an appropriate exception
+                            Left e -> error $ pack e
 
 
         req' <- apiCall req
@@ -214,11 +208,11 @@ getExportedTickets time = do
                 case nextPage of
                     Just nextUrl -> go page0 nextUrl
                     Nothing      -> pure page0
-            Left e -> throwM $ InvalidUrlException "" "" -- TODO(md): See how to convert a String 'e' to an appropriate exception
+            Left e -> error $ pack e
 
 -- | Send API request to post comment
 postTicketComment
-    :: (MonadIO m, MonadReader Config m, MonadThrow m)
+    :: (MonadIO m, MonadReader Config m)
     => TicketInfo
     -> ZendeskResponse
     -> m ()
@@ -233,11 +227,11 @@ postTicketComment ticketInfo zendeskResponse = do
     -- either (throwM . JSONEncodingException . pack)
     let req = apiRequest cfg url
     case req of
-        Left e  -> throwM $ InvalidUrlException "" "" -- TODO(md): See how to convert a String 'e' to an appropriate exception
+        Left e  -> error $ pack e
         Right r -> do
             let r' = addJsonBody responseTicket r
             case r' of
-                Left e    -> throwM $ InvalidUrlException "" "" -- TODO(md): See how to convert a String 'e' to an appropriate exception
+                Left e    -> error $ pack e
                 Right r'' -> void $ apiCall (pure . encodeToLazyText) r''
 
 
@@ -264,7 +258,7 @@ createResponseTicket agentId TicketInfo{..} ZendeskResponse{..} =
 
 -- | Get user information.
 _getUser
-    :: (MonadIO m, MonadReader Config m, MonadThrow m)
+    :: (MonadIO m, MonadReader Config m)
     => m User
 _getUser = do
     cfg <- ask
@@ -274,11 +268,11 @@ _getUser = do
     let url = showURL UserInfoURL
     let req = apiRequest cfg url
     case req of
-      Left e  -> throwM $ InvalidUrlException "" "" -- TODO(md): See how to convert a String 'e' to an appropriate exception
+      Left e  -> error $ pack e
       Right r -> do
           r' <- apiCall parseJSON r
           case r' of
-              Left e  -> throwM $ InvalidUrlException "" "" -- TODO(md): See how to convert a String 'e' to an appropriate exception
+              Left e  -> error $ pack e
               Right u -> pure u
 
 -- | Given attachmentUrl, return attachment in bytestring
@@ -293,7 +287,7 @@ getAttachment Attachment{..} = Just . AttachmentContent . getResponseBody <$> ht
 
 -- | Get ticket's comments
 getTicketComments
-    :: (MonadIO m, MonadReader Config m, MonadThrow m)
+    :: (MonadIO m, MonadReader Config m)
     => TicketId
     -> m [Comment]
 getTicketComments tId = do
@@ -304,7 +298,7 @@ getTicketComments tId = do
     let url = showURL $ TicketCommentsURL tId
     let req = apiRequest cfg url
     case req of
-        Left e  -> throwM $ InvalidUrlException "" "" -- TODO(md): See how to convert a String 'e' to an appropriate exception
+        Left e  -> error $ pack e
         Right r -> do
             result <- apiCallSafe parseComments r
 
@@ -312,7 +306,7 @@ getTicketComments tId = do
             -- After we have exception handling, we propagate this up.
             case result of
                 Left _  -> pure []
-                Right r -> pure r
+                Right r' -> pure r'
 
 ------------------------------------------------------------
 -- Utility
@@ -320,25 +314,22 @@ getTicketComments tId = do
 
 -- | Iterate all the ticket pages and combine into a result.
 iteratePages
-    :: forall m a. (MonadIO m, MonadReader Config m, MonadThrow m, FromPageResultList a)
+    :: forall m a. (MonadIO m, MonadReader Config m, FromPageResultList a)
     => Request
     -> m [a]
 iteratePages req = iteratePagesWithDelay 0 req
 
 -- | Wraps a call to iteratePages with error handling for a failed request
 wrapIteratePages
-    :: (MonadIO m, MonadReader Config m, MonadThrow m, FromPageResultList a)
+    :: (MonadIO m, MonadReader Config m, FromPageResultList a)
     => Either String Request
     -> m [a]
-wrapIteratePages = either (throwM . throwFun) iteratePages
-  where
-    throwFun :: String -> HttpException -- TODO(md): Fix this HttpException type to an appropriate one
-    throwFun _ = InvalidUrlException "" "" -- TODO(md): See how to convert a String 'e' to an appropriate exception
+wrapIteratePages = either (error . pack) iteratePages
 
 -- | Iterate all the ticket pages and combine into a result. Wait for
 -- some time in-between the requests.
 iteratePagesWithDelay
-    :: forall m a. (MonadIO m, MonadReader Config m, MonadThrow m, FromPageResultList a)
+    :: forall m a. (MonadIO m, MonadReader Config m, FromPageResultList a)
     => Int
     -> Request
     -> m [a]
@@ -354,12 +345,12 @@ iteratePagesWithDelay seconds req = do
 
             let req'      = apiRequestAbsolute cfg nextPage'
             case req' of
-                Left e  -> throwM $ InvalidUrlException "" "" -- TODO(md): See how to convert a String 'e' to an appropriate exception
+                Left e  -> error $ pack e
                 Right req'' -> do
                     req''' <- apiCall parseJSON req''
                     case req''' of
-                        Left e  -> throwM $ InvalidUrlException "" "" -- TODO(md): See how to convert a String 'e' to an appropriate exception
-                        Right (PageResultList pagen nextPagen _) -> do
+                        Left e  -> error $ pack e
+                        Right (PageResultList pagen nextPagen _) ->
                             case nextPagen of
                                 Just nextUrl -> go (list' <> pagen) nextUrl
                                 Nothing      -> pure (list' <> pagen)
@@ -367,8 +358,8 @@ iteratePagesWithDelay seconds req = do
     -- <- liftIO $ apiCall parseJSON req
     req' <- liftIO $ apiCall parseJSON req
     case req' of
-        Left e  -> throwM $ InvalidUrlException "" "" -- TODO(md): See how to convert a String 'e' to an appropriate exception
-        Right (PageResultList page0 nextPage _) -> do
+        Left e  -> error $ pack e
+        Right (PageResultList page0 nextPage _) ->
             case nextPage of
                 Just nextUrl -> liftIO $ go page0 nextUrl
                 Nothing      -> pure page0

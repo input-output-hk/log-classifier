@@ -113,7 +113,7 @@ emptyDBLayer = DBLayer
 
 -- | The simple connection Zendesk layer. Used for database querying.
 -- We need to sync occasionaly.
-connDataLayer :: forall m. (MonadIO m, MonadReader Config m, MonadCatch m) => DataLayer m
+connDataLayer :: forall m. (MonadIO m, MonadReader Config m) => DataLayer m
 connDataLayer = DataLayer
     { zlGetTicketInfo           = \tId -> withProdDatabase $ \conn -> getTicketInfoByTicketId conn tId
     , zlListDeletedTickets      = zlListDeletedTickets basicDataLayer
@@ -147,7 +147,7 @@ connDBLayer = DBLayer
 
 -- | The connection pooled Zendesk layer. Used for database querying.
 -- We need to sync occasionaly.
-connPoolDataLayer :: forall m. (MonadBaseControl IO m, MonadIO m, MonadReader Config m, MonadCatch m) => DBConnPool -> DataLayer m
+connPoolDataLayer :: forall m. (MonadBaseControl IO m, MonadIO m, MonadReader Config m) => DBConnPool -> DataLayer m
 connPoolDataLayer connPool = DataLayer
     { zlGetTicketInfo           = \tId -> withConnPool connPool $ \conn -> getTicketInfoByTicketId conn tId
     , zlListDeletedTickets      = zlListDeletedTickets basicDataLayer
