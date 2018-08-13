@@ -16,7 +16,7 @@ import           Control.Monad.Reader (ask)
 import           Data.Aeson (parseJSON)
 import           Data.Aeson.Text (encodeToLazyText)
 import           Data.List (nub)
-import           Data.Text (pack)
+import           Universum.String.Conversion (toText)
 import           Network.HTTP.Simple (Request, getResponseBody, httpLBS, parseRequest_)
 
 import           HttpLayer (HTTPNetworkLayer (..), apiRequest, apiRequestAbsolute)
@@ -84,7 +84,7 @@ getTicketInfo ticketId = do
     let url = showURL $ TicketsURL ticketId
     let req = apiRequest cfg url
     case req of
-        Left e -> error $ pack e
+        Left e -> error $ toText e
         Right r -> do
             apiCall <- asksHTTPNetworkLayer hnlApiCall
             rightToMaybe <$> apiCall parseTicket r
@@ -171,7 +171,7 @@ getExportedTickets time = do
         :: Either String Request
         -> (Request -> m (Either String (PageResultList TicketInfo)))
         -> m [TicketInfo]
-    wrappedIterate (Left e) _  = error $ pack e
+    wrappedIterate (Left e) _  = error $ toText e
     wrappedIterate (Right r) f = iterateExportedTicketsWithDelay r f
 
     iterateExportedTicketsWithDelay
@@ -187,7 +187,7 @@ getExportedTickets time = do
 
                 let req'      = apiRequestAbsolute cfg nextPage'
                 case req' of
-                    Left e      -> error $ pack e
+                    Left e      -> error $ toText e
                     Right req'' -> do
                         req''' <- apiCall req''
                         case req''' of
@@ -198,7 +198,7 @@ getExportedTickets time = do
                                                         else pure (list' <> pagen)
 
                                     Nothing      -> pure (list' <> pagen)
-                            Left e -> error $ pack e
+                            Left e -> error $ toText e
 
 
         req' <- apiCall req
@@ -207,7 +207,7 @@ getExportedTickets time = do
                 case nextPage of
                     Just nextUrl -> go page0 nextUrl
                     Nothing      -> pure page0
-            Left e -> error $ pack e
+            Left e -> error $ toText e
 
 -- | Send API request to post comment
 postTicketComment
@@ -225,11 +225,11 @@ postTicketComment ticketInfo zendeskResponse = do
     let url  = showURL $ TicketsURL (zrTicketId zendeskResponse)
     let req = apiRequest cfg url
     case req of
-        Left e  -> error $ pack e
+        Left e  -> error $ toText e
         Right r -> do
             let r' = addJsonBody responseTicket r
             case r' of
-                Left e    -> error $ pack e
+                Left e    -> error $ toText e
                 Right r'' -> void $ apiCall (pure . encodeToLazyText) r''
 
 
@@ -266,11 +266,11 @@ _getUser = do
     let url = showURL UserInfoURL
     let req = apiRequest cfg url
     case req of
-      Left e  -> error $ pack e
+      Left e  -> error $ toText e
       Right r -> do
           r' <- apiCall parseJSON r
           case r' of
-              Left e  -> error $ pack e
+              Left e  -> error $ toText e
               Right u -> pure u
 
 -- | Given attachmentUrl, return attachment in bytestring
@@ -296,7 +296,7 @@ getTicketComments tId = do
     let url = showURL $ TicketCommentsURL tId
     let req = apiRequest cfg url
     case req of
-        Left e  -> error $ pack e
+        Left e  -> error $ toText e
         Right r -> do
             result <- apiCallSafe parseComments r
 
@@ -322,7 +322,7 @@ wrapIteratePages
     :: (MonadIO m, MonadReader Config m, FromPageResultList a)
     => Either String Request
     -> m [a]
-wrapIteratePages = either (error . pack) iteratePages
+wrapIteratePages = either (error . toText) iteratePages
 
 -- | Iterate all the ticket pages and combine into a result. Wait for
 -- some time in-between the requests.
@@ -343,11 +343,11 @@ iteratePagesWithDelay seconds req = do
 
             let req'      = apiRequestAbsolute cfg nextPage'
             case req' of
-                Left e  -> error $ pack e
+                Left e  -> error $ toText e
                 Right req'' -> do
                     req''' <- apiCall parseJSON req''
                     case req''' of
-                        Left e  -> error $ pack e
+                        Left e  -> error $ toText e
                         Right (PageResultList pagen nextPagen _) ->
                             case nextPagen of
                                 Just nextUrl -> go (list' <> pagen) nextUrl
@@ -356,7 +356,7 @@ iteratePagesWithDelay seconds req = do
     -- <- liftIO $ apiCall parseJSON req
     req' <- liftIO $ apiCall parseJSON req
     case req' of
-        Left e  -> error $ pack e
+        Left e  -> error $ toText e
         Right (PageResultList page0 nextPage _) ->
             case nextPage of
                 Just nextUrl -> liftIO $ go page0 nextUrl
