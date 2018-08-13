@@ -1,5 +1,13 @@
 steps:
-  - label: 'log-classifier-x86_64-linux-nix'
-    command: 'nix-build; nix-shell --command "weeder . --build"' 
-    agents:
-      system: x86_64-linux
+  - command: stack build; weeder . --build
+    plugins:
+      docker-compose#v2.5.1:
+        run: app
+        config: docker-compose.yml
+
+
+#steps:
+#  - label: 'log-classifier-x86_64-linux-nix'
+#    command: 'nix-build; nix-shell --command "weeder . --build"' 
+#    agents:
+#      system: x86_64-linux

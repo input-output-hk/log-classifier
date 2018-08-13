@@ -48,7 +48,15 @@ packages:
 # Extra package databases containing global packages
 # extra-package-dbs: [ ]
 
+docker:
+  enable: true
+image:
+  container:
+    base: "fpco/stack-build"
+    name: "fpco/stack-run"
+
 nix:
+  enable: false
   shell-file: shell.nix
 
 # Control whether we use the GHC we find on the path
