@@ -1,5 +1,5 @@
 { mkDerivation, aeson, array, attoparsec, base, bytestring
-, containers, directory, generics-sop, hspec, http-conduit
+, containers, directory, eitherT, generics-sop, hspec, http-conduit
 , monad-control, mtl, optparse-applicative, QuickCheck, reflection
 , regex-tdfa, resource-pool, safe-exceptions, sqlite-simple, stdenv
 , text, time, transformers-base, universum, unliftio, zip-archive
@@ -11,7 +11,7 @@ mkDerivation {
   isLibrary = true;
   isExecutable = true;
   libraryHaskellDepends = [
-    aeson array attoparsec base bytestring containers directory
+    aeson array attoparsec base bytestring containers directory eitherT
     generics-sop http-conduit monad-control mtl optparse-applicative
     QuickCheck reflection regex-tdfa resource-pool safe-exceptions
     sqlite-simple text time transformers-base universum unliftio

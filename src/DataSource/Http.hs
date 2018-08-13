@@ -12,6 +12,7 @@ import           Universum
 
 import           Control.Concurrent (threadDelay)
 import           Control.Monad.Reader (ask)
+import           Control.Monad.Trans.Either
 
 import           Data.Aeson (parseJSON)
 import           Data.Aeson.Text (encodeToLazyText)
@@ -185,20 +186,21 @@ getExportedTickets time = do
             go list' nextPage' = do
                 liftIO $ threadDelay $ 10 * 1000000 -- Wait, Zendesk allows for 10 per minute.
 
-                let req'      = apiRequestAbsolute cfg nextPage'
-                case req' of
-                    Left e      -> error $ toText e
-                    Right req'' -> do
-                        req''' <- apiCall req''
-                        case req''' of
-                            Right (PageResultList pagen nextPagen count) ->
-                                case nextPagen of
-                                    Just nextUrl -> if maybe False (>= 1000) count
-                                                        then go (list' <> pagen) nextUrl
-                                                        else pure (list' <> pagen)
+                -- let req'      = apiRequestAbsolute cfg nextPage'
+                res <- runEitherT $ do
+                    req' <- apiRequestAbsolute cfg nextPage'
+                    req''' <- apiCall req'
+                    (PageResultList pagen nextPagen count) <- req'''
+                    case nextPagen of
+                        Just nextUrl -> if maybe False (>= 1000) count
+                                            then go (list' <> pagen) nextUrl
+                                            else pure (list' <> pagen)
 
-                                    Nothing      -> pure (list' <> pagen)
-                            Left e -> error $ toText e
+                        Nothing      -> pure (list' <> pagen)
+                case res of
+                    Left e -> error $ toText e
+                    Right v -> return v
+                            -- Left e -> error $ toText e
 
 
         req' <- apiCall req

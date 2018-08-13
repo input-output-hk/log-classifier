@@ -46,6 +46,7 @@ library
                      , mtl
                      , monad-control
                      , transformers-base
+                     , transformers-either
                      , unliftio
                      --
                      , optparse-applicative
