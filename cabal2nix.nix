@@ -6,7 +6,7 @@
 }:
 mkDerivation {
   pname = "log-classifier";
-  version = "1.4.0.0";
+  version = "1.4.1.0";
   src = ./.;
   isLibrary = true;
   isExecutable = true;
