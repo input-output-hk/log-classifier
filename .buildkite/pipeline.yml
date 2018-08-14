@@ -1,8 +1,8 @@
 steps:
-  - command: stack build; weeder . --build
+  - command: stack docker pull; stack build; weeder . --build
     plugins:
       docker-compose#v2.5.1:
-        run: app
+        run: log-classifier
         config: docker-compose.yml
 
 
