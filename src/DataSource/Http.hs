@@ -331,17 +331,15 @@ iteratePagesWithDelay seconds req = do
             -- Wait for @Int@ seconds.
             threadDelay $ seconds * 1000000
 
-            let req'      = apiRequestAbsolute cfg nextPage'
-            case req' of
+            res <- runEitherT $ do
+                req' <- hoistEither $ apiRequestAbsolute cfg nextPage'
+                (PageResultList pagen nextPagen _) <- newEitherT $ apiCall parseJSON req'
+                right $ case nextPagen of
+                    Just nextUrl -> go (list' <> pagen) nextUrl
+                    Nothing      -> pure (list' <> pagen)
+            case res of
                 Left e  -> error $ toText e
-                Right req'' -> do
-                    req''' <- apiCall parseJSON req''
-                    case req''' of
-                        Left e  -> error $ toText e
-                        Right (PageResultList pagen nextPagen _) ->
-                            case nextPagen of
-                                Just nextUrl -> go (list' <> pagen) nextUrl
-                                Nothing      -> pure (list' <> pagen)
+                Right r -> r
 
     -- <- liftIO $ apiCall parseJSON req
     req' <- liftIO $ apiCall parseJSON req
