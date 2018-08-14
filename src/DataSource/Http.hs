@@ -292,17 +292,14 @@ getTicketComments tId = do
     apiCallSafe     <- asksHTTPNetworkLayer hnlApiCallSafe
 
     let url = showURL $ TicketCommentsURL tId
-    let req = apiRequest cfg url
-    case req of
-        Left e  -> error $ toText e
-        Right r -> do
-            result <- apiCallSafe parseComments r
-
-            -- TODO(ks): For now return empty if there is an exception.
-            -- After we have exception handling, we propagate this up.
-            case result of
-                Left _   -> pure []
-                Right r' -> pure r'
+    res <- runEitherT $ do
+        req <- hoistEither $ apiRequest cfg url
+        newEitherT $ apiCallSafe parseComments req
+    case res of
+        -- TODO(ks): For now return empty if there is an exception.
+        -- After we have exception handling, we propagate this up.
+        Left _  -> pure []
+        Right r -> pure r
 
 ------------------------------------------------------------
 -- Utility
