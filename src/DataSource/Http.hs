@@ -186,21 +186,20 @@ getExportedTickets time = do
             go list' nextPage' = do
                 liftIO $ threadDelay $ 10 * 1000000 -- Wait, Zendesk allows for 10 per minute.
 
-                -- let req'      = apiRequestAbsolute cfg nextPage'
-                res <- runEitherT $ do
-                    req' <- apiRequestAbsolute cfg nextPage'
-                    req''' <- apiCall req'
-                    (PageResultList pagen nextPagen count) <- req'''
-                    case nextPagen of
-                        Just nextUrl -> if maybe False (>= 1000) count
-                                            then go (list' <> pagen) nextUrl
-                                            else pure (list' <> pagen)
+                let req'      = apiRequestAbsolute cfg nextPage'
+                case req' of
+                    Left e      -> error $ toText e
+                    Right req'' -> do
+                        req''' <- apiCall req''
+                        case req''' of
+                            Right (PageResultList pagen nextPagen count) ->
+                                case nextPagen of
+                                    Just nextUrl -> if maybe False (>= 1000) count
+                                                        then go (list' <> pagen) nextUrl
+                                                        else pure (list' <> pagen)
 
-                        Nothing      -> pure (list' <> pagen)
-                case res of
-                    Left e -> error $ toText e
-                    Right v -> return v
-                            -- Left e -> error $ toText e
+                                    Nothing      -> pure (list' <> pagen)
+                            Left e -> error $ toText e
 
 
         req' <- apiCall req
@@ -225,15 +224,12 @@ postTicketComment ticketInfo zendeskResponse = do
 
     let responseTicket = createResponseTicket (cfgAgentId cfg) ticketInfo zendeskResponse
     let url  = showURL $ TicketsURL (zrTicketId zendeskResponse)
-    let req = apiRequest cfg url
-    case req of
+    res <- runEitherT . hoistEither $ do
+        req <- apiRequest cfg url
+        addJsonBody responseTicket req
+    case res of
         Left e  -> error $ toText e
-        Right r -> do
-            let r' = addJsonBody responseTicket r
-            case r' of
-                Left e    -> error $ toText e
-                Right r'' -> void $ apiCall (pure . encodeToLazyText) r''
-
+        Right r -> void $ apiCall (pure . encodeToLazyText) r
 
 -- | Create response ticket
 createResponseTicket :: Integer -> TicketInfo -> ZendeskResponse -> Ticket
