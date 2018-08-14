@@ -17,8 +17,8 @@ import           Control.Monad.Trans.Either
 import           Data.Aeson (parseJSON)
 import           Data.Aeson.Text (encodeToLazyText)
 import           Data.List (nub)
-import           Universum.String.Conversion (toText)
 import           Network.HTTP.Simple (Request, getResponseBody, httpLBS, parseRequest_)
+import           Universum.String.Conversion (toText)
 
 import           HttpLayer (HTTPNetworkLayer (..), apiRequest, apiRequestAbsolute)
 
@@ -341,7 +341,6 @@ iteratePagesWithDelay seconds req = do
                 Left e  -> error $ toText e
                 Right r -> r
 
-    -- <- liftIO $ apiCall parseJSON req
     req' <- liftIO $ apiCall parseJSON req
     case req' of
         Left e  -> error $ toText e
