@@ -186,25 +186,22 @@ getExportedTickets time = do
             go list' nextPage' = do
                 liftIO $ threadDelay $ 10 * 1000000 -- Wait, Zendesk allows for 10 per minute.
 
-                let req'      = apiRequestAbsolute cfg nextPage'
-                case req' of
-                    Left e      -> error $ toText e
-                    Right req'' -> do
-                        req''' <- apiCall req''
-                        case req''' of
-                            Right (PageResultList pagen nextPagen count) ->
-                                case nextPagen of
-                                    Just nextUrl -> if maybe False (>= 1000) count
-                                                        then go (list' <> pagen) nextUrl
-                                                        else pure (list' <> pagen)
+                res <- runEitherT $ do
+                    req'  <- hoistEither $ apiRequestAbsolute cfg nextPage'
+                    (PageResultList pagen nextPagen count) <- newEitherT $ apiCall req'
+                    right $ case nextPagen of
+                        Just nextUrl -> if maybe False (>= 1000) count
+                                            then go (list' <> pagen) nextUrl
+                                            else pure (list' <> pagen)
 
-                                    Nothing      -> pure (list' <> pagen)
-                            Left e -> error $ toText e
-
+                        Nothing      -> pure (list' <> pagen)
+                case res of
+                    Left e  -> error $ toText e
+                    Right r -> r
 
         req' <- apiCall req
         case req' of
-            Right (PageResultList page0 nextPage _) -> do
+            Right (PageResultList page0 nextPage _) ->
                 case nextPage of
                     Just nextUrl -> go page0 nextUrl
                     Nothing      -> pure page0
@@ -262,14 +259,12 @@ _getUser = do
     apiCall     <- asksHTTPNetworkLayer hnlApiCall
 
     let url = showURL UserInfoURL
-    let req = apiRequest cfg url
-    case req of
-      Left e  -> error $ toText e
-      Right r -> do
-          r' <- apiCall parseJSON r
-          case r' of
-              Left e  -> error $ toText e
-              Right u -> pure u
+    res <- runEitherT $ do
+        req <- hoistEither $ apiRequest cfg url
+        newEitherT $ apiCall parseJSON req
+    case res of
+        Left e  -> error $ toText e
+        Right u -> pure u
 
 -- | Given attachmentUrl, return attachment in bytestring
 getAttachment
