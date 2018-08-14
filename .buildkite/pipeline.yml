@@ -1,5 +1,5 @@
 steps:
-  - command: stack docker pull; stack build; weeder . --build
+  - command: BUILDKITE_PLUGINS_PATH=/buildkite/plugins; stack docker pull; stack build; weeder . --build
     plugins:
       docker-compose#v2.5.1:
         run: log-classifier
