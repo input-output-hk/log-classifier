@@ -221,9 +221,7 @@ postTicketComment ticketInfo zendeskResponse = do
 
     let responseTicket = createResponseTicket (cfgAgentId cfg) ticketInfo zendeskResponse
     let url  = showURL $ TicketsURL (zrTicketId zendeskResponse)
-    res <- runEitherT . hoistEither $ do
-        req <- apiRequest cfg url
-        addJsonBody responseTicket req
+    res <- runEitherT . hoistEither $ apiRequest cfg url >>= addJsonBody responseTicket
     case res of
         Left e  -> error $ toText e
         Right r -> void $ apiCall (pure . encodeToLazyText) r
@@ -259,9 +257,7 @@ _getUser = do
     apiCall     <- asksHTTPNetworkLayer hnlApiCall
 
     let url = showURL UserInfoURL
-    res <- runEitherT $ do
-        req <- hoistEither $ apiRequest cfg url
-        newEitherT $ apiCall parseJSON req
+    res <- runExceptT $ (ExceptT . pure $ apiRequest cfg url) >>= ExceptT . apiCall parseJSON
     case res of
         Left e  -> error $ toText e
         Right u -> pure u
@@ -287,9 +283,8 @@ getTicketComments tId = do
     apiCallSafe     <- asksHTTPNetworkLayer hnlApiCallSafe
 
     let url = showURL $ TicketCommentsURL tId
-    res <- runEitherT $ do
-        req <- hoistEither $ apiRequest cfg url
-        newEitherT $ apiCallSafe parseComments req
+    res <- runEitherT $
+        (ExceptT . return $ apiRequest cfg url) >>= ExceptT . apiCallSafe parseComments
     case res of
         -- TODO(ks): For now return empty if there is an exception.
         -- After we have exception handling, we propagate this up.
