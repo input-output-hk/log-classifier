@@ -3,7 +3,7 @@ module Main where
 import           Universum
 
 import           Data.List (nub)
-import           Database.SQLite.Simple (withConnection)
+import           Database.SQLite.Simple (withConnection, Connection(..))
 
 import           Test.Hspec (Spec, describe, hspec, it, pending, shouldBe)
 import           Test.Hspec.QuickCheck (modifyMaxSuccess, prop)
@@ -19,7 +19,7 @@ import           DataSource (App, Attachment (..), Comment (..), Config (..), DB
                              ZendeskResponse (..), createResponseTicket, deleteAllData,
                              emptyDBLayer, emptyDataLayer, insertCommentAttachments,
                              insertTicketComments, insertTicketInfo, renderTicketStatus, runApp,
-                             showURL)
+                             showURL, createSchema)
 import           Exceptions (ProcessTicketExceptions (..))
 
 import           Lib (exportZendeskDataToLocalDB, filterAnalyzedTickets, getAttachmentsFromComment,
@@ -648,7 +648,12 @@ getAttachmentsFromCommentSpec =
 
 deleteAllDataSpec :: Spec
 deleteAllDataSpec =
-    describe "deleteAllData" $ modifyMaxSuccess (const 200) $
+    describe "deleteAllData" $ modifyMaxSuccess (const 200) $ do
+       prop "should be able to delete all datas from database" $
+           monadicIO $ do
+               eResult <- run . try $ withDBSchema ":memory:" deleteAllData
+               assert $ isRight (eResult :: Either DBLayerException ())
+
        prop "should try to delete datas from database without tables, throws exception" $
            monadicIO $ do
                eResult <- run . try $ withConnection ":memory:" deleteAllData
@@ -657,7 +662,14 @@ deleteAllDataSpec =
 
 insertCommentAttachmentsSpec :: Spec
 insertCommentAttachmentsSpec =
-    describe "insertCommentAttachmentsSpec" $ modifyMaxSuccess (const 200) $
+    describe "insertCommentAttachmentsSpec" $ modifyMaxSuccess (const 200) $ do
+        prop "should be able to insert comment and its attachment to the database" $
+            \(comment :: Comment) (attachment :: Attachment) ->
+                monadicIO $ do
+                    eResult <- run . try $
+                        withDBSchema ":memory:" (\conn -> insertCommentAttachments conn comment attachment)
+
+                    assert $ isRight (eResult :: Either DBLayerException ())
         prop "should try to insert comment and its attachment to the database without tables, throws exception" $
             \(comment :: Comment) (attachment :: Attachment) ->
                 monadicIO $ do
@@ -669,7 +681,15 @@ insertCommentAttachmentsSpec =
 
 insertTicketInfoSpec :: Spec
 insertTicketInfoSpec =
-    describe "insertTicketInfo" $ modifyMaxSuccess (const 200) $
+    describe "insertTicketInfo" $ modifyMaxSuccess (const 200) $ do
+      prop "should be able to insert ticket info to the dabatase" $
+          \(ticketInfo :: TicketInfo) ->
+              monadicIO $ do
+                eResult <- run . try $
+                    withDBSchema ":memory:" (\conn -> insertTicketInfo conn ticketInfo)
+
+                assert $ isRight (eResult :: Either DBLayerException ())
+                
       prop "should try to insert ticketInfo to the database without tables, throws exception" $
           \(ticketInfo :: TicketInfo) ->
               monadicIO $ do
@@ -680,7 +700,14 @@ insertTicketInfoSpec =
 
 insertTicketCommentsSpec :: Spec
 insertTicketCommentsSpec =
-    describe "insertTicketComments" $ modifyMaxSuccess (const 200) $
+    describe "insertTicketComments" $ modifyMaxSuccess (const 200) $ do
+      prop "should be able to insert ticket and its comments to the dabatase" $
+          \(ticketId :: TicketId) (comment :: Comment) ->
+              monadicIO $ do
+                eResult <- run . try $
+                    withDBSchema ":memory:" (\conn -> insertTicketComments conn ticketId comment)
+
+                assert $ isRight (eResult :: Either DBLayerException ())
       prop "should try to insert ticketId and comment to the database without tables, throws exception" $
           \(ticketId :: TicketId) (comment :: Comment) ->
               monadicIO $ do
@@ -688,3 +715,14 @@ insertTicketCommentsSpec =
                     withConnection ":memory:" (\conn -> insertTicketComments conn ticketId comment)
 
                 assert $ isLeft (eResult :: Either DBLayerException ())
+<<<<<<< 7b0de83b2d05605d160139a6458c3a22cca6f591
+=======
+
+-- | Perform an action to the database with schema
+withDBSchema :: String -> (Connection -> IO a) -> IO a
+withDBSchema dbpath action =
+    withConnection dbpath (\conn -> do
+        createSchema conn
+        action conn
+        )
+>>>>>>> Implement positive tests
