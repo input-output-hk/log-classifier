@@ -4,7 +4,7 @@ import           Universum
 
 import           Data.List (nub)
 import           Database.SQLite.Simple (Connection (..), NamedParam (..), queryNamed,
-                                         withConnection)
+                                         withConnection, query_)
 
 import           Test.Hspec (Spec, describe, hspec, it, pending, shouldBe)
 import           Test.Hspec.QuickCheck (modifyMaxSuccess, prop)
@@ -648,13 +648,30 @@ getAttachmentsFromCommentSpec =
 -- Tests for database operations
 ------------------------------------------------------------
 
+-- Currently, this is how datas are stored in the DB, this can be changed in the future.
+type DBTicketInfo = (TicketId, UserId, Maybe UserId, TicketURL, TicketTags, TicketStatus)
+type DBTicketComment = (CommentId, TicketId, CommentBody, Bool, Integer)
+type DBCommentAttachment = (AttachmentId, CommentId, Text, Text, Int)
+type DBAttachmentContent = (Integer, ByteString)
+
 deleteAllDataSpec :: Spec
 deleteAllDataSpec =
     describe "deleteAllData" $ modifyMaxSuccess (const 200) $ do
        prop "should delete all datas from database" $
            monadicIO $ do
-               eResult <- run . try $ withDBSchema ":memory:" deleteAllData
-               assert $ isRight (eResult :: Either DBLayerException ())
+               (tickets, ticketComments, commentAttachments, attachmentContents) <- run $ withDBSchema ":memory:" (\conn -> do
+                   deleteAllData conn
+                   tickets            <- query_ conn "SELECT * from ticket_info"
+                   ticketComments     <- query_ conn "SELECT * from ticket_comment"
+                   commentAttachments <- query_ conn "SELECT * from comment_attachment"
+                   attachmentContents <- query_ conn "SELECT * from attachment_content"
+                   return (tickets, ticketComments, commentAttachments, attachmentContents)
+                   )
+
+               assert . null $ (tickets :: [DBTicketInfo])
+               assert . null $ (ticketComments :: [DBTicketComment])
+               assert . null $ (commentAttachments :: [DBCommentAttachment])
+               assert . null $ (attachmentContents :: [DBAttachmentContent])
 
        prop "should try to delete datas from database without tables, throws exception" $
            monadicIO $ do
@@ -674,7 +691,7 @@ insertCommentAttachmentsSpec =
                             attachments <- queryNamed conn
                                 "SELECT * FROM comment_attachment WHERE aId = :id"
                                 [":id" := aId attachment]
-                            return (attachments :: [(AttachmentId, CommentId, Text, Text, Int)])
+                            return (attachments :: [DBCommentAttachment])
                             )
 
                     assert . isJust . safeHead $ attachments
@@ -707,7 +724,7 @@ insertTicketInfoSpec =
                         insertTicketInfo conn ticketInfo
                         ticketInfos <- queryNamed conn "SELECT * FROM ticket_info WHERE tiId = :id"
                             [":id" := (getTicketId . tiId) ticketInfo]
-                        return (ticketInfos :: [(TicketId, UserId, Maybe UserId, TicketURL, TicketTags, TicketStatus)])
+                        return (ticketInfos :: [DBTicketInfo])
                         )
 
                 assert . isJust . safeHead $ ticketInfos
@@ -740,7 +757,7 @@ insertTicketCommentsSpec =
                         comments <- queryNamed conn
                             "SELECT * FROM ticket_comment WHERE ticket_id = :id"
                             [":id" := getTicketId ticketId]
-                        return (comments :: [(CommentId, TicketId, CommentBody, Bool, Integer)])
+                        return (comments :: [DBTicketComment])
                     )
 
                assert . isJust . safeHead $ comments
