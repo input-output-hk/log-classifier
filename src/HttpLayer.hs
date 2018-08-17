@@ -46,7 +46,7 @@ apiRequest
     :: Config
     -> Text
     -> Either String Request
-apiRequest Config{..} u = mapLeft show $ catches buildRequest handlerList
+apiRequest Config{..} u = showErr $ catches buildRequest handlerList
   where
     buildRequest :: forall m. MonadCatch m => m Request
     buildRequest = do
@@ -67,6 +67,10 @@ apiRequest Config{..} u = mapLeft show $ catches buildRequest handlerList
     handlerHTTP = Handler $ \(ex :: HttpException) -> error $ show ex
     path :: Text
     path = "/api/v2" <> u
+    showErr :: Either SomeException Request -> Either String Request
+    showErr (Left x)  = Left (show x)
+    showErr (Right x) = Right x
+
 
 -- | Api request but use absolute path
 apiRequestAbsolute
@@ -80,10 +84,13 @@ apiRequestAbsolute Config{..} u =
 
 -- | Request PUT
 addJsonBody :: forall a. ToJSON a => a -> Request -> Either String Request
-addJsonBody body req = mapLeft show $ catch updateReq Left
+addJsonBody body req = showErr $ catch updateReq Left
   where
     updateReq :: Exception e => Either e Request
     updateReq = Right <$> setRequestBodyJSON body $ setRequestMethod "PUT" req
+    showErr :: Either SomeException Request -> Either String Request
+    showErr (Left x)  = Left (show x)
+    showErr (Right x) = Right x
 
 
 -- | Make an api call
@@ -111,9 +118,3 @@ apiCallSafe parser req = do
     putTextLn $ show req
     v <- getResponseBody <$> httpJSON req
     pure $ parseEither parser v
-
--- | The mapLeft function takes a function and applies it to an Either value
--- iff the value takes the form Left _.
-mapLeft :: (a -> c) -> Either a b -> Either c b
-mapLeft f (Left x)  = Left $ f x
-mapLeft _ (Right x) = Right x
