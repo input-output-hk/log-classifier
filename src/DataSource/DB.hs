@@ -515,7 +515,7 @@ data DBException
    | InsertTicketInfoFailed TicketId
    -- ^ Exception upon inserting 'TicketInfo' to the database
 
--- | This is used to throw both 'DBLayerException and 'SomeException'
+-- | This is used to throw both 'DBLayerException' and 'SomeException'
 -- 'Error' from sqlite-simple has no instance of 'Exception'
 -- therefore the only way to catching it is by 'SomeException'
 -- Both of these exception are need in case the program crashes and we need to
