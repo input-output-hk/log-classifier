@@ -659,17 +659,18 @@ deleteAllDataSpec =
     describe "deleteAllData" $ modifyMaxSuccess (const 200) $ do
        prop "should delete all datas from database" $
            monadicIO $ do
-               (tickets, ticketComments, commentAttachments, attachmentContents) <- run $ withDBSchema ":memory:" (\conn -> do
-                   deleteAllData conn
-                   tickets            <- query_ conn "SELECT * from ticket_info"
-                   ticketComments     <- query_ conn "SELECT * from ticket_comment"
-                   commentAttachments <- query_ conn "SELECT * from comment_attachment"
-                   attachmentContents <- query_ conn "SELECT * from attachment_content"
-                   return (tickets, ticketComments, commentAttachments, attachmentContents)
-                   )
+               (tickets, ticketComments, commentAttachments, attachmentContents) <- 
+                   run $ withDBSchema ":memory:" (\conn -> do
+                       deleteAllData conn
+                       tickets            <- query_ conn "SELECT * from ticket_info"
+                       ticketComments     <- query_ conn "SELECT * from ticket_comment"
+                       commentAttachments <- query_ conn "SELECT * from comment_attachment"
+                       attachmentContents <- query_ conn "SELECT * from attachment_content"
+                       return (tickets, ticketComments, commentAttachments, attachmentContents)
+                       )
 
-               assert . null $ (tickets :: [DBTicketInfo])
-               assert . null $ (ticketComments :: [DBTicketComment])
+               assert . null $ (tickets            :: [DBTicketInfo])
+               assert . null $ (ticketComments     :: [DBTicketComment])
                assert . null $ (commentAttachments :: [DBCommentAttachment])
                assert . null $ (attachmentContents :: [DBAttachmentContent])
 
