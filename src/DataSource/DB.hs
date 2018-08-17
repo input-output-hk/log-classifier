@@ -266,6 +266,9 @@ instance FromRow Attachment where
 instance FromRow AttachmentContent where
     fromRow = AttachmentContent <$> field
 
+instance FromRow TicketId where
+    fromRow = TicketId <$> field
+
 instance ToField TicketId where
     toField (TicketId tId)                  = SQLInteger . fromIntegral $ tId
 
