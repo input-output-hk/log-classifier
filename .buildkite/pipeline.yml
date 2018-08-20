@@ -1,5 +1,5 @@
 steps:
   - label: 'log-classifier-x86_64-linux-nix'
-    command: 'bash buildkite.sh' 
+    command: 'nix-shell --command "stack build"' 
     agents:
       system: x86_64-linux
