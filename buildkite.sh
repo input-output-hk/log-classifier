@@ -2,4 +2,4 @@
 
 # curl -sSL https://get.haskellstack.org/ | sh
 
-stack test
+nix-shell --command "stack test"
