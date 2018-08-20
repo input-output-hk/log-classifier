@@ -1,13 +1,5 @@
 steps:
-  - command: BUILDKITE_PLUGINS_PATH=/buildkite/plugins; stack docker pull; stack build; weeder . --build
-    plugins:
-      docker-compose#v2.5.1:
-        run: log-classifier
-        config: docker-compose.yml
-
-
-#steps:
-#  - label: 'log-classifier-x86_64-linux-nix'
-#    command: 'nix-build; nix-shell --command "weeder . --build"' 
-#    agents:
-#      system: x86_64-linux
+  - label: 'log-classifier-x86_64-linux-nix'
+    command: 'nix-build; nix-shell --command "weeder . --build"' 
+    agents:
+      system: x86_64-linux
