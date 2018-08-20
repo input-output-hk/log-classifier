@@ -10,7 +10,7 @@ module HttpLayer
 import           Universum
 
 import           Control.Exception.Safe (Handler (..), catches)
-import           Data.Aeson (FromJSON, ToJSON, Value, encode)
+import           Data.Aeson (FromJSON, ToJSON, Value)
 import           Data.Aeson.Types (Parser, parseEither)
 import           Network.HTTP.Client.Conduit (HttpException (..), parseUrlThrow)
 import           Network.HTTP.Simple (JSONException (..), Request, addRequestHeader,
@@ -109,10 +109,7 @@ apiCall
 apiCall parser req = do
     putTextLn $ show req
     v <- getResponseBody <$> httpJSON req
-    case parseEither parser v of
-        Right o -> pure $ Right o
-        Left e -> error $ "couldn't parse response "
-            <> toText e <> "\n" <> decodeUtf8 (encode v)
+    pure $ parseEither parser v
 
 -- | Make a safe api call.
 apiCallSafe
@@ -120,7 +117,4 @@ apiCallSafe
     => (Value -> Parser a)
     -> Request
     -> m (Either String a)
-apiCallSafe parser req = do
-    putTextLn $ show req
-    v <- getResponseBody <$> httpJSON req
-    pure $ parseEither parser v
+apiCallSafe = apiCall
