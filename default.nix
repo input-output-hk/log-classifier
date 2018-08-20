@@ -6,6 +6,7 @@ let
           universum =
             haskellPackagesNew.callPackage ./universum.nix { };
           weeder = haskellPackagesNew.callPackage ./weeder.nix { };
+          stack = haskellPackagesNew.callpackage ./stack.nix { };
         };
       };
     };
@@ -15,4 +16,4 @@ let
 
   pkgs = import lib.fetchNixPkgs {inherit config; };
 in
-  pkgs.haskellPackages.callPackage ./cabal2nix.nix {}
+  pkgs.haskellPackages.cabal2nix 
