@@ -14,7 +14,7 @@ import           Data.Aeson (FromJSON, ToJSON, Value, encode)
 import           Data.Aeson.Types (Parser, parseEither)
 import           Network.HTTP.Client.Conduit (HttpException (..), parseUrlThrow)
 import           Network.HTTP.Simple (JSONException (..), Request, addRequestHeader,
-                                      getResponseBody, httpJSON, parseRequest_, setRequestBasicAuth,
+                                      getResponseBody, httpJSON, setRequestBasicAuth,
                                       setRequestBodyJSON, setRequestMethod, setRequestPath)
 
 import           DataSource.Types (Config (..), HTTPNetworkLayer (..))
@@ -41,35 +41,44 @@ emptyHTTPNetworkLayer = HTTPNetworkLayer
 -- Functions
 ------------------------------------------------------------
 
+-- | A generalisation of apiRequest and apiRequestAbsolute
+apiRequestGeneral
+    -- | Request modifier function
+    :: (Request -> Request)
+    -> Config
+    -> Text
+    -> Either String Request
+apiRequestGeneral updReq Config{..} u = showErr $ catches buildRequest handlerList
+  where
+    buildRequest :: forall m. MonadCatch m => m Request
+    buildRequest = do
+        req <- parseUrlThrow (toString u)
+        return $ updReq $
+                 addRequestHeader "Content-Type" "application/json" $
+                 setRequestBasicAuth
+                     (encodeUtf8 cfgEmail <> "/token")
+                     (encodeUtf8 cfgToken) req
+
+    handlerList :: MonadCatch m => [Handler m Request]
+    handlerList = [handlerJSON, handlerHTTP] where
+        handlerJSON = Handler $ \(ex :: JSONException) -> error $ show ex
+        handlerHTTP = Handler $ \(ex :: HttpException) -> error $ show ex
+
+    showErr :: Either SomeException Request -> Either String Request
+    showErr (Left x)  = Left (show x)
+    showErr (Right x) = Right x
+
+
 -- | General api request function
 apiRequest
     :: Config
     -> Text
     -> Either String Request
-apiRequest Config{..} u = showErr $ catches buildRequest handlerList
+apiRequest config u =
+    apiRequestGeneral upReq config (cfgZendesk config <> path)
   where
-    buildRequest :: forall m. MonadCatch m => m Request
-    buildRequest = do
-        req <- parseUrlThrow (toString (cfgZendesk <> path)) -- TODO(md): Get a list of exceptions that parseUrlThrow can throw
-        return $ setRequestPath (encodeUtf8 path) $
-                 addRequestHeader "Content-Type" "application/json" $
-                 setRequestBasicAuth
-                     (encodeUtf8 cfgEmail <> "/token")
-                     (encodeUtf8 cfgToken) req
-    handlerList :: MonadCatch m => [Handler m Request]
-    handlerList = [
-                    handlerJSON
-                  , handlerHTTP
-                  ]
-    handlerJSON :: MonadCatch m => Handler m Request
-    handlerJSON = Handler $ \(ex :: JSONException) -> error $ show ex
-    handlerHTTP :: MonadCatch m => Handler m Request
-    handlerHTTP = Handler $ \(ex :: HttpException) -> error $ show ex
-    path :: Text
-    path = "/api/v2" <> u
-    showErr :: Either SomeException Request -> Either String Request
-    showErr (Left x)  = Left (show x)
-    showErr (Right x) = Right x
+    upReq = setRequestPath $ encodeUtf8 path
+    path = "/api/v2" <> u :: Text
 
 
 -- | Api request but use absolute path
@@ -77,10 +86,7 @@ apiRequestAbsolute
     :: Config
     -> Text
     -> Either String Request
-apiRequestAbsolute Config{..} u =
-    Right <$> addRequestHeader "Content-Type" "application/json" $
-    setRequestBasicAuth (encodeUtf8 cfgEmail <> "/token") (encodeUtf8 cfgToken) $
-    parseRequest_(toString u)
+apiRequestAbsolute = apiRequestGeneral id
 
 -- | Request PUT
 addJsonBody :: forall a. ToJSON a => a -> Request -> Either String Request
