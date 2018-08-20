@@ -1,5 +1,5 @@
 steps:
   - label: 'log-classifier-x86_64-linux-nix'
-    command: 'nix-build; nix-shell --command "weeder . --build"' 
+    command: 'bash buildkite.sh' 
     agents:
       system: x86_64-linux
