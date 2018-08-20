@@ -6,7 +6,6 @@ let
           universum =
             haskellPackagesNew.callPackage ./universum.nix { };
           weeder = haskellPackagesNew.callPackage ./weeder.nix { };
-          stack = haskellPackagesNew.callpackage ./stack.nix { };
         };
       };
     };
