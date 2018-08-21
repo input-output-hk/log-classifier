@@ -3,7 +3,16 @@
 
 ## Unreleased changes
 
-No unreleased changes.
+* [TSD-99] Create version tags and releases - @ksaric https://github.com/input-output-hk/log-classifier/pull/53
+
+## 1.4.2 (17.08.2018)
+
+* [TSD-123] Run the debugger, 8. - @ksaric https://github.com/input-output-hk/log-classifier/pull/52
+
+## 1.4.1 (10.08.2018) 
+
+* [TSD-119] Update version, run debugger - @HirotoShioi https://github.com/input-output-hk/log-classifier/pull/51
+* [TSD-91] Create changelog and changes documentation about the project. - @ksaric https://github.com/input-output-hk/log-classifier/pull/49
 
 ## 1.4 (03.08.2018)
 
