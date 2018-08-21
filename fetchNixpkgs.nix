@@ -38,4 +38,4 @@ else
       gzip      = builtins.storePath builtin-paths.gzip;
       coreutils = builtins.storePath builtin-paths.coreutils;
     };
-  }).nixpkgs
+}).nixpkgs

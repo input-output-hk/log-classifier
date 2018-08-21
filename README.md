@@ -1,8 +1,13 @@
+[![Build status](https://badge.buildkite.com/50d1fa0b6ed53deb7bca3b81419fd2c65e7c22f67d2101e552.svg)](https://buildkite.com/input-output-hk/log-classifier)
+
 # log-classifier
 
 Original version by Hiroto Shioi (https://github.com/HirotoShioi).
 
 The purpose of this project is to analyze Cardano log file and provide a solution to the end user while collecting statistics so Cardano developers can prioritize the issues.
+
+## Installation and Configuration Instructions
+Installation Instructions are available at [INSTALL.md](INSTALL.md)
 
 ## What it is
 
@@ -18,6 +23,48 @@ The purpose of this project is to analyze Cardano log file and provide a solutio
 ![system architecture](https://user-images.githubusercontent.com/15665039/40042756-5d92611e-585d-11e8-80b4-72677c451dd1.png)<br/>
 This is a use case diagram. Use case diagrams overview the usage requirements for a system. They are useful for presentations to management and/or project stakeholders, but for actual development, you will find that use cases provide significantly more value because they describe "the meat" of the actual requirements. For more details, please see [here](http://www.agilemodeling.com/artifacts/useCaseDiagram.htm)
 
+## Architecture
+
+The general architecture can be seen here. It's still missing some things, but it's sufficient for most of the test we currently have.
+
+![log classifier architecture](https://user-images.githubusercontent.com/6264437/43259505-bdaedbf2-90d6-11e8-9b24-fbc6226a3a7e.png)
+
+### Layers
+
+A layer is a list of functions grouped together. For example, a database has functions for interacting with - the database! Yaay. The problem is that in most of the cases we need to be able to stub those functions - if we want to test some of the functions that _depend on the database_, then we have no option but to make them something that we can replace in runtime. And to replace them in runtime, we place them in a "layer", a record-of-functions that allows us to replace them easily. Like:
+```
+data IOLayer m = IOLayer
+    { iolAppendFile :: FilePath -> Text -> m ()
+    , iolPrintText  :: Text -> m ()
+    , iolReadFile   :: FilePath -> m Text
+    , iolLogDebug   :: Text -> m ()
+    , iolLogInfo    :: Text -> m ()
+    }
+```
+
+We can think of a layer like a changeable module system - we export the functions in the data structure, but we can change them in runtime.
+
+### DataSource
+
+The data source is the place we get our data from. Currently, it's fixated on Zendesk. This is an abstraction towards any form of persistant data. We could say that this is a layer, but it actually contains quite a bit more.
+Currently, the Zendesk types themselves are a pretty big part of the `DataSource` module.
+
+### DataLayer
+
+So the data layer is the abstraction layer which can currently be specialized to the @HTTPLayer@ or @DBLayer@. It makes sense to abstract this away, since this is the group of functions that interact with any data in the system.
+
+#### HTTPLayer
+
+Obviously, the direct way we can fetch data is using HTTP JSON requests on the Zendesk API (https://developer.zendesk.com/rest_api/docs/core/introduction). This layer is the layer responsible for that. It contains common functions that allows us to communicate with the Zendesk REST API.
+
+#### HTTPNetworkLayer
+
+This layer is the layer responsible for the low level HTTP communication. The @HTTPLayer@ is the layer that communicates with the Zendesk REST API using this layer.
+
+#### DBLayer
+
+This layer is responsible for caching the results that come from the @HTTPLayer@ and then allows us to fetch data from the database rather then the HTTP REST api which has request limits and takes much longer.
+
 ### Overview
 
 - Many of the Daedalus's issues can be identified by analyzing the log file. The classifier will utilize this by analyzing the log file and map with possible solution and problem which can be provided to the end user.
@@ -28,7 +75,7 @@ This is a use case diagram. Use case diagrams overview the usage requirements fo
 
 ## Requirements
 
-In order to use this, the user must be IOHK Zendesk agent and be able to provide email and password to the classifier.
+In order to use this, the user must possess an IOHK Zendesk agent ID and API key.
 
 ## Features
 
@@ -80,6 +127,13 @@ The classifier can collect email addresses of tickets with this issue.
 
 ## Simple use-case scenario
 
+### IOHK agent wants to find out which tickets were changed after 12.07.2018
+
+In this case:
+```terminal
+./log-classifier-exe fetch-tickets-from --time=12.07.2018
+```
+
 ### IOHK help desk agent finds ticket submitted from the end user with log file attached and wants to perform analysis on it
 
 In this case, one can run the command below.
@@ -121,3 +175,15 @@ In this case, one can run the command below.
 This will collect all the email addresses with the ticket where the assignee and the requester is report server and write them on a file `emailAddress.txt`. Agent then can later use the text file to send batch emails to the end user.
 
 *Note that this issue has been fixed (meaning all the ticket has appropriate requester assigned to it therefore the agent does not need to create a new ticket to contact with the end user.) so this command is deprecated.
+
+
+### Run the application locally
+
+The command should be run as follows:
+
+```terminal
+./log-classifier-exe inspect-local-zip --file-path="/home/ksaric/Downloads/Windows-Logs.zip"
+```
+
+This will return the error if the error is encountered or else the report from the analysis.
+

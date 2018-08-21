@@ -2,7 +2,7 @@ module Main where
 
 import           Universum
 
-import           Zendesk (runZendeskMain)
+import           Lib (runZendeskMain)
 
 main :: IO ()
 main = runZendeskMain

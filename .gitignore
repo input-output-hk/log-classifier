@@ -20,6 +20,7 @@ wallet-db/
 wallet-new-db/
 db-*/
 wdb-*/
+*.db
 
 # Keys
 *.key
@@ -50,6 +51,7 @@ tags*
 .idea
 .ideaHaskellLib
 *.iml
+out/
 
 # Atom
 .haskell-ghc-mod.json
@@ -98,3 +100,4 @@ exchange-topology.yaml
 # launch scripts
 launch_*
 result*
+cabal.config

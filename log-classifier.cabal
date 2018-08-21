@@ -1,5 +1,5 @@
 name:                log-classifier
-version:             1.0.0.0
+version:             1.4.2.0
 synopsis:            Log classifier for a Cardano node
 description:         Please see the README
 homepage:            https://github.com/input-output-hk/log-classifier#readme
@@ -17,15 +17,22 @@ library
   hs-source-dirs:      src
   exposed-modules:     Classify
                        CLI
+                       Exceptions
                        Lib
                        LogAnalysis.Classifier
+                       LogAnalysis.Exceptions
                        LogAnalysis.KnowledgeCSVParser
                        LogAnalysis.Types
                        Regex
-                       Types
+                       Statistics
+                       DataSource
+                       Configuration
                        Util
-                       Zendesk
   other-modules:       Paths_log_classifier
+                       DataSource.DB
+                       DataSource.Types
+                       DataSource.Http
+                       HttpLayer
   ghc-options:         -Wall
   build-depends:       aeson
                      , array
@@ -33,15 +40,26 @@ library
                      , base >=4.7 && <5
                      , bytestring
                      , containers
+                     , directory
                      , http-conduit
+                     -- Effects & company
                      , mtl
+                     , monad-control
+                     , transformers-base
+                     , unliftio
+                     -- 
                      , optparse-applicative
-                     , safe-exceptions
                      , reflection
                      , regex-tdfa
                      , text
+                     , time
                      , universum
                      , zip-archive
+                     , QuickCheck
+                     -- Database backend
+                     , sqlite-simple 
+                     , resource-pool
+                     , generics-sop
 
   default-language:    Haskell2010
   default-extensions: TypeOperators
@@ -62,11 +80,14 @@ library
                       UndecidableInstances
                       MonadFailDesugaring
                       TupleSections
+                      StrictData
+                      ExplicitForAll
 
 executable log-classifier-exe
   hs-source-dirs:      app
   main-is:             Main.hs
-  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+  ghc-options:         -threaded 
+                       -rtsopts -with-rtsopts=-N
                        -Wall
   build-depends:       base >=4.7 && <5
                      , log-classifier
@@ -98,7 +119,6 @@ test-suite log-classifier-test
   type:                exitcode-stdio-1.0
   main-is:             Spec.hs
   ghc-options:         -Wall
-  other-modules:       Paths_log_classifier
   build-depends:       aeson
                      , array
                      , attoparsec
@@ -113,6 +133,8 @@ test-suite log-classifier-test
                      , text
                      , universum
                      , zip-archive
+                     , QuickCheck
+                     , hspec
 
   default-language:    Haskell2010
   default-extensions: TypeOperators
@@ -130,6 +152,6 @@ test-suite log-classifier-test
                       TemplateHaskell
                       RecordWildCards
                       ScopedTypeVariables
-                      UndecidableInstances
                       MonadFailDesugaring
                       TupleSections
+
