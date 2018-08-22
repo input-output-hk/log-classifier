@@ -5,6 +5,8 @@ let
         overrides = haskellPackagesNew: haskellPackagesOld: rec {
           universum =
             haskellPackagesNew.callHackage "universum" "1.1.0" {};
+          stack =
+            haskellPackagesNew.callHackage "weeder" "1.0.6" {};
         };
       };
     };
