@@ -5,7 +5,6 @@ let
         overrides = haskellPackagesNew: haskellPackagesOld: rec {
           universum =
             haskellPackagesNew.callPackage ./universum.nix { };
-          weeder = haskellPackagesNew.callPackage ./weeder.nix { };
         };
       };
     };
