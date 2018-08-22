@@ -4,7 +4,7 @@ let
       haskellPackages = pkgs.haskell.packages.ghc822.override {
         overrides = haskellPackagesNew: haskellPackagesOld: rec {
           universum =
-            haskellPackagesNew.callPackage ./universum.nix { };
+            haskellPackagesNew.callHackage "universum" "1.1.0" {};
         };
       };
     };
@@ -14,4 +14,4 @@ let
 
   pkgs = import lib.fetchNixPkgs {inherit config; };
 in
-  pkgs.haskellPackages.cabal2nix 
+  pkgs.haskellPackages.callCabal2nix "log-classifier" ./. {} 
