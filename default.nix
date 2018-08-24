@@ -16,4 +16,4 @@ let
 
   pkgs = import lib.fetchNixPkgs {inherit config; };
 in
-  pkgs.haskellPackages.callCabal2nix "log-classifier" ./. {} 
+  pkgs.haskellPackages.dontCheck pkgs.haskellPackages.callCabal2nix "log-classifier" ./. {} 
