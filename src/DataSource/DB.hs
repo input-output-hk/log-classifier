@@ -185,8 +185,10 @@ instance FromField TicketFieldId where
     fromField (Field (SQLInteger tfId) _)   = Ok . TicketFieldId . fromIntegral $ tfId
     fromField f                             = returnError ConversionFailed f "need a text, ticket status"
 
+
+-- TODO(ks): Separate table definitive!
 instance FromField TicketFieldValue where
-    fromField (Field (SQLText tfValue) _)   = Ok . TicketFieldValue $ tfValue
+    fromField (Field (SQLText tfValue) _)   = Ok . TicketFieldValueText $ tfValue
     fromField f                             = returnError ConversionFailed f "need a text, ticket status"
 
 -- TODO(ks): Separate table!

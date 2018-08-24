@@ -65,6 +65,7 @@ import           UnliftIO (MonadUnliftIO)
 import           Data.Aeson (FromJSON, ToJSON, Value (Object), object, parseJSON, toJSON,
                              withObject, (.:), (.:?), (.=))
 import           Data.Aeson.Types (Parser)
+import qualified Data.Aeson.Types as AT
 import qualified Data.Text as T
 import           Data.Time.Clock.POSIX (POSIXTime)
 import           Network.HTTP.Simple (Request)
@@ -399,9 +400,20 @@ newtype TicketFieldId = TicketFieldId
     { getTicketFieldId :: Integer
     } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
 
-newtype TicketFieldValue = TicketFieldValue
-    { getTicketFieldValue :: Text
-    } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
+data TicketFieldValue
+    = TicketFieldValueText { getTicketFieldValueText :: Text }
+    | TicketFieldValueBool { getTicketFieldValueBool :: Bool }
+    deriving (Eq, Show, Ord, Generic)
+
+instance FromJSON TicketFieldValue where
+    parseJSON (AT.String value) = pure $ TicketFieldValueText value
+    parseJSON (AT.Bool value)   = pure $ TicketFieldValueBool value
+    parseJSON _                 = fail "Expected string or boolean while parsing."
+
+instance ToJSON TicketFieldValue where
+    toJSON (TicketFieldValueText value) = toJSON value
+    toJSON (TicketFieldValueBool value) = toJSON value
+
 
 data TicketField = TicketField
     { tfId    :: TicketFieldId
@@ -449,6 +461,7 @@ data TicketTag
     | AnalyzedByScriptV1_4    -- ^ Ticket has been analyzed by the version 1.4
     | AnalyzedByScriptV1_4_1  -- ^ Ticket has been analyzed by the version 1.4.1
     | AnalyzedByScriptV1_4_2  -- ^ Ticket has been analyzed by the version 1.4.2
+    | AnalyzedByScriptV1_4_3  -- ^ Ticket has been analyzed by the version 1.4.3
     | ToBeAnalyzed            -- ^ Ticket needs to be analyzed
     | NoKnownIssue            -- ^ Ticket had no known issue
     | NoLogAttached           -- ^ Log file not attached
@@ -523,8 +536,9 @@ instance Arbitrary Comment where
 instance Arbitrary TicketFieldId where
     arbitrary = TicketFieldId <$> arbitrary
 
+-- TODO(ks): Add the other test value!
 instance Arbitrary TicketFieldValue where
-    arbitrary = TicketFieldValue . fromString <$> arbitrary
+    arbitrary = TicketFieldValueText . fromString <$> arbitrary
 
 instance Arbitrary TicketField where
     arbitrary = TicketField
@@ -956,6 +970,7 @@ renderTicketStatus AnalyzedByScriptV1_3   = "analyzed-by-script-v1.3"
 renderTicketStatus AnalyzedByScriptV1_4   = "analyzed-by-script-v1.4"
 renderTicketStatus AnalyzedByScriptV1_4_1 = "analyzed-by-script-v1.4.1"
 renderTicketStatus AnalyzedByScriptV1_4_2 = "analyzed-by-script-v1.4.2"
+renderTicketStatus AnalyzedByScriptV1_4_3 = "analyzed-by-script-v1.4.3"
 renderTicketStatus ToBeAnalyzed           = "to_be_analysed" -- https://iohk.zendesk.com/agent/admin/tags
 renderTicketStatus NoKnownIssue           = "no-known-issues"
 renderTicketStatus NoLogAttached          = "no-log-files"
