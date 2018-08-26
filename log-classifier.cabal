@@ -46,8 +46,9 @@ library
                      , mtl
                      , monad-control
                      , transformers-base
+                     , transformers-either
                      , unliftio
-                     -- 
+                     --
                      , optparse-applicative
                      , reflection
                      , regex-tdfa
@@ -56,8 +57,9 @@ library
                      , universum
                      , zip-archive
                      , QuickCheck
+                     , safe-exceptions
                      -- Database backend
-                     , sqlite-simple 
+                     , sqlite-simple
                      , resource-pool
                      , generics-sop
 
@@ -86,7 +88,7 @@ library
 executable log-classifier-exe
   hs-source-dirs:      app
   main-is:             Main.hs
-  ghc-options:         -threaded 
+  ghc-options:         -threaded
                        -rtsopts -with-rtsopts=-N
                        -Wall
   build-depends:       base >=4.7 && <5
@@ -154,4 +156,3 @@ test-suite log-classifier-test
                       ScopedTypeVariables
                       MonadFailDesugaring
                       TupleSections
-
