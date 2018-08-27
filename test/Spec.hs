@@ -690,8 +690,8 @@ insertCommentAttachmentsSpec =
                         withDBSchema ":memory:" (\conn -> do
                             insertCommentAttachments conn comment attachment
                             attachments <- queryNamed conn
-                                "SELECT * FROM comment_attachment WHERE aId = :id"
-                                [":id" := aId attachment]
+                                "SELECT * FROM comment_attachment WHERE comment_id = :id"
+                                [":id" := cId comment]
                             return (attachments :: [DBCommentAttachment])
                             )
 
