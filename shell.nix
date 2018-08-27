@@ -16,6 +16,6 @@ in
   { pkgs ? import <nixpkgs> {inherit config; }}:
   pkgs.haskell.lib.buildStackProject {
     name = "log-classifier";
-    buildInputs = with pkgs; [ unzip zlib bash ];
+    buildInputs = with pkgs; [ unzip zlib ];
     LANG = "en_US.UTF-8";
   }
