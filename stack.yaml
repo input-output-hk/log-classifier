@@ -53,7 +53,7 @@ extra-deps:
 nix:
   enable: false
   shell-file: shell.nix
-
+  packages: [zlib.dev, zlib.out]
 # Control whether we use the GHC we find on the path
 # system-ghc: true
 #

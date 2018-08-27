@@ -4,9 +4,10 @@ let
       haskellPackages = pkgs.haskell.packages.ghc822.override {
         overrides = haskellPackagesNew: haskellPackagesOld: rec {
           universum =
-            haskellPackagesNew.callHackage "universum" "1.1.0" {};
-          weeder =
-            haskellPackagesNew.callHackage "weeder" "1.0.6" {};
+            pkgs.haskell.lib.dontCheck
+              (haskellPackagesNew.callHackage "universum" "1.1.0" {});
+          log-classifier =
+            (haskellPackagesNew.callCabal2nix "log-classifier" ./. {});
         };
       };
     };
@@ -16,4 +17,5 @@ let
 
   pkgs = import lib.fetchNixPkgs {inherit config; };
 in
-  pkgs.haskellPackages.dontCheck pkgs.haskellPackages.callCabal2nix "log-classifier" ./. {} 
+  { log-classifier = pkgs.haskellPackages.log-classifier;
+  }
