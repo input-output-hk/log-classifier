@@ -13,10 +13,9 @@ let
     };
   };
 in
-  { pkgs ? import <nixpkgs> {}, ghc ? pkgs.ghc }:
+  { pkgs ? import <nixpkgs> {inherit config; }}:
   pkgs.haskell.lib.buildStackProject {
     name = "log-classifier";
-    inherit ghc;
     buildInputs = with pkgs; [ unzip zlib ];
     LANG = "en_US.UTF-8";
   }
