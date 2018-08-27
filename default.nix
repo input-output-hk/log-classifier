@@ -14,8 +14,7 @@ let
   };
   pkgs = (import <nixpkgs> {inherit config; });
 in
-  haskell.lib.buildStackProject {
-    inherit ghc;
+    pkgs.haskellPackages.lib.buildStackProject {
     name = "log-classifier";
-    buildInputs = [ zlib ];
-    };
+    buildInputs = [ pkgs.zlib ];
+    }
