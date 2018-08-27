@@ -1,5 +1,5 @@
 steps:
-  - label: 'log-classifier-x86_64-linux-nix'
-    command: 'stack --nix build' 
+  - label: 'stack nix'
+    command: 'nix-shell --run "stack install weeder && weeder . --build"' 
     agents:
       system: x86_64-linux
