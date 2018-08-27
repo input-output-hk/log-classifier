@@ -17,5 +17,8 @@ let
 
   pkgs = import lib.fetchNixPkgs {inherit config; };
 in
-  { log-classifier = pkgs.haskellPackages.log-classifier;
-  }
+  haskell.lib.buildStackProject {
+    inherit ghc;
+    name = "myEnv";
+    buildInputs = [ glpk pcre ];
+    };
