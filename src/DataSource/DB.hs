@@ -67,7 +67,7 @@ withDatabase dbName dbOperation =
         dbOperation
 
 -- | A production resource closing function.
-withProdDatabase :: forall m a. (MonadIO m, MonadCatch m) => (Connection -> IO a) -> m a
+withProdDatabase :: forall m a. (MonadIO m) => (Connection -> IO a) -> m a
 withProdDatabase = liftIO . withDatabase "./prod.db"
 
 ------------------------------------------------------------
@@ -97,7 +97,7 @@ createProdConnectionPool :: forall m. (MonadIO m) => m DBConnPool
 createProdConnectionPool = createConnectionPool "prod.db" 100
 
 -- | A utility function for unwrapping the connections.
-withConnPool :: forall m a. (MonadBaseControl IO m, MonadCatch m) => DBConnPool -> (Connection -> m a) -> m a
+withConnPool :: forall m a. (MonadBaseControl IO m) => DBConnPool -> (Connection -> m a) -> m a
 withConnPool dbConnPool dbFunc =
     withResource (getDBConnectionPool dbConnPool) dbFunc
 
@@ -123,7 +123,7 @@ emptyDBLayer = DBLayer
 
 -- | The simple connection Zendesk layer. Used for database querying.
 -- We need to sync occasionaly.
-connDataLayer :: forall m. (MonadIO m, MonadReader Config m, MonadCatch m) => DataLayer m
+connDataLayer :: forall m. (MonadIO m, MonadReader Config m) => DataLayer m
 connDataLayer = DataLayer
     { zlGetTicketInfo           = \tId -> withProdDatabase $ \conn -> getTicketInfoByTicketId conn tId
     , zlListDeletedTickets      = zlListDeletedTickets basicDataLayer
@@ -139,7 +139,7 @@ connDataLayer = DataLayer
 
 
 -- | The simple connection database layer. Used for database modification.
-connDBLayer :: forall m. (MonadIO m, MonadReader Config m, MonadCatch m) => DBLayer m
+connDBLayer :: forall m. (MonadIO m, MonadReader Config m) => DBLayer m
 connDBLayer = DBLayer
     { dlInsertTicketInfo          = \tIn        -> withProdDatabase $ \conn -> insertTicketInfo conn tIn
     , dlInsertTicketComments      = \tId comm   -> withProdDatabase $ \conn -> insertTicketComments conn tId comm
@@ -157,7 +157,7 @@ connDBLayer = DBLayer
 
 -- | The connection pooled Zendesk layer. Used for database querying.
 -- We need to sync occasionaly.
-connPoolDataLayer :: forall m. (MonadBaseControl IO m, MonadIO m, MonadReader Config m, MonadCatch m)
+connPoolDataLayer :: forall m. (MonadBaseControl IO m, MonadIO m, MonadReader Config m)
     => DBConnPool
     -> DataLayer m
 connPoolDataLayer connPool = DataLayer
