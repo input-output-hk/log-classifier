@@ -52,7 +52,7 @@ extra-deps:
 
 nix:
   enable: false
-  shell-file: shell.nix
+#  shell-file: shell.nix
 # Control whether we use the GHC we find on the path
 # system-ghc: true
 #
