@@ -12,9 +12,9 @@ let
       };
     };
   };
-  pkgs = (import <nixpkgs> {inherit config; });
-in
-    pkgs.haskellPackages.lib.buildStackProject {
-    name = "log-classifier";
-    buildInputs = [ pkgs.zlib ];
-    }
+  lib = import ./lib.nix;
+  pkgs = import lib.fetchNixPkgs { inherit config;};
+in pkgs.haskell.lib.buildStackProject {
+  name = "log-classifier";
+  buildInputs = with pkgs; [ unzip zlib ];
+}

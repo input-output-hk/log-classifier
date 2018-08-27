@@ -1,22 +1,10 @@
 let
-  config = {
-    packageOverrides = pkgs: rec {
-      haskellPackages = pkgs.haskell.packages.ghc822.override {
-        overrides = haskellPackagesNew: haskellPackagesOld: rec {
-          universum =
-            pkgs.haskell.lib.dontCheck
-              (haskellPackagesNew.callHackage "universum" "1.1.0" {});
-          log-classifier =
-            (haskellPackagesNew.callCabal2nix "log-classifier" ./. {});
-        };
-      };
-    };
-  };
+  log-classifier = import ./default.nix;
 in
-  { pkgs ? import <nixpkgs> {}, ghc ? pkgs.ghc }:
-  pkgs.haskell.lib.buildStackProject {
-    name = "log-classifier";
-    inherit ghc;
-    buildInputs = with pkgs; [ unzip zlib ];
-    LANG = "en_US.UTF-8";
-  }
+log-classifier.overrideAttrs (oldAttrs: {
+  shellHook = ''
+    stack --nix build
+  '';
+  LANG = "en_US.UTF-8";
+  doCheck = false;
+})
