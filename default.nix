@@ -12,13 +12,10 @@ let
       };
     };
   };
-
-  lib = import ./lib.nix;
-
-  pkgs = import lib.fetchNixPkgs {inherit config; };
+  pkgs = (import <nixpkgs> {inherit config; });
 in
   haskell.lib.buildStackProject {
     inherit ghc;
-    name = "myEnv";
-    buildInputs = [ glpk pcre ];
+    name = "log-classifier";
+    buildInputs = [ zlib ];
     };
