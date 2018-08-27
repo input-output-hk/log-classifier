@@ -52,7 +52,8 @@ extra-deps:
 
 nix:
   enable: false
-  shell-file: default.nix
+  shell-file: shell.nix
+  pure: true 
 # Control whether we use the GHC we find on the path
 # system-ghc: true
 #
