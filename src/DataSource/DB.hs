@@ -378,12 +378,13 @@ getAttachmentContent conn Attachment{..} =
 
 createSchema :: forall m. (MonadIO m) => Connection -> m ()
 createSchema conn = do
-    createTicketInfo
-    createTicketComment
-    createCommentAttachment
-    createAttachmentContent
+    createTicketInfoTable
+    createTicketCommentTable
+    createCommentAttachmentTable
+    createAttachmentContentTable
   where
-    createTicketInfo = liftIO $ execute_ conn
+    createTicketInfoTable :: m ()
+    createTicketInfoTable = liftIO $ execute_ conn
             "CREATE TABLE `ticket_info` (                                           \
         \       `tiId`  INTEGER,                                                    \
         \       `tiRequesterId` INTEGER NOT NULL,                                   \
@@ -393,7 +394,8 @@ createSchema conn = do
         \       `tiStatus`  TEXT NOT NULL,                                          \
         \       PRIMARY KEY(tiId)                                                   \
         \    ) WITHOUT ROWID;"
-    createTicketComment = liftIO $ execute_ conn
+    createTicketCommentTable :: m ()
+    createTicketCommentTable = liftIO $ execute_ conn
             "CREATE TABLE `ticket_comment` (                                        \
         \       `id`    INTEGER,                                                    \
         \       `ticket_id` INTEGER NOT NULL,                                       \
@@ -403,7 +405,8 @@ createSchema conn = do
         \       PRIMARY KEY(id),                                                    \
         \       FOREIGN KEY(`ticket_id`) REFERENCES ticket_info(tiId)               \
         \    ) WITHOUT ROWID;"
-    createCommentAttachment = liftIO $ execute_ conn
+    createCommentAttachmentTable :: m ()
+    createCommentAttachmentTable = liftIO $ execute_ conn
         "CREATE TABLE `comment_attachment` (                                        \
         \       `aId`   INTEGER,                                                    \
         \       `comment_id`    INTEGER NOT NULL,                                   \
@@ -413,7 +416,8 @@ createSchema conn = do
         \       PRIMARY KEY(aId),                                                   \
         \         FOREIGN KEY(`comment_id`) REFERENCES ticket_comment ( ticket_id ) \
         \    ) WITHOUT ROWID;"
-    createAttachmentContent = liftIO $ execute_ conn
+    createAttachmentContentTable :: m ()
+    createAttachmentContentTable = liftIO $ execute_ conn
         "CREATE TABLE `attachment_content` (                                        \
         \       `attachment_id` INTEGER,                                            \
         \       `content`   BLOB NOT NULL,                                          \

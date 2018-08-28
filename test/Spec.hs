@@ -649,6 +649,7 @@ getAttachmentsFromCommentSpec =
 ------------------------------------------------------------
 
 -- Currently, this is how datas are stored in the DB, this can be changed in the future.
+-- TODO(hs): Wrap primitive type with newtype
 type DBTicketInfo = (TicketId, UserId, Maybe UserId, TicketURL, TicketTags, TicketStatus)
 type DBTicketComment = (CommentId, TicketId, CommentBody, Bool, Integer)
 type DBCommentAttachment = (AttachmentId, CommentId, Text, Text, Int)
@@ -686,17 +687,17 @@ insertCommentAttachmentsSpec =
         prop "should insert comment and its attachment to the database" $
             \(comment :: Comment) (attachment :: Attachment) ->
                 monadicIO $ do
-                    attachments <- run $
+                    dbAttachments <- run $
                         withDBSchema ":memory:" (\conn -> do
                             insertCommentAttachments conn comment attachment
-                            attachments <- queryNamed conn
+                            dbAttachments <- queryNamed conn
                                 "SELECT * FROM comment_attachment WHERE comment_id = :id"
                                 [":id" := cId comment]
-                            return (attachments :: [DBCommentAttachment])
+                            return (dbAttachments :: [DBCommentAttachment])
                             )
 
-                    assert . isJust . safeHead $ attachments
-                    whenJust (safeHead attachments)
+                    assert . isJust . safeHead $ dbAttachments
+                    whenJust (safeHead dbAttachments)
                        (\(attachmentId, commentId, attUrl, attContentType, attSize) -> do
                            assert $ attachmentId   == aId attachment
                            assert $ commentId      == cId comment
@@ -720,16 +721,16 @@ insertTicketInfoSpec =
       prop "should insert ticket info to the dabatase" $
           \(ticketInfo :: TicketInfo) ->
               monadicIO $ do
-                ticketInfos <- run $
+                dbTicketInfos <- run $
                     withDBSchema ":memory:" (\conn -> do
                         insertTicketInfo conn ticketInfo
-                        ticketInfos <- queryNamed conn "SELECT * FROM ticket_info WHERE tiId = :id"
+                        dbTicketInfos <- queryNamed conn "SELECT * FROM ticket_info WHERE tiId = :id"
                             [":id" := (getTicketId . tiId) ticketInfo]
-                        return (ticketInfos :: [DBTicketInfo])
+                        return (dbTicketInfos :: [DBTicketInfo])
                         )
 
-                assert . isJust . safeHead $ ticketInfos
-                whenJust (safeHead ticketInfos)
+                assert . isJust . safeHead $ dbTicketInfos
+                whenJust (safeHead dbTicketInfos)
                     (\(ticketId, requesterId, assigneeId, ticketUrl, ticketTags, ticketStatus) -> do
                        assert $ ticketId     == tiId ticketInfo
                        assert $ requesterId  == tiRequesterId ticketInfo
@@ -752,17 +753,17 @@ insertTicketCommentsSpec =
       prop "should insert ticketId and its comments to the dabatase" $
           \(ticketId :: TicketId) (comment :: Comment) ->
               monadicIO $ do
-               comments <- run $
+               dbComments <- run $
                     withDBSchema ":memory:" (\conn -> do
                         insertTicketComments conn ticketId comment
-                        comments <- queryNamed conn
+                        dbComments <- queryNamed conn
                             "SELECT * FROM ticket_comment WHERE ticket_id = :id"
                             [":id" := getTicketId ticketId]
-                        return (comments :: [DBTicketComment])
+                        return (dbComments :: [DBTicketComment])
                     )
 
-               assert . isJust . safeHead $ comments
-               whenJust (safeHead comments) (\(commentId, tid, commentbody, isPublic, authorId) -> do
+               assert . isJust . safeHead $ dbComments
+               whenJust (safeHead dbComments) (\(commentId, tid, commentbody, isPublic, authorId) -> do
                    assert $ tid         == ticketId
                    assert $ commentbody == cBody comment
                    assert $ commentId   == cId comment
