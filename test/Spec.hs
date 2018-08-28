@@ -661,7 +661,7 @@ deleteAllDataSpec =
        prop "should delete all datas from database" $
            monadicIO $ do
                (tickets, ticketComments, commentAttachments, attachmentContents) <- 
-                   run $ withDBSchema ":memory:" $ \conn -> do
+                   run . withDBSchema ":memory:" $ \conn -> do
                        deleteAllData conn
                        tickets            <- query_ conn "SELECT * from ticket_info"
                        ticketComments     <- query_ conn "SELECT * from ticket_comment"
@@ -686,7 +686,7 @@ insertCommentAttachmentsSpec =
         prop "should insert comment and its attachment to the database" $
             \(comment :: Comment) (attachment :: Attachment) ->
                 monadicIO $ do
-                    dbAttachments <- run $ withDBSchema ":memory:" $ \conn -> do
+                    dbAttachments <- run . withDBSchema ":memory:" $ \conn -> do
                             insertCommentAttachments conn comment attachment
                             dbAttachments <- queryNamed conn
                                 "SELECT * FROM comment_attachment WHERE comment_id = :id"
@@ -694,21 +694,20 @@ insertCommentAttachmentsSpec =
                             return (dbAttachments :: [DBCommentAttachment])
 
                     assert . isJust . safeHead $ dbAttachments
-                    whenJust (safeHead dbAttachments)
-                       (\(attachmentId, commentId, attUrl, attContentType, attSize) -> do
+                    whenJust (safeHead dbAttachments) $ 
+                        \(attachmentId, commentId, attUrl, attContentType, attSize) -> do
                            assert $ attachmentId   == aId attachment
                            assert $ commentId      == cId comment
                            assert $ attUrl         == aURL attachment
                            assert $ attContentType == aContentType attachment
                            assert $ attSize        == aSize attachment
-                        )
 
         prop "should try to insert comment and its attachment to the database without tables, throws exception" $
             \(comment :: Comment) (attachment :: Attachment) ->
                 monadicIO $ do
                     eResult <- run . try $
-                        withConnection ":memory:"
-                        (\conn -> insertCommentAttachments conn comment attachment)
+                        withConnection ":memory:" $ \conn 
+                            -> insertCommentAttachments conn comment attachment
 
                     assert $ isLeft (eResult :: Either DBLayerException ())
 
@@ -718,7 +717,7 @@ insertTicketInfoSpec =
       prop "should insert ticket info to the dabatase" $
           \(ticketInfo :: TicketInfo) ->
               monadicIO $ do
-                dbTicketInfos <- run $ withDBSchema ":memory:" $ \conn -> do
+                dbTicketInfos <- run . withDBSchema ":memory:" $ \conn -> do
                         insertTicketInfo conn ticketInfo
                         dbTicketInfos <- queryNamed conn "SELECT * FROM ticket_info WHERE tiId = :id"
                             [":id" := (getTicketId . tiId) ticketInfo]
@@ -748,7 +747,7 @@ insertTicketCommentsSpec =
       prop "should insert ticketId and its comments to the dabatase" $
           \(ticketId :: TicketId) (comment :: Comment) ->
               monadicIO $ do
-               dbComments <- run $ withDBSchema ":memory:" $ \conn -> do
+               dbComments <- run . withDBSchema ":memory:" $ \conn -> do
                         insertTicketComments conn ticketId comment
                         dbComments <- queryNamed conn
                             "SELECT * FROM ticket_comment WHERE ticket_id = :id"
@@ -756,18 +755,18 @@ insertTicketCommentsSpec =
                         return (dbComments :: [DBTicketComment])
 
                assert . isJust . safeHead $ dbComments
-               whenJust (safeHead dbComments) (\(commentId, tid, commentbody, isPublic, authorId) -> do
+               whenJust (safeHead dbComments) $ \(commentId, tid, commentbody, isPublic, authorId) -> do
                    assert $ tid         == ticketId
                    assert $ commentbody == cBody comment
                    assert $ commentId   == cId comment
                    assert $ isPublic    == cPublic comment
                    assert $ authorId    == cAuthor comment
-                )
+
       prop "should try to insert ticketId and comment to the database without tables, throws exception" $
           \(ticketId :: TicketId) (comment :: Comment) ->
               monadicIO $ do
                 eResult <- run . try $
-                    withConnection ":memory:" (\conn -> insertTicketComments conn ticketId comment)
+                    withConnection ":memory:" $ \conn -> insertTicketComments conn ticketId comment
 
                 assert $ isLeft (eResult :: Either DBLayerException ())
 
