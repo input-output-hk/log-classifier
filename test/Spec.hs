@@ -661,14 +661,13 @@ deleteAllDataSpec =
        prop "should delete all datas from database" $
            monadicIO $ do
                (tickets, ticketComments, commentAttachments, attachmentContents) <- 
-                   run $ withDBSchema ":memory:" (\conn -> do
+                   run $ withDBSchema ":memory:" $ \conn -> do
                        deleteAllData conn
                        tickets            <- query_ conn "SELECT * from ticket_info"
                        ticketComments     <- query_ conn "SELECT * from ticket_comment"
                        commentAttachments <- query_ conn "SELECT * from comment_attachment"
                        attachmentContents <- query_ conn "SELECT * from attachment_content"
                        return (tickets, ticketComments, commentAttachments, attachmentContents)
-                       )
 
                assert . null $ (tickets            :: [DBTicketInfo])
                assert . null $ (ticketComments     :: [DBTicketComment])
@@ -687,14 +686,12 @@ insertCommentAttachmentsSpec =
         prop "should insert comment and its attachment to the database" $
             \(comment :: Comment) (attachment :: Attachment) ->
                 monadicIO $ do
-                    dbAttachments <- run $
-                        withDBSchema ":memory:" (\conn -> do
+                    dbAttachments <- run $ withDBSchema ":memory:" $ \conn -> do
                             insertCommentAttachments conn comment attachment
                             dbAttachments <- queryNamed conn
                                 "SELECT * FROM comment_attachment WHERE comment_id = :id"
                                 [":id" := cId comment]
                             return (dbAttachments :: [DBCommentAttachment])
-                            )
 
                     assert . isJust . safeHead $ dbAttachments
                     whenJust (safeHead dbAttachments)
@@ -721,13 +718,11 @@ insertTicketInfoSpec =
       prop "should insert ticket info to the dabatase" $
           \(ticketInfo :: TicketInfo) ->
               monadicIO $ do
-                dbTicketInfos <- run $
-                    withDBSchema ":memory:" (\conn -> do
+                dbTicketInfos <- run $ withDBSchema ":memory:" $ \conn -> do
                         insertTicketInfo conn ticketInfo
                         dbTicketInfos <- queryNamed conn "SELECT * FROM ticket_info WHERE tiId = :id"
                             [":id" := (getTicketId . tiId) ticketInfo]
                         return (dbTicketInfos :: [DBTicketInfo])
-                        )
 
                 assert . isJust . safeHead $ dbTicketInfos
                 whenJust (safeHead dbTicketInfos)
@@ -743,7 +738,7 @@ insertTicketInfoSpec =
           \(ticketInfo :: TicketInfo) ->
               monadicIO $ do
                 eResult <- run . try $
-                    withConnection ":memory:" (\conn -> insertTicketInfo conn ticketInfo)
+                    withConnection ":memory:" $ \conn -> insertTicketInfo conn ticketInfo
 
                 assert $ isLeft (eResult :: Either DBLayerException ())
 
@@ -753,14 +748,12 @@ insertTicketCommentsSpec =
       prop "should insert ticketId and its comments to the dabatase" $
           \(ticketId :: TicketId) (comment :: Comment) ->
               monadicIO $ do
-               dbComments <- run $
-                    withDBSchema ":memory:" (\conn -> do
+               dbComments <- run $ withDBSchema ":memory:" $ \conn -> do
                         insertTicketComments conn ticketId comment
                         dbComments <- queryNamed conn
                             "SELECT * FROM ticket_comment WHERE ticket_id = :id"
                             [":id" := getTicketId ticketId]
                         return (dbComments :: [DBTicketComment])
-                    )
 
                assert . isJust . safeHead $ dbComments
                whenJust (safeHead dbComments) (\(commentId, tid, commentbody, isPublic, authorId) -> do
@@ -781,7 +774,6 @@ insertTicketCommentsSpec =
 -- | Perform an action to the database with schema
 withDBSchema :: String -> (Connection -> IO a) -> IO a
 withDBSchema dbpath action =
-    withConnection dbpath (\conn -> do
+    withConnection dbpath $ \conn -> do
         createSchema conn
         action conn
-        )
