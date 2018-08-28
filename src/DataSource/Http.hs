@@ -39,7 +39,7 @@ import           DataSource.Types (Attachment (..), AttachmentContent (..), Comm
 --   - get returns a single result (wrapped in @Maybe@)
 --   - list returns multiple results
 --   - post submits a result (maybe PUT?!)
-basicDataLayer :: (MonadIO m, MonadReader Config m) => DataLayer m
+basicDataLayer :: (MonadIO m, MonadCatch m, MonadReader Config m) => DataLayer m
 basicDataLayer = DataLayer
     { zlGetTicketInfo           = getTicketInfo
     , zlListDeletedTickets      = listDeletedTickets
@@ -74,7 +74,7 @@ emptyDataLayer = DataLayer
 
 -- | Get single ticket info.
 getTicketInfo
-    :: (HasCallStack, MonadIO m, MonadReader Config m)
+    :: (HasCallStack, MonadIO m, MonadCatch m, MonadReader Config m)
     => TicketId
     -> m (Maybe TicketInfo)
 getTicketInfo ticketId = do
@@ -84,8 +84,9 @@ getTicketInfo ticketId = do
     let req = apiRequest cfg url
 
     apiCall <- asksHTTPNetworkLayer hnlApiCall
+    result  <- tryAny $ apiCall parseTicket req
 
-    Just <$> apiCall parseTicket req
+    pure $ either (const Nothing) Just result
 
 -- | Return list of deleted tickets.
 listDeletedTickets
@@ -151,7 +152,7 @@ listAdminAgents = do
 -- NOTE: If count is less than 1000, then stop paginating.
 -- Otherwise, use the next_page URL to get the next page of results.
 getExportedTickets
-    :: forall m. (MonadIO m, MonadReader Config m)
+    :: forall m. (MonadIO m, MonadCatch m, MonadReader Config m)
     => ExportFromTime
     -> m [TicketInfo]
 getExportedTickets time = do
@@ -193,7 +194,7 @@ getExportedTickets time = do
 
 -- | Send API request to post comment
 postTicketComment
-    :: (MonadIO m, MonadReader Config m)
+    :: (MonadIO m, MonadCatch m, MonadReader Config m)
     => TicketInfo
     -> ZendeskResponse
     -> m ()
@@ -231,7 +232,7 @@ createResponseTicket agentId TicketInfo{..} ZendeskResponse{..} =
 
 -- | Get user information.
 _getUser
-    :: (MonadIO m, MonadReader Config m)
+    :: (MonadIO m, MonadCatch m, MonadReader Config m)
     => m User
 _getUser = do
     cfg <- ask
@@ -255,24 +256,20 @@ getAttachment Attachment{..} = Just . AttachmentContent . getResponseBody <$> ht
 
 -- | Get ticket's comments
 getTicketComments
-    :: (MonadIO m, MonadReader Config m)
+    :: (MonadIO m, MonadCatch m, MonadReader Config m)
     => TicketId
     -> m [Comment]
 getTicketComments tId = do
     cfg <- ask
 
-    apiCallSafe     <- asksHTTPNetworkLayer hnlApiCallSafe
+    apiCall <- asksHTTPNetworkLayer hnlApiCall
 
     let url = showURL $ TicketCommentsURL tId
     let req = apiRequest cfg url
 
-    result          <- apiCallSafe parseComments req
+    result  <- tryAny $ apiCall parseComments req
 
-    -- TODO(ks): For now return empty if there is an exception.
-    -- After we have exception handling, we propagate this up.
-    case result of
-        Left _  -> pure []
-        Right r -> pure r
+    pure $ either (const []) id result
 
 ------------------------------------------------------------
 -- Utility

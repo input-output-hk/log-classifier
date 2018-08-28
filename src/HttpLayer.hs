@@ -1,5 +1,6 @@
 module HttpLayer
     ( HTTPNetworkLayer (..)
+    , HttpNetworkLayerException (..)
     , basicHTTPNetworkLayer
     , emptyHTTPNetworkLayer
     , apiRequest
@@ -8,7 +9,7 @@ module HttpLayer
 
 import           Universum
 
-import           Data.Aeson (FromJSON, ToJSON, Value, encode)
+import           Data.Aeson (FromJSON, ToJSON, Value)
 import           Data.Aeson.Types (Parser, parseEither)
 import           Network.HTTP.Simple (Request, addRequestHeader, getResponseBody, httpJSON,
                                       parseRequest_, setRequestBasicAuth, setRequestBodyJSON,
@@ -25,15 +26,23 @@ basicHTTPNetworkLayer :: HTTPNetworkLayer
 basicHTTPNetworkLayer = HTTPNetworkLayer
     { hnlAddJsonBody    = addJsonBody
     , hnlApiCall        = apiCall
-    , hnlApiCallSafe    = apiCallSafe
     }
 
 emptyHTTPNetworkLayer :: HTTPNetworkLayer
 emptyHTTPNetworkLayer = HTTPNetworkLayer
     { hnlAddJsonBody    = \_ _  -> error "hnlAddJsonBody not implemented!"
     , hnlApiCall        = \_    -> error "hnlApiCall not implemented!"
-    , hnlApiCallSafe    = \_ _  -> error "hnlApiCallSafe not implemented!"
     }
+
+------------------------------------------------------------
+-- Exceptions
+------------------------------------------------------------
+
+data HttpNetworkLayerException
+    = CannotParseResult String -- Request
+    deriving (Show)
+
+instance Exception HttpNetworkLayerException
 
 ------------------------------------------------------------
 -- Functions
@@ -64,29 +73,16 @@ addJsonBody :: forall a. ToJSON a => a -> Request -> Request
 addJsonBody body req = setRequestBodyJSON body $ setRequestMethod "PUT" req
 
 -- | Make an api call
--- TODO(ks): Switch to @Either@.
 apiCall
-    :: forall m a. (MonadIO m, FromJSON a)
+    :: forall m a. (MonadIO m, MonadCatch m, FromJSON a)
     => (Value -> Parser a)
     -> Request
     -> m a
-apiCall parser req = do
-    putTextLn $ show req
-    v <- getResponseBody <$> httpJSON req
-    case parseEither parser v of
-        Right o -> pure o
-        Left e -> error $ "couldn't parse response "
-            <> toText e <> "\n" <> decodeUtf8 (encode v)
+apiCall parser request = do
+    -- putTextLn $ show req -- logging !?!
+    httpResponse <- getResponseBody <$> httpJSON request
 
--- | Make a safe api call.
-apiCallSafe
-    :: forall m a. (MonadIO m, FromJSON a)
-    => (Value -> Parser a)
-    -> Request
-    -> m (Either String a)
-apiCallSafe parser req = do
-    putTextLn $ show req
-    v <- getResponseBody <$> httpJSON req
-    pure $ parseEither parser v
-
+    case parseEither parser httpResponse of
+        Left reason -> throwM $ CannotParseResult reason
+        Right value -> pure value
 

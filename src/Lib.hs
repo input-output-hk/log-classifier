@@ -14,6 +14,9 @@ module Lib
     , listAndSortTickets
     , filterAnalyzedTickets
     , exportZendeskDataToLocalDB
+    -- * optional
+    , fetchTicket
+    , fetchTicketComments
     ) where
 
 import           Universum
@@ -353,6 +356,20 @@ fetchTickets = do
 
     -- Anything that has a "to_be_analysed" tag
     pure $ filter (elem (renderTicketStatus ToBeAnalyzed) . getTicketTags . tiTags) allTickets
+
+-- | Fetch a single ticket if found.
+fetchTicket :: TicketId -> App (Maybe TicketInfo)
+fetchTicket ticketId = do
+    getTicketInfo               <- asksDataLayer zlGetTicketInfo
+    getTicketInfo ticketId
+
+
+-- | Fetch comments from a ticket, if the ticket is found.
+fetchTicketComments :: TicketId -> App [Comment]
+fetchTicketComments ticketId = do
+    getTicketComments           <- asksDataLayer zlGetTicketComments
+    getTicketComments ticketId
+
 
 fetchAndShowTickets :: App ()
 fetchAndShowTickets = do
