@@ -157,7 +157,8 @@ connDBLayer = DBLayer
 
 -- | The connection pooled Zendesk layer. Used for database querying.
 -- We need to sync occasionaly.
-connPoolDataLayer :: forall m. (MonadBaseControl IO m, MonadIO m, MonadReader Config m)
+connPoolDataLayer
+    :: forall m. (MonadBaseControl IO m, MonadIO m, MonadReader Config m)
     => DBConnPool
     -> DataLayer m
 connPoolDataLayer connPool = DataLayer
@@ -175,7 +176,8 @@ connPoolDataLayer connPool = DataLayer
 
 
 -- | The connection pooled database layer. Used for database modification.
-connPoolDBLayer :: forall m. ( MonadBaseControl IO m, MonadIO m, MonadReader Config m, MonadCatch m)
+connPoolDBLayer 
+    :: forall m. ( MonadBaseControl IO m, MonadIO m, MonadReader Config m, MonadCatch m)
     => DBConnPool
     -> DBLayer m
 connPoolDBLayer connPool = DBLayer
@@ -438,7 +440,12 @@ insertTicketInfo conn TicketInfo{..} =
         , ":tiStatus"       := tiStatus
         ]
 
-insertTicketComments :: forall m. (MonadIO m, MonadCatch m) => Connection -> TicketId -> Comment -> m ()
+insertTicketComments
+    :: forall m. (MonadIO m, MonadCatch m)
+    => Connection
+    -> TicketId
+    -> Comment
+    -> m ()
 insertTicketComments conn ticketId Comment{..} =
     liftIO $ executeNamedSafe (InsertTicketCommentsFailed ticketId cId)
         conn "INSERT INTO ticket_comment (id, ticket_id, body, is_public, author_id) \
@@ -450,7 +457,12 @@ insertTicketComments conn ticketId Comment{..} =
         , ":author_id"      := cAuthor
         ]
 
-insertCommentAttachments :: forall m. (MonadIO m, MonadCatch m) => Connection -> Comment -> Attachment -> m ()
+insertCommentAttachments
+    :: forall m. (MonadIO m, MonadCatch m)
+    => Connection
+    -> Comment
+    -> Attachment
+    -> m ()
 insertCommentAttachments conn Comment{..} Attachment{..} =
     liftIO $ executeNamedSafe (InsertCommentAttachmentFailed cId aId)
         conn "INSERT INTO comment_attachment (aId, comment_id, aURL, aContentType, aSize) \
