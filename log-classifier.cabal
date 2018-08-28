@@ -51,6 +51,7 @@ library
                      , optparse-applicative
                      , reflection
                      , regex-tdfa
+                     , safe-exceptions
                      , text
                      , time
                      , universum
@@ -71,6 +72,7 @@ library
                       ScopedTypeVariables
                       FlexibleInstances
                       FlexibleContexts
+                      LambdaCase
                       TypeFamilies
                       TypeApplications
                       TypeOperators
@@ -129,6 +131,7 @@ test-suite log-classifier-test
                      , log-classifier
                      , mtl
                      , reflection
+                     , sqlite-simple
                      , regex-tdfa
                      , text
                      , universum
