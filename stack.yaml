@@ -51,7 +51,7 @@ extra-deps:
 # extra-package-dbs: [ ]
 
 nix:
-  enable: false
+  enable: true 
   shell-file: shell.nix
   pure: true 
 # Control whether we use the GHC we find on the path
