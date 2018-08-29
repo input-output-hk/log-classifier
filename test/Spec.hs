@@ -25,6 +25,7 @@ import           DataSource (App, Attachment (..), AttachmentId (..), Comment (.
                              renderTicketStatus, runApp, showURL)
 import           Exceptions (ProcessTicketExceptions (..))
 import           HttpLayer (HttpNetworkLayerException (..), basicHTTPNetworkLayer)
+import           Network.HTTP.Simple (JSONException)
 
 import           Lib (exportZendeskDataToLocalDB, fetchTicket, fetchTicketComments, filterAnalyzedTickets,
                       getAttachmentsFromComment, listAndSortTickets, processTicket)
@@ -110,13 +111,13 @@ parsingFailureSpec :: Spec
 parsingFailureSpec =
     describe "parsingFailureSpec " $ modifyMaxSuccess (const 1000) $ do
         it "should return Nothing when parsing fails at getTicketInfo" $ do
-            forAll arbitrary $ \ticketId ->
+            forAll arbitrary $ \(ticketId, exception :: HttpNetworkLayerException) ->
                 monadicIO $ do
 
                     let stubbedHttpNetworkLayer :: HTTPNetworkLayer
                         stubbedHttpNetworkLayer =
                             basicHTTPNetworkLayer
-                                { hnlApiCall                = \_ _   -> throwM $ CannotParseResult "error parsing"
+                                { hnlApiCall                = \_ _   -> throwM exception
                                 }
 
                     let stubbedConfig :: Config
@@ -131,13 +132,13 @@ parsingFailureSpec =
                     assert . isNothing $ ticket
 
         it "should return empty when parsing fails at getTicketComments" $ do
-            forAll arbitrary $ \ticketId ->
+            forAll arbitrary $ \(ticketId, exception :: HttpNetworkLayerException) ->
                 monadicIO $ do
 
                     let stubbedHttpNetworkLayer :: HTTPNetworkLayer
                         stubbedHttpNetworkLayer =
                             basicHTTPNetworkLayer
-                                { hnlApiCall                = \_ _   -> throwM $ CannotParseResult "error parsing"
+                                { hnlApiCall                = \_ _   -> throwM exception
                                 }
 
                     let stubbedConfig :: Config
@@ -151,6 +152,7 @@ parsingFailureSpec =
 
                     -- Check we don't have any comments.
                     assert . null $ comments
+
 
 listAndSortTicketsSpec :: Spec
 listAndSortTicketsSpec =

@@ -11,12 +11,13 @@ import           Universum
 
 import           Data.Aeson (FromJSON, ToJSON, Value)
 import           Data.Aeson.Types (Parser, parseEither)
-import           Network.HTTP.Simple (Request, addRequestHeader, getResponseBody, httpJSON,
-                                      parseRequest_, setRequestBasicAuth, setRequestBodyJSON,
-                                      setRequestMethod, setRequestPath)
+import           Network.HTTP.Simple (JSONException, Request, addRequestHeader, getResponseBody,
+                                      httpJSON, httpJSONEither, parseRequest_, setRequestBasicAuth,
+                                      setRequestBodyJSON, setRequestMethod, setRequestPath)
 
 import           DataSource.Types (Config (..), HTTPNetworkLayer (..))
 
+import           Test.QuickCheck (Arbitrary (..), oneof)
 
 ------------------------------------------------------------
 -- Layer
@@ -39,10 +40,17 @@ emptyHTTPNetworkLayer = HTTPNetworkLayer
 ------------------------------------------------------------
 
 data HttpNetworkLayerException
-    = CannotParseResult String -- Request
+    = JSONDecodingException String -- JSONException
+    | HttpCannotParseJSON String -- Request
     deriving (Show)
 
 instance Exception HttpNetworkLayerException
+
+instance Arbitrary HttpNetworkLayerException where
+    arbitrary = oneof
+        [ JSONDecodingException <$> arbitrary
+        , HttpCannotParseJSON <$> arbitrary
+        ]
 
 ------------------------------------------------------------
 -- Functions
@@ -80,9 +88,11 @@ apiCall
     -> m a
 apiCall parser request = do
     -- putTextLn $ show req -- logging !?!
-    httpResponse <- getResponseBody <$> httpJSON request
+    httpResult   <- getResponseBody <$> httpJSONEither request
+
+    httpResponse <- either (throwM . JSONDecodingException . show) pure httpResult
 
     case parseEither parser httpResponse of
-        Left reason -> throwM $ CannotParseResult reason
+        Left reason -> throwM $ HttpCannotParseJSON reason
         Right value -> pure value
 
