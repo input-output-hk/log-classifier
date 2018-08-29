@@ -11,9 +11,10 @@ import           Universum
 
 import           Data.Aeson (FromJSON, ToJSON, Value)
 import           Data.Aeson.Types (Parser, parseEither)
-import           Network.HTTP.Simple (JSONException, Request, addRequestHeader, getResponseBody,
-                                      httpJSON, httpJSONEither, parseRequest_, setRequestBasicAuth,
-                                      setRequestBodyJSON, setRequestMethod, setRequestPath)
+import           Network.HTTP.Simple (Request, addRequestHeader, defaultRequest, getResponseBody,
+                                      getResponseStatusCode, httpJSONEither, parseRequest_,
+                                      setRequestBasicAuth, setRequestBodyJSON, setRequestMethod,
+                                      setRequestPath)
 
 import           DataSource.Types (Config (..), HTTPNetworkLayer (..))
 
@@ -40,16 +41,61 @@ emptyHTTPNetworkLayer = HTTPNetworkLayer
 ------------------------------------------------------------
 
 data HttpNetworkLayerException
-    = JSONDecodingException String -- JSONException
-    | HttpCannotParseJSON String -- Request
+    = HttpDecodingJSON Request String
+    -- 4XX
+    | HttpBadRequest Request
+    | HttpUnauthorized Request
+    | HttpForbidden Request
+    | HttpNotFound Request
+    | HttpMethodNotAllowed Request
+    | HttpUnsupportedMediaType Request
+    | HttpTooManyRequests Request
+    -- 5XX
+    | HttpInternalServerError Request
+    | HttpNotImplemented Request
+    | HttpServiceUnavailable Request
     deriving (Show)
+
+
+-- | The way to convert the status codes to exceptions.
+statusCodeToException :: forall m. (MonadThrow m) => Request -> Int -> m ()
+statusCodeToException request = \case
+    400 -> throwM $ HttpBadRequest request
+    401 -> throwM $ HttpUnauthorized request
+    403 -> throwM $ HttpForbidden request
+    404 -> throwM $ HttpNotFound request
+    405 -> throwM $ HttpMethodNotAllowed request
+    415 -> throwM $ HttpUnsupportedMediaType request
+    429 -> throwM $ HttpTooManyRequests request
+
+    500 -> throwM $ HttpInternalServerError request
+    501 -> throwM $ HttpNotImplemented request
+    503 -> throwM $ HttpServiceUnavailable request
+
+    _   -> pure ()
+
 
 instance Exception HttpNetworkLayerException
 
+-- | TODO(ks): Good enough for our purposes
+instance Arbitrary Request where
+    arbitrary = pure defaultRequest
+
 instance Arbitrary HttpNetworkLayerException where
     arbitrary = oneof
-        [ JSONDecodingException <$> arbitrary
-        , HttpCannotParseJSON <$> arbitrary
+        [ HttpDecodingJSON <$> arbitrary <*> arbitrary
+
+        , HttpBadRequest <$> arbitrary
+        , HttpUnauthorized  <$> arbitrary
+        , HttpForbidden  <$> arbitrary
+        , HttpNotFound  <$> arbitrary
+        , HttpMethodNotAllowed  <$> arbitrary
+        , HttpUnsupportedMediaType  <$> arbitrary
+        , HttpTooManyRequests  <$> arbitrary
+
+        , HttpInternalServerError  <$> arbitrary
+        , HttpNotImplemented  <$> arbitrary
+        , HttpServiceUnavailable  <$> arbitrary
         ]
 
 ------------------------------------------------------------
@@ -88,11 +134,18 @@ apiCall
     -> m a
 apiCall parser request = do
     -- putTextLn $ show req -- logging !?!
-    httpResult   <- getResponseBody <$> httpJSONEither request
+    httpResult      <- httpJSONEither request
 
-    httpResponse <- either (throwM . JSONDecodingException . show) pure httpResult
+    httpResponse    <-  either
+                            (throwM . HttpDecodingJSON request . show)
+                            pure
+                            (getResponseBody httpResult)
+
+    let httpStatusCode = getResponseStatusCode httpResult
+
+    _               <- statusCodeToException request httpStatusCode
 
     case parseEither parser httpResponse of
-        Left reason -> throwM $ HttpCannotParseJSON reason
+        Left reason -> throwM $ HttpDecodingJSON request reason
         Right value -> pure value
 

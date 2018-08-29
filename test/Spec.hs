@@ -25,7 +25,6 @@ import           DataSource (App, Attachment (..), AttachmentId (..), Comment (.
                              renderTicketStatus, runApp, showURL)
 import           Exceptions (ProcessTicketExceptions (..))
 import           HttpLayer (HttpNetworkLayerException (..), basicHTTPNetworkLayer)
-import           Network.HTTP.Simple (JSONException)
 
 import           Lib (exportZendeskDataToLocalDB, fetchTicket, fetchTicketComments, filterAnalyzedTickets,
                       getAttachmentsFromComment, listAndSortTickets, processTicket)
