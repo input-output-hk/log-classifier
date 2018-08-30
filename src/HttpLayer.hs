@@ -56,7 +56,6 @@ data HttpNetworkLayerException
     | HttpServiceUnavailable Request
     deriving (Show)
 
-
 -- | The way to convert the status codes to exceptions.
 statusCodeToException :: forall m. (MonadThrow m) => Request -> Int -> m ()
 statusCodeToException request = \case
@@ -136,12 +135,14 @@ apiCall parser request = do
     -- putTextLn $ show req -- logging !?!
     httpResult      <- httpJSONEither request
 
+    let httpResponseBody = getResponseBody httpResult
+
     httpResponse    <-  either
                             (throwM . HttpDecodingJSON request . show)
                             pure
-                            (getResponseBody httpResult)
+                            httpResponseBody
 
-    let httpStatusCode = getResponseStatusCode httpResult
+    let httpStatusCode  = getResponseStatusCode httpResult
 
     _               <- statusCodeToException request httpStatusCode
 

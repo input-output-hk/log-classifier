@@ -36,6 +36,7 @@ import           Statistics (filterTicketsByStatus, filterTicketsWithAttachments
 main :: IO ()
 main = hspec spec
 
+-- stack test --test-arguments "--seed=1425428185"
 -- stack test log-classifier --fast --test-arguments "-m Zendesk"
 spec :: Spec
 spec =
@@ -106,29 +107,40 @@ withStubbedNetworkAndDataLayer stubbedHttpNetworkLayer =
             }
 
 
+-- | Generate a @HttpNotFound@ so we can test when a ticket can't be found.
+generateHttpNotFoundExceptions :: Gen HttpNetworkLayerException
+generateHttpNotFoundExceptions = HttpNotFound <$> arbitrary
+
+
 parsingFailureSpec :: Spec
 parsingFailureSpec =
     describe "parsingFailureSpec " $ modifyMaxSuccess (const 1000) $ do
         it "should return Nothing when parsing fails at getTicketInfo" $ do
-            forAll arbitrary $ \(ticketId, exception :: HttpNetworkLayerException) ->
-                monadicIO $ do
+            forAll arbitrary $ \ticketId ->
+                forAll generateHttpNotFoundExceptions $ \exception ->
+                    monadicIO $ do
 
-                    let stubbedHttpNetworkLayer :: HTTPNetworkLayer
-                        stubbedHttpNetworkLayer =
-                            basicHTTPNetworkLayer
-                                { hnlApiCall                = \_ _   -> throwM exception
-                                }
+                        -- we exclusivly want just @HttpNotFound@, others are rethrown.
+                        pre $ case exception of
+                                   HttpNotFound _   -> True
+                                   _                -> False
 
-                    let stubbedConfig :: Config
-                        stubbedConfig = withStubbedNetworkAndDataLayer stubbedHttpNetworkLayer
+                        let stubbedHttpNetworkLayer :: HTTPNetworkLayer
+                            stubbedHttpNetworkLayer =
+                                basicHTTPNetworkLayer
+                                    { hnlApiCall                = \_ _   -> throwM exception
+                                    }
 
-                    let appExecution :: IO (Maybe TicketInfo)
-                        appExecution = runApp (fetchTicket ticketId) stubbedConfig
+                        let stubbedConfig :: Config
+                            stubbedConfig = withStubbedNetworkAndDataLayer stubbedHttpNetworkLayer
 
-                    ticket <- run appExecution
+                        let appExecution :: IO (Maybe TicketInfo)
+                            appExecution = runApp (fetchTicket ticketId) stubbedConfig
 
-                    -- Check we don't have any tickets, since they would all raise a parsing exception.
-                    assert . isNothing $ ticket
+                        ticket <- run appExecution
+
+                        -- Check we don't have any tickets, since they would all raise a parsing exception.
+                        assert . isNothing $ ticket
 
         it "should return empty when parsing fails at getTicketComments" $ do
             forAll arbitrary $ \(ticketId, exception :: HttpNetworkLayerException) ->

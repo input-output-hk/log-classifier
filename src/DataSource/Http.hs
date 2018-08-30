@@ -18,7 +18,8 @@ import           Data.Aeson.Text (encodeToLazyText)
 import           Data.List (nub)
 import           Network.HTTP.Simple (Request, getResponseBody, httpLBS, parseRequest_)
 
-import           HttpLayer (HTTPNetworkLayer (..), apiRequest, apiRequestAbsolute)
+import           HttpLayer (HTTPNetworkLayer (..), HttpNetworkLayerException (..), apiRequest,
+                            apiRequestAbsolute)
 
 import           DataSource.Types (Attachment (..), AttachmentContent (..), Comment (..),
                                    CommentBody (..), CommentId (..), Config (..), DataLayer (..),
@@ -84,9 +85,22 @@ getTicketInfo ticketId = do
     let req = apiRequest cfg url
 
     apiCall <- asksHTTPNetworkLayer hnlApiCall
-    result  <- tryAny $ apiCall parseTicket req
 
-    pure $ either (const Nothing) Just result
+    result  <- try $ apiCall parseTicket req
+
+    notFoundExceptionToMaybe result
+  where
+    -- | We want only @HttpNotFound@ to return @Nothing@, otherwise
+    -- propagate the exception.
+    notFoundExceptionToMaybe
+        :: forall m. (MonadCatch m)
+        => Either HttpNetworkLayerException TicketInfo
+        -> m (Maybe TicketInfo)
+    notFoundExceptionToMaybe result = case result of
+        Left exception      -> case exception of
+            HttpNotFound _      -> pure Nothing
+            otherExceptions     -> throwM otherExceptions
+        Right ticketInfo    -> pure $ Just ticketInfo
 
 -- | Return list of deleted tickets.
 listDeletedTickets
