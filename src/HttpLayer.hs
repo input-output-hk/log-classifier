@@ -1,7 +1,6 @@
 module HttpLayer
     ( HTTPNetworkLayer (..)
     , basicHTTPNetworkLayer
-    , emptyHTTPNetworkLayer
     , apiRequest
     , apiRequestAbsolute
     ) where
