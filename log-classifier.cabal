@@ -91,8 +91,7 @@ executable log-classifier-exe
   ghc-options:         -threaded 
                        -rtsopts -with-rtsopts=-N
                        -Wall
-  build-depends:       base >=4.7 && <5
-                     , log-classifier
+  build-depends:       log-classifier
                      , universum
   other-modules:       Paths_log_classifier
 
