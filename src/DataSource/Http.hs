@@ -93,14 +93,47 @@ getTicketInfo ticketId = do
     -- | We want only @HttpNotFound@ to return @Nothing@, otherwise
     -- propagate the exception.
     notFoundExceptionToMaybe
-        :: forall m. (MonadCatch m)
-        => Either HttpNetworkLayerException TicketInfo
-        -> m (Maybe TicketInfo)
+        :: forall m a. (MonadCatch m)
+        => Either HttpNetworkLayerException a
+        -> m (Maybe a)
     notFoundExceptionToMaybe result = case result of
         Left exception      -> case exception of
             HttpNotFound _      -> pure Nothing
             otherExceptions     -> throwM otherExceptions
         Right ticketInfo    -> pure $ Just ticketInfo
+
+-- | Get ticket's comments
+getTicketComments
+    :: (HasCallStack, MonadIO m, MonadCatch m, MonadReader Config m)
+    => TicketId
+    -> m [Comment]
+getTicketComments tId = do
+    cfg <- ask
+
+    apiCall <- asksHTTPNetworkLayer hnlApiCall
+
+    let url = showURL $ TicketCommentsURL tId
+    let req = apiRequest cfg url
+
+    result  <- try $ apiCall parseComments req
+
+    notFoundExceptionToList result
+  where
+    -- | We want only @HttpNotFound@ to return an empty list, otherwise
+    -- propagate the exception.
+    -- When a @Ticket@ is not found, we don't have any of the @[Comment]@,
+    -- effectivly returning an empty list.
+    -- We might include a stricter policy to cause exception when no ticket is
+    -- found, but this should be good as well.
+    notFoundExceptionToList
+        :: forall m a. (MonadCatch m)
+        => Either HttpNetworkLayerException [a]
+        -> m [a]
+    notFoundExceptionToList result = case result of
+        Left exception      -> case exception of
+            HttpNotFound _      -> pure []
+            otherExceptions     -> throwM otherExceptions
+        Right comments      -> pure comments
 
 -- | Return list of deleted tickets.
 listDeletedTickets
@@ -267,23 +300,6 @@ getAttachment Attachment{..} = Just . AttachmentContent . getResponseBody <$> ht
     where
       req :: Request
       req = parseRequest_ (toString aURL)
-
--- | Get ticket's comments
-getTicketComments
-    :: (MonadIO m, MonadCatch m, MonadReader Config m)
-    => TicketId
-    -> m [Comment]
-getTicketComments tId = do
-    cfg <- ask
-
-    apiCall <- asksHTTPNetworkLayer hnlApiCall
-
-    let url = showURL $ TicketCommentsURL tId
-    let req = apiRequest cfg url
-
-    result  <- tryAny $ apiCall parseComments req
-
-    pure $ either (const []) id result
 
 ------------------------------------------------------------
 -- Utility

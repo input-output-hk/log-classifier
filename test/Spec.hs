@@ -143,26 +143,28 @@ parsingFailureSpec =
                         assert . isNothing $ ticket
 
         it "should return empty when parsing fails at getTicketComments" $ do
-            forAll arbitrary $ \(ticketId, exception :: HttpNetworkLayerException) ->
-                monadicIO $ do
+            forAll arbitrary $ \ticketId ->
+                forAll generateHttpNotFoundExceptions $ \exception ->
 
-                    let stubbedHttpNetworkLayer :: HTTPNetworkLayer
-                        stubbedHttpNetworkLayer =
-                            basicHTTPNetworkLayer
-                                { hnlApiCall                = \_ _   -> throwM exception
-                                }
+                    monadicIO $ do
 
-                    let stubbedConfig :: Config
-                        stubbedConfig = withStubbedNetworkAndDataLayer stubbedHttpNetworkLayer
+                        let stubbedHttpNetworkLayer :: HTTPNetworkLayer
+                            stubbedHttpNetworkLayer =
+                                basicHTTPNetworkLayer
+                                    { hnlApiCall                = \_ _   -> throwM exception
+                                    }
 
-                    -- TODO(ks): There is an indication that we need to propage this exception.
-                    let appExecution :: IO [Comment]
-                        appExecution = runApp (fetchTicketComments ticketId) stubbedConfig
+                        let stubbedConfig :: Config
+                            stubbedConfig = withStubbedNetworkAndDataLayer stubbedHttpNetworkLayer
 
-                    comments <- run appExecution
+                        -- TODO(ks): There is an indication that we need to propage this exception.
+                        let appExecution :: IO [Comment]
+                            appExecution = runApp (fetchTicketComments ticketId) stubbedConfig
 
-                    -- Check we don't have any comments.
-                    assert . null $ comments
+                        comments <- run appExecution
+
+                        -- Check we don't have any comments.
+                        assert . null $ comments
 
 
 listAndSortTicketsSpec :: Spec
