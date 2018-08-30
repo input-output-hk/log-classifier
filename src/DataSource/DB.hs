@@ -6,6 +6,13 @@
 
 module DataSource.DB
     ( DBConnPool
+    , DBException(..)
+    , DBLayerException(..)
+    , createSchema
+    , deleteAllData
+    , insertCommentAttachments
+    , insertTicketComments
+    , insertTicketInfo
     , withDatabase
     , withProdDatabase
     -- * Empty layer
@@ -22,13 +29,16 @@ module DataSource.DB
 
 import           Universum
 
+import           Control.Exception.Safe (Handler (..), catches)
 import           Control.Monad.Trans.Control (MonadBaseControl)
 
 import           Data.Pool (Pool, createPool, withResource)
 import           Data.Text (split)
+import           Prelude as P (Show (..))
 
-import           Database.SQLite.Simple (FromRow (..), NamedParam (..), SQLData (..), close,
-                                         executeNamed, execute_, field, open, queryNamed, query_)
+import           Database.SQLite.Simple (FormatError (..), FromRow (..), NamedParam (..),
+                                         Query (..), SQLData (..), close, executeNamed, execute_,
+                                         field, open, queryNamed, query_)
 import           Database.SQLite.Simple.FromField (FromField (..), ResultError (..), returnError)
 import           Database.SQLite.Simple.Internal (Connection, Field (..))
 import           Database.SQLite.Simple.Ok (Ok (..))
@@ -37,10 +47,10 @@ import           Database.SQLite.Simple.ToField (ToField (..))
 import           DataSource.Http (basicDataLayer)
 import           DataSource.Types (Attachment (..), AttachmentContent (..), AttachmentId (..),
                                    Comment (..), CommentBody (..), CommentId (..), Config,
-                                   DBLayer (..), TicketField (..), TicketFieldId (..),
-                                   TicketFieldValue (..), TicketId (..), TicketInfo (..),
-                                   TicketStatus (..), TicketTags (..), TicketURL (..), UserId (..),
-                                   DataLayer (..))
+                                   DBLayer (..), DataLayer (..), TicketField (..),
+                                   TicketFieldId (..), TicketFieldValue (..), TicketId (..),
+                                   TicketInfo (..), TicketStatus (..), TicketTags (..),
+                                   TicketURL (..), UserId (..))
 
 ------------------------------------------------------------
 -- Single connection, simple
@@ -147,7 +157,10 @@ connDBLayer = DBLayer
 
 -- | The connection pooled Zendesk layer. Used for database querying.
 -- We need to sync occasionaly.
-connPoolDataLayer :: forall m. (MonadBaseControl IO m, MonadIO m, MonadReader Config m) => DBConnPool -> DataLayer m
+connPoolDataLayer
+    :: forall m. (MonadBaseControl IO m, MonadIO m, MonadReader Config m)
+    => DBConnPool
+    -> DataLayer m
 connPoolDataLayer connPool = DataLayer
     { zlGetTicketInfo           = \tId -> withConnPool connPool $ \conn -> getTicketInfoByTicketId conn tId
     , zlListDeletedTickets      = zlListDeletedTickets basicDataLayer
@@ -163,7 +176,10 @@ connPoolDataLayer connPool = DataLayer
 
 
 -- | The connection pooled database layer. Used for database modification.
-connPoolDBLayer :: forall m. (MonadBaseControl IO m, MonadIO m, MonadReader Config m) => DBConnPool -> DBLayer m
+connPoolDBLayer 
+    :: forall m. ( MonadBaseControl IO m, MonadIO m, MonadReader Config m, MonadCatch m)
+    => DBConnPool
+    -> DBLayer m
 connPoolDBLayer connPool = DBLayer
     { dlInsertTicketInfo          = \tIn        -> withConnPool connPool $ \conn -> insertTicketInfo conn tIn
     , dlInsertTicketComments      = \tId comm   -> withConnPool connPool $ \conn -> insertTicketComments conn tId comm
@@ -185,8 +201,10 @@ instance FromField TicketFieldId where
     fromField (Field (SQLInteger tfId) _)   = Ok . TicketFieldId . fromIntegral $ tfId
     fromField f                             = returnError ConversionFailed f "need a text, ticket status"
 
+
+-- TODO(ks): Separate table definitive!
 instance FromField TicketFieldValue where
-    fromField (Field (SQLText tfValue) _)   = Ok . TicketFieldValue $ tfValue
+    fromField (Field (SQLText tfValue) _)   = Ok . TicketFieldValueText $ tfValue
     fromField f                             = returnError ConversionFailed f "need a text, ticket status"
 
 -- TODO(ks): Separate table!
@@ -249,6 +267,9 @@ instance FromRow Attachment where
 
 instance FromRow AttachmentContent where
     fromRow = AttachmentContent <$> field
+
+instance FromRow TicketId where
+    fromRow = TicketId <$> field
 
 instance ToField TicketId where
     toField (TicketId tId)                  = SQLInteger . fromIntegral $ tId
@@ -358,47 +379,58 @@ getAttachmentContent conn Attachment{..} =
 -- TODO(ks): withTransaction
 
 createSchema :: forall m. (MonadIO m) => Connection -> m ()
-createSchema conn = liftIO $ execute_ conn
-    "CREATE TABLE `ticket_info` (                                           \
-\       `tiId`  INTEGER,                                                    \
-\       `tiRequesterId` INTEGER NOT NULL,                                   \
-\       `tiAssigneeId`  INTEGER,                                            \
-\       `tiUrl` TEXT NOT NULL,                                              \
-\       `tiTags`    TEXT NOT NULL,                                          \
-\       `tiStatus`  TEXT NOT NULL,                                          \
-\       PRIMARY KEY(tiId)                                                   \
-\    ) WITHOUT ROWID;                                                       \
-\                                                                           \
-\    CREATE TABLE `ticket_comment` (                                        \
-\       `id`    INTEGER,                                                    \
-\       `ticket_id` INTEGER NOT NULL,                                       \
-\       `body`  TEXT NOT NULL,                                              \
-\       `is_public` INTEGER NOT NULL,                                       \
-\       `author_id` INTEGER NOT NULL,                                       \
-\       PRIMARY KEY(id),                                                    \
-\       FOREIGN KEY(`ticket_id`) REFERENCES ticket_info(tId)                \
-\    ) WITHOUT ROWID;                                                       \
-\                                                                           \
-\    CREATE TABLE `comment_attachment` (                                    \
-\       `aId`   INTEGER,                                                    \
-\       `comment_id`    INTEGER NOT NULL,                                   \
-\       `aURL`  TEXT NOT NULL,                                              \
-\       `aContentType`  TEXT NOT NULL,                                      \
-\       `aSize` INTEGER NOT NULL,                                           \
-\       PRIMARY KEY(aId),                                                   \
-\         FOREIGN KEY(`comment_id`) REFERENCES ticket_comment ( ticket_id ) \
-\    ) WITHOUT ROWID;                                                       \
-\                                                                           \
-\    CREATE TABLE `attachment_content` (                                    \
-\       `attachment_id` INTEGER,                                            \
-\       `content`   BLOB NOT NULL,                                          \
-\       PRIMARY KEY(attachment_id),                                         \
-\       FOREIGN KEY(`attachment_id`) REFERENCES comment_attachment(aId)     \
-\    )"
+createSchema conn = do
+    createTicketInfoTable
+    createTicketCommentTable
+    createCommentAttachmentTable
+    createAttachmentContentTable
+  where
+    createTicketInfoTable :: m ()
+    createTicketInfoTable = liftIO $ execute_ conn
+            "CREATE TABLE `ticket_info` (                                           \
+        \       `tiId`  INTEGER,                                                    \
+        \       `tiRequesterId` INTEGER NOT NULL,                                   \
+        \       `tiAssigneeId`  INTEGER,                                            \
+        \       `tiUrl` TEXT NOT NULL,                                              \
+        \       `tiTags`    TEXT NOT NULL,                                          \
+        \       `tiStatus`  TEXT NOT NULL,                                          \
+        \       PRIMARY KEY(tiId)                                                   \
+        \    ) WITHOUT ROWID;"
+    createTicketCommentTable :: m ()
+    createTicketCommentTable = liftIO $ execute_ conn
+            "CREATE TABLE `ticket_comment` (                                        \
+        \       `id`    INTEGER,                                                    \
+        \       `ticket_id` INTEGER NOT NULL,                                       \
+        \       `body`  TEXT NOT NULL,                                              \
+        \       `is_public` INTEGER NOT NULL,                                       \
+        \       `author_id` INTEGER NOT NULL,                                       \
+        \       PRIMARY KEY(id),                                                    \
+        \       FOREIGN KEY(`ticket_id`) REFERENCES ticket_info(tiId)               \
+        \    ) WITHOUT ROWID;"
+    createCommentAttachmentTable :: m ()
+    createCommentAttachmentTable = liftIO $ execute_ conn
+        "CREATE TABLE `comment_attachment` (                                        \
+        \       `aId`   INTEGER,                                                    \
+        \       `comment_id`    INTEGER NOT NULL,                                   \
+        \       `aURL`  TEXT NOT NULL,                                              \
+        \       `aContentType`  TEXT NOT NULL,                                      \
+        \       `aSize` INTEGER NOT NULL,                                           \
+        \       PRIMARY KEY(aId),                                                   \
+        \         FOREIGN KEY(`comment_id`) REFERENCES ticket_comment ( ticket_id ) \
+        \    ) WITHOUT ROWID;"
+    createAttachmentContentTable :: m ()
+    createAttachmentContentTable = liftIO $ execute_ conn
+        "CREATE TABLE `attachment_content` (                                        \
+        \       `attachment_id` INTEGER,                                            \
+        \       `content`   BLOB NOT NULL,                                          \
+        \       PRIMARY KEY(attachment_id),                                         \
+        \       FOREIGN KEY(`attachment_id`) REFERENCES comment_attachment(aId)     \
+        \    )"
 
-insertTicketInfo :: forall m. (MonadIO m) => Connection -> TicketInfo -> m ()
+insertTicketInfo :: forall m. (MonadIO m, MonadCatch m) => Connection -> TicketInfo -> m ()
 insertTicketInfo conn TicketInfo{..} =
-    liftIO $ executeNamed conn "INSERT INTO ticket_info (tiId, tiRequesterId, tiAssigneeId, tiUrl, tiTags, tiStatus) \
+    liftIO $ executeNamedSafe (InsertTicketInfoFailed tiId)
+        conn "INSERT INTO ticket_info (tiId, tiRequesterId, tiAssigneeId, tiUrl, tiTags, tiStatus) \
         \VALUES (:tiId, :tiRequesterId, :tiAssigneeId, :tiUrl, :tiTags, :tiStatus)"
         [ ":tiId"           := tiId
         , ":tiRequesterId"  := tiRequesterId
@@ -408,9 +440,15 @@ insertTicketInfo conn TicketInfo{..} =
         , ":tiStatus"       := tiStatus
         ]
 
-insertTicketComments :: forall m. (MonadIO m) => Connection -> TicketId -> Comment -> m ()
+insertTicketComments
+    :: forall m. (MonadIO m, MonadCatch m)
+    => Connection
+    -> TicketId
+    -> Comment
+    -> m ()
 insertTicketComments conn ticketId Comment{..} =
-    liftIO $ executeNamed conn "INSERT INTO ticket_comment (id, ticket_id, body, is_public, author_id) \
+    liftIO $ executeNamedSafe (InsertTicketCommentsFailed ticketId cId)
+        conn "INSERT INTO ticket_comment (id, ticket_id, body, is_public, author_id) \
         \VALUES (:id, :ticket_id, :body, :is_public, :author_id)"
         [ ":id"             := cId
         , ":ticket_id"      := ticketId
@@ -419,9 +457,15 @@ insertTicketComments conn ticketId Comment{..} =
         , ":author_id"      := cAuthor
         ]
 
-insertCommentAttachments :: forall m. (MonadIO m) => Connection -> Comment -> Attachment -> m ()
+insertCommentAttachments
+    :: forall m. (MonadIO m, MonadCatch m)
+    => Connection
+    -> Comment
+    -> Attachment
+    -> m ()
 insertCommentAttachments conn Comment{..} Attachment{..} =
-    liftIO $ executeNamed conn "INSERT INTO comment_attachment (aId, comment_id, aURL, aContentType, aSize) \
+    liftIO $ executeNamedSafe (InsertCommentAttachmentFailed cId aId)
+        conn "INSERT INTO comment_attachment (aId, comment_id, aURL, aContentType, aSize) \
         \VALUES (:aId, :comment_id, :aURL, :aContentType, :aSize)"
         [ ":aId"            := aId
         , ":comment_id"     := cId
@@ -430,22 +474,97 @@ insertCommentAttachments conn Comment{..} Attachment{..} =
         , ":aSize"          := aSize
         ]
 
-deleteCommentAttachments :: forall m. (MonadIO m) => Connection -> m ()
+deleteCommentAttachments :: forall m. (MonadIO m, MonadCatch m) => Connection -> m ()
 deleteCommentAttachments conn =
-    liftIO $ execute_ conn "DELETE FROM comment_attachment"
+    liftIO $ executeSafe_ DBDeleteFailed conn "DELETE FROM comment_attachment"
 
-deleteTicketComments :: forall m. (MonadIO m) => Connection -> m ()
+deleteTicketComments :: forall m. (MonadIO m, MonadCatch m) => Connection -> m ()
 deleteTicketComments conn =
-    liftIO $ execute_ conn "DELETE FROM ticket_comment"
+    liftIO $ executeSafe_ DBDeleteFailed conn "DELETE FROM ticket_comment"
 
-deleteTickets :: forall m. (MonadIO m) => Connection -> m ()
+deleteTickets :: forall m. (MonadIO m, MonadCatch m) => Connection -> m ()
 deleteTickets conn =
-    liftIO $ execute_ conn "DELETE FROM ticket_info"
+    liftIO $ executeSafe_ DBDeleteFailed conn "DELETE FROM ticket_info"
 
 -- | Delete all data.
-deleteAllData :: forall m. (MonadIO m) => Connection -> m ()
+deleteAllData :: forall m. (MonadIO m, MonadCatch m) => Connection -> m ()
 deleteAllData conn = do
     deleteCommentAttachments conn
     deleteTicketComments conn
     deleteTickets conn
 
+
+------------------------------------------------------------
+-- Exception handling
+------------------------------------------------------------
+
+-- | 'executeNamed' with exception handling
+executeNamedSafe :: DBException -> Connection -> Query -> [NamedParam] -> IO ()
+executeNamedSafe err conn query nm = executeNamed conn query nm `catches`
+    [Handler formatError, Handler $ errorHandler err]
+
+-- | 'execute_' with exception handling
+executeSafe_ :: DBException -> Connection -> Query -> IO ()
+executeSafe_ err conn query = execute_ conn query `catches`
+    [Handler formatError, Handler $ errorHandler err]
+
+-- | Exception handling on 'FormatError'
+-- For now, we don't do anything with it
+formatError :: FormatError -> IO ()
+formatError = throwM
+
+-- | Exception handling on 'Error'
+-- Since 'Error' from sqlite-simple does not have instance of Exception,
+-- the only way of catching it by 'SomeException'
+-- We want to throw it with additional info (TicketId, Comment data, etc.)
+errorHandler :: DBException -> SomeException -> IO ()
+errorHandler dberr someErr = throwM $ DBLayerException dberr someErr
+
+-- | Exceptions that can occur in 'DBLayer'
+data DBException
+   =  DBDeleteFailed
+   -- ^ Exception upon data deletion
+   | InsertCommentAttachmentFailed CommentId AttachmentId
+   -- ^ Exception upon inserting 'Comment' and it's associated 'Attachment' to the database
+   | InsertTicketCommentsFailed TicketId CommentId
+   -- ^ Exception upon inserting 'TicketId' and it's associated 'Comment' to the database
+   | InsertTicketInfoFailed TicketId
+   -- ^ Exception upon inserting 'TicketInfo' to the database
+
+-- | This is used to throw both 'DBLayerException' and 'SomeException'
+-- 'Error' from sqlite-simple has no instance of 'Exception'
+-- therefore the only way to catching it is by 'SomeException'
+-- Both of these exception are need in case the program crashes and we need to
+-- find the root cause of it.
+data DBLayerException = DBLayerException DBException SomeException
+
+instance Exception DBException
+
+instance Exception DBLayerException
+
+instance Show DBException where
+    show = \case
+        DBDeleteFailed ->
+            "Exception occured while trying to delete from databse"
+        InsertCommentAttachmentFailed cid aid -> concat
+            [ "Exception occured while inserting comment and attachment on commentId: "
+            , P.show (getCommentId cid)
+            , ", attachmentId: "
+            , P.show (getAttachmentId aid)
+            ]
+        InsertTicketCommentsFailed tid cid -> concat
+            [ "Exception occured while inserting ticket and comment on commentId: "
+            , P.show (getCommentId cid)
+            , ", ticketId: "
+            , P.show (getTicketId tid)
+            ]
+        InsertTicketInfoFailed tid ->
+            "Exception occured while inserting TicketInfo with ticketId" <> P.show (getTicketId tid)
+
+instance Show DBLayerException where
+  show (DBLayerException dberr someErr) = concat
+      [ "Error occured on DBlayer: "
+      , P.show dberr
+      , " with reason: "
+      , P.show someErr
+      ]
