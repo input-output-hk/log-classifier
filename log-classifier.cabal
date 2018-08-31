@@ -28,11 +28,11 @@ library
                        DataSource
                        Configuration
                        Util
+                       HttpLayer
   other-modules:       Paths_log_classifier
                        DataSource.DB
                        DataSource.Types
                        DataSource.Http
-                       HttpLayer
   ghc-options:         -Wall
   build-depends:       aeson
                      , array

@@ -206,9 +206,10 @@ data DataLayer m = DataLayer
 -- We need to use RankNTypes due to some complications that appeared.
 data HTTPNetworkLayer = HTTPNetworkLayer
     { hnlAddJsonBody    :: forall a.    (ToJSON a) => a -> Request -> Request
-    -- TODO(ks): These two below are basically the same, will fix in future PR, requires refactoring.
-    , hnlApiCall        :: forall m a.  (MonadIO m, FromJSON a) => (Value -> Parser a) -> Request -> m a
-    , hnlApiCallSafe    :: forall m a.  (MonadIO m, FromJSON a) => (Value -> Parser a) -> Request -> m (Either String a)
+    , hnlApiCall        :: forall m a.  (MonadIO m, MonadCatch m, FromJSON a)
+                        => (Value -> Parser a)
+                        -> Request
+                        -> m a
     }
 
 -- | The IOLayer interface that we can expose.

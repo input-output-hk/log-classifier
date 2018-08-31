@@ -1,5 +1,6 @@
 module HttpLayer
     ( HTTPNetworkLayer (..)
+    , HttpNetworkLayerException (..)
     , basicHTTPNetworkLayer
     , emptyHTTPNetworkLayer
     , apiRequest
@@ -8,14 +9,16 @@ module HttpLayer
 
 import           Universum
 
-import           Data.Aeson (FromJSON, ToJSON, Value, encode)
+import           Data.Aeson (FromJSON, ToJSON, Value)
 import           Data.Aeson.Types (Parser, parseEither)
-import           Network.HTTP.Simple (Request, addRequestHeader, getResponseBody, httpJSON,
-                                      parseRequest_, setRequestBasicAuth, setRequestBodyJSON,
-                                      setRequestMethod, setRequestPath)
+import           Network.HTTP.Simple (Request, addRequestHeader, defaultRequest, getResponseBody,
+                                      getResponseStatusCode, httpJSONEither, parseRequest_,
+                                      setRequestBasicAuth, setRequestBodyJSON, setRequestMethod,
+                                      setRequestPath)
 
 import           DataSource.Types (Config (..), HTTPNetworkLayer (..))
 
+import           Test.QuickCheck (Arbitrary (..), oneof)
 
 ------------------------------------------------------------
 -- Layer
@@ -25,15 +28,74 @@ basicHTTPNetworkLayer :: HTTPNetworkLayer
 basicHTTPNetworkLayer = HTTPNetworkLayer
     { hnlAddJsonBody    = addJsonBody
     , hnlApiCall        = apiCall
-    , hnlApiCallSafe    = apiCallSafe
     }
 
 emptyHTTPNetworkLayer :: HTTPNetworkLayer
 emptyHTTPNetworkLayer = HTTPNetworkLayer
     { hnlAddJsonBody    = \_ _  -> error "hnlAddJsonBody not implemented!"
     , hnlApiCall        = \_    -> error "hnlApiCall not implemented!"
-    , hnlApiCallSafe    = \_ _  -> error "hnlApiCallSafe not implemented!"
     }
+
+------------------------------------------------------------
+-- Exceptions
+------------------------------------------------------------
+
+data HttpNetworkLayerException
+    = HttpDecodingJSON Request String
+    -- 4XX
+    | HttpBadRequest Request
+    | HttpUnauthorized Request
+    | HttpForbidden Request
+    | HttpNotFound Request
+    | HttpMethodNotAllowed Request
+    | HttpUnsupportedMediaType Request
+    | HttpTooManyRequests Request
+    -- 5XX
+    | HttpInternalServerError Request
+    | HttpNotImplemented Request
+    | HttpServiceUnavailable Request
+    deriving (Show)
+
+-- | The way to convert the status codes to exceptions.
+statusCodeToException :: forall m. (MonadThrow m) => Request -> Int -> m ()
+statusCodeToException request = \case
+    400 -> throwM $ HttpBadRequest request
+    401 -> throwM $ HttpUnauthorized request
+    403 -> throwM $ HttpForbidden request
+    404 -> throwM $ HttpNotFound request
+    405 -> throwM $ HttpMethodNotAllowed request
+    415 -> throwM $ HttpUnsupportedMediaType request
+    429 -> throwM $ HttpTooManyRequests request
+
+    500 -> throwM $ HttpInternalServerError request
+    501 -> throwM $ HttpNotImplemented request
+    503 -> throwM $ HttpServiceUnavailable request
+
+    _   -> pure ()
+
+
+instance Exception HttpNetworkLayerException
+
+-- | TODO(ks): Good enough for our purposes
+instance Arbitrary Request where
+    arbitrary = pure defaultRequest
+
+instance Arbitrary HttpNetworkLayerException where
+    arbitrary = oneof
+        [ HttpDecodingJSON <$> arbitrary <*> arbitrary
+
+        , HttpBadRequest <$> arbitrary
+        , HttpUnauthorized  <$> arbitrary
+        , HttpForbidden  <$> arbitrary
+        , HttpNotFound  <$> arbitrary
+        , HttpMethodNotAllowed  <$> arbitrary
+        , HttpUnsupportedMediaType  <$> arbitrary
+        , HttpTooManyRequests  <$> arbitrary
+
+        , HttpInternalServerError  <$> arbitrary
+        , HttpNotImplemented  <$> arbitrary
+        , HttpServiceUnavailable  <$> arbitrary
+        ]
 
 ------------------------------------------------------------
 -- Functions
@@ -64,29 +126,27 @@ addJsonBody :: forall a. ToJSON a => a -> Request -> Request
 addJsonBody body req = setRequestBodyJSON body $ setRequestMethod "PUT" req
 
 -- | Make an api call
--- TODO(ks): Switch to @Either@.
 apiCall
-    :: forall m a. (MonadIO m, FromJSON a)
+    :: forall m a. (MonadIO m, MonadCatch m, FromJSON a)
     => (Value -> Parser a)
     -> Request
     -> m a
-apiCall parser req = do
-    putTextLn $ show req
-    v <- getResponseBody <$> httpJSON req
-    case parseEither parser v of
-        Right o -> pure o
-        Left e -> error $ "couldn't parse response "
-            <> toText e <> "\n" <> decodeUtf8 (encode v)
+apiCall parser request = do
+    -- putTextLn $ show req -- logging !?!
+    httpResult      <- httpJSONEither request
 
--- | Make a safe api call.
-apiCallSafe
-    :: forall m a. (MonadIO m, FromJSON a)
-    => (Value -> Parser a)
-    -> Request
-    -> m (Either String a)
-apiCallSafe parser req = do
-    putTextLn $ show req
-    v <- getResponseBody <$> httpJSON req
-    pure $ parseEither parser v
+    let httpResponseBody = getResponseBody httpResult
 
+    httpResponse    <-  either
+                            (throwM . HttpDecodingJSON request . show)
+                            pure
+                            httpResponseBody
+
+    let httpStatusCode  = getResponseStatusCode httpResult
+
+    _               <- statusCodeToException request httpStatusCode
+
+    case parseEither parser httpResponse of
+        Left reason -> throwM $ HttpDecodingJSON request reason
+        Right value -> pure value
 
