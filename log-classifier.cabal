@@ -1,5 +1,5 @@
 name:                log-classifier
-version:             1.4.3.0
+version:             1.4.4.0
 synopsis:            Log classifier for a Cardano node
 description:         Please see the README
 homepage:            https://github.com/input-output-hk/log-classifier#readme
@@ -28,11 +28,11 @@ library
                        DataSource
                        Configuration
                        Util
+                       HttpLayer
   other-modules:       Paths_log_classifier
                        DataSource.DB
                        DataSource.Types
                        DataSource.Http
-                       HttpLayer
   ghc-options:         -Wall
   build-depends:       aeson
                      , array

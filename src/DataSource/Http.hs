@@ -18,7 +18,8 @@ import           Data.Aeson.Text (encodeToLazyText)
 import           Data.List (nub)
 import           Network.HTTP.Simple (Request, getResponseBody, httpLBS, parseRequest_)
 
-import           HttpLayer (HTTPNetworkLayer (..), apiRequest, apiRequestAbsolute)
+import           HttpLayer (HTTPNetworkLayer (..), HttpNetworkLayerException (..), apiRequest,
+                            apiRequestAbsolute)
 
 import           DataSource.Types (Attachment (..), AttachmentContent (..), Comment (..),
                                    CommentBody (..), CommentId (..), Config (..), DataLayer (..),
@@ -39,7 +40,7 @@ import           DataSource.Types (Attachment (..), AttachmentContent (..), Comm
 --   - get returns a single result (wrapped in @Maybe@)
 --   - list returns multiple results
 --   - post submits a result (maybe PUT?!)
-basicDataLayer :: (MonadIO m, MonadReader Config m) => DataLayer m
+basicDataLayer :: (MonadIO m, MonadCatch m, MonadReader Config m) => DataLayer m
 basicDataLayer = DataLayer
     { zlGetTicketInfo           = getTicketInfo
     , zlListDeletedTickets      = listDeletedTickets
@@ -74,7 +75,7 @@ emptyDataLayer = DataLayer
 
 -- | Get single ticket info.
 getTicketInfo
-    :: (HasCallStack, MonadIO m, MonadReader Config m)
+    :: (HasCallStack, MonadIO m, MonadCatch m, MonadReader Config m)
     => TicketId
     -> m (Maybe TicketInfo)
 getTicketInfo ticketId = do
@@ -85,7 +86,54 @@ getTicketInfo ticketId = do
 
     apiCall <- asksHTTPNetworkLayer hnlApiCall
 
-    Just <$> apiCall parseTicket req
+    result  <- try $ apiCall parseTicket req
+
+    notFoundExceptionToMaybe result
+  where
+    -- | We want only @HttpNotFound@ to return @Nothing@, otherwise
+    -- propagate the exception.
+    notFoundExceptionToMaybe
+        :: forall m a. (MonadCatch m)
+        => Either HttpNetworkLayerException a
+        -> m (Maybe a)
+    notFoundExceptionToMaybe result = case result of
+        Left exception      -> case exception of
+            HttpNotFound _      -> pure Nothing
+            otherExceptions     -> throwM otherExceptions
+        Right ticketInfo    -> pure $ Just ticketInfo
+
+-- | Get ticket's comments
+getTicketComments
+    :: (HasCallStack, MonadIO m, MonadCatch m, MonadReader Config m)
+    => TicketId
+    -> m [Comment]
+getTicketComments tId = do
+    cfg <- ask
+
+    apiCall <- asksHTTPNetworkLayer hnlApiCall
+
+    let url = showURL $ TicketCommentsURL tId
+    let req = apiRequest cfg url
+
+    result  <- try $ apiCall parseComments req
+
+    notFoundExceptionToList result
+  where
+    -- | We want only @HttpNotFound@ to return an empty list, otherwise
+    -- propagate the exception.
+    -- When a @Ticket@ is not found, we don't have any of the @[Comment]@,
+    -- effectivly returning an empty list.
+    -- We might include a stricter policy to cause exception when no ticket is
+    -- found, but this should be good as well.
+    notFoundExceptionToList
+        :: forall m a. (MonadCatch m)
+        => Either HttpNetworkLayerException [a]
+        -> m [a]
+    notFoundExceptionToList result = case result of
+        Left exception      -> case exception of
+            HttpNotFound _      -> pure []
+            otherExceptions     -> throwM otherExceptions
+        Right comments      -> pure comments
 
 -- | Return list of deleted tickets.
 listDeletedTickets
@@ -151,7 +199,7 @@ listAdminAgents = do
 -- NOTE: If count is less than 1000, then stop paginating.
 -- Otherwise, use the next_page URL to get the next page of results.
 getExportedTickets
-    :: forall m. (MonadIO m, MonadReader Config m)
+    :: forall m. (MonadIO m, MonadCatch m, MonadReader Config m)
     => ExportFromTime
     -> m [TicketInfo]
 getExportedTickets time = do
@@ -193,7 +241,7 @@ getExportedTickets time = do
 
 -- | Send API request to post comment
 postTicketComment
-    :: (MonadIO m, MonadReader Config m)
+    :: (MonadIO m, MonadCatch m, MonadReader Config m)
     => TicketInfo
     -> ZendeskResponse
     -> m ()
@@ -211,7 +259,7 @@ postTicketComment ticketInfo zendeskResponse = do
 -- | Create response ticket
 createResponseTicket :: Integer -> TicketInfo -> ZendeskResponse -> Ticket
 createResponseTicket agentId TicketInfo{..} ZendeskResponse{..} =
-    let analyzedTag = renderTicketStatus AnalyzedByScriptV1_4_3
+    let analyzedTag = renderTicketStatus AnalyzedByScriptV1_4_4
         -- Nub so it won't post duplicate tags
         allTags    = nub $ [analyzedTag] <> getTicketTags tiTags <> getTicketTags zrTags
         -- We remove the @ToBeAnalyzed@ tag.
@@ -231,7 +279,7 @@ createResponseTicket agentId TicketInfo{..} ZendeskResponse{..} =
 
 -- | Get user information.
 _getUser
-    :: (MonadIO m, MonadReader Config m)
+    :: (MonadIO m, MonadCatch m, MonadReader Config m)
     => m User
 _getUser = do
     cfg <- ask
@@ -252,27 +300,6 @@ getAttachment Attachment{..} = Just . AttachmentContent . getResponseBody <$> ht
     where
       req :: Request
       req = parseRequest_ (toString aURL)
-
--- | Get ticket's comments
-getTicketComments
-    :: (MonadIO m, MonadReader Config m)
-    => TicketId
-    -> m [Comment]
-getTicketComments tId = do
-    cfg <- ask
-
-    apiCallSafe     <- asksHTTPNetworkLayer hnlApiCallSafe
-
-    let url = showURL $ TicketCommentsURL tId
-    let req = apiRequest cfg url
-
-    result          <- apiCallSafe parseComments req
-
-    -- TODO(ks): For now return empty if there is an exception.
-    -- After we have exception handling, we propagate this up.
-    case result of
-        Left _  -> pure []
-        Right r -> pure r
 
 ------------------------------------------------------------
 -- Utility

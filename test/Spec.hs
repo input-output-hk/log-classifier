@@ -3,8 +3,8 @@ module Main where
 import           Universum
 
 import           Data.List (nub)
-import           Database.SQLite.Simple (Connection (..), NamedParam (..), queryNamed,
-                                         withConnection, query_)
+import           Database.SQLite.Simple (Connection (..), NamedParam (..), queryNamed, query_,
+                                         withConnection)
 
 import           Test.Hspec (Spec, describe, hspec, it, pending, shouldBe)
 import           Test.Hspec.QuickCheck (modifyMaxSuccess, prop)
@@ -15,17 +15,19 @@ import           Test.QuickCheck.Monadic (assert, monadicIO, pre, run)
 import           Configuration (basicIOLayer, defaultConfig)
 import           DataSource (App, Attachment (..), AttachmentId (..), Comment (..),
                              CommentBody (..), CommentId (..), Config (..), DBLayerException (..),
-                             DataLayer (..), DeletedTicket (..), ExportFromTime (..), IOLayer (..),
-                             Ticket (..), TicketId (..), TicketInfo (..), TicketStatus (..),
-                             TicketTag (..), TicketTags (..), TicketURL (..), User, UserId (..),
-                             ZendeskAPIUrl (..), ZendeskResponse (..), createResponseTicket,
+                             DataLayer (..), DeletedTicket (..), ExportFromTime (..),
+                             HTTPNetworkLayer (..), IOLayer (..), Ticket (..), TicketId (..),
+                             TicketInfo (..), TicketStatus (..), TicketTag (..), TicketTags (..),
+                             TicketURL (..), User, UserId (..), ZendeskAPIUrl (..),
+                             ZendeskResponse (..), basicDataLayer, createResponseTicket,
                              createSchema, deleteAllData, emptyDBLayer, emptyDataLayer,
                              insertCommentAttachments, insertTicketComments, insertTicketInfo,
                              renderTicketStatus, runApp, showURL)
 import           Exceptions (ProcessTicketExceptions (..))
+import           HttpLayer (HttpNetworkLayerException (..), basicHTTPNetworkLayer)
 
-import           Lib (exportZendeskDataToLocalDB, filterAnalyzedTickets, getAttachmentsFromComment,
-                      listAndSortTickets, processTicket)
+import           Lib (exportZendeskDataToLocalDB, fetchTicket, fetchTicketComments, filterAnalyzedTickets,
+                      getAttachmentsFromComment, listAndSortTickets, processTicket)
 import           Statistics (filterTicketsByStatus, filterTicketsWithAttachments,
                              showAttachmentInfo, showCommentAttachments)
 
@@ -34,6 +36,7 @@ import           Statistics (filterTicketsByStatus, filterTicketsWithAttachments
 main :: IO ()
 main = hspec spec
 
+-- stack test --test-arguments "--seed=1425428185"
 -- stack test log-classifier --fast --test-arguments "-m Zendesk"
 spec :: Spec
 spec =
@@ -56,6 +59,9 @@ spec =
             exportZendeskDataToLocalDBSpec
             getAttachmentsFromCommentSpec
 
+        describe "HttpNetworkLayer" $ do
+            parsingFailureSpec
+
         describe "Database" $ do
             deleteAllDataSpec
             insertCommentAttachmentsSpec
@@ -67,9 +73,9 @@ spec =
 withStubbedIOAndDataLayer :: DataLayer App -> Config
 withStubbedIOAndDataLayer stubbedDataLayer =
     defaultConfig
-        { cfgDataLayer   = stubbedDataLayer
-        , cfgIOLayer        = stubbedIOLayer
-        , cfgDBLayer        = emptyDBLayer
+        { cfgDataLayer          = stubbedDataLayer
+        , cfgIOLayer            = stubbedIOLayer
+        , cfgDBLayer            = emptyDBLayer
         }
   where
     stubbedIOLayer :: IOLayer App
@@ -79,6 +85,87 @@ withStubbedIOAndDataLayer stubbedDataLayer =
             , iolAppendFile     = \_ _   -> pure ()
             -- ^ Do nothing with the output
             }
+
+
+-- | A utility function for testing which stubs http network and returns
+-- the @Config@ with the @DataLayer@ and @HttpNetworkLayer@ that was passed into it.
+withStubbedNetworkAndDataLayer :: HTTPNetworkLayer -> Config
+withStubbedNetworkAndDataLayer stubbedHttpNetworkLayer =
+    defaultConfig
+        { cfgDataLayer          = basicDataLayer
+        , cfgIOLayer            = stubbedIOLayer
+        , cfgDBLayer            = emptyDBLayer
+        , cfgHTTPNetworkLayer   = stubbedHttpNetworkLayer
+        }
+  where
+    stubbedIOLayer :: IOLayer App
+    stubbedIOLayer =
+        basicIOLayer
+            { iolPrintText      = \_     -> pure ()
+            , iolAppendFile     = \_ _   -> pure ()
+            -- ^ Do nothing with the output
+            }
+
+
+-- | Generate a @HttpNotFound@ so we can test when a ticket can't be found.
+generateHttpNotFoundExceptions :: Gen HttpNetworkLayerException
+generateHttpNotFoundExceptions = HttpNotFound <$> arbitrary
+
+
+parsingFailureSpec :: Spec
+parsingFailureSpec =
+    describe "parsingFailureSpec " $ modifyMaxSuccess (const 1000) $ do
+        it "should return Nothing when parsing fails at getTicketInfo" $ do
+            forAll arbitrary $ \ticketId ->
+                forAll generateHttpNotFoundExceptions $ \exception ->
+                    monadicIO $ do
+
+                        -- we exclusivly want just @HttpNotFound@, others are rethrown.
+                        pre $ case exception of
+                                   HttpNotFound _   -> True
+                                   _                -> False
+
+                        let stubbedHttpNetworkLayer :: HTTPNetworkLayer
+                            stubbedHttpNetworkLayer =
+                                basicHTTPNetworkLayer
+                                    { hnlApiCall                = \_ _   -> throwM exception
+                                    }
+
+                        let stubbedConfig :: Config
+                            stubbedConfig = withStubbedNetworkAndDataLayer stubbedHttpNetworkLayer
+
+                        let appExecution :: IO (Maybe TicketInfo)
+                            appExecution = runApp (fetchTicket ticketId) stubbedConfig
+
+                        ticket <- run appExecution
+
+                        -- Check we don't have any tickets, since they would all raise a parsing exception.
+                        assert . isNothing $ ticket
+
+        it "should return empty when parsing fails at getTicketComments" $ do
+            forAll arbitrary $ \ticketId ->
+                forAll generateHttpNotFoundExceptions $ \exception ->
+
+                    monadicIO $ do
+
+                        let stubbedHttpNetworkLayer :: HTTPNetworkLayer
+                            stubbedHttpNetworkLayer =
+                                basicHTTPNetworkLayer
+                                    { hnlApiCall                = \_ _   -> throwM exception
+                                    }
+
+                        let stubbedConfig :: Config
+                            stubbedConfig = withStubbedNetworkAndDataLayer stubbedHttpNetworkLayer
+
+                        -- TODO(ks): There is an indication that we need to propage this exception.
+                        let appExecution :: IO [Comment]
+                            appExecution = runApp (fetchTicketComments ticketId) stubbedConfig
+
+                        comments <- run appExecution
+
+                        -- Check we don't have any comments.
+                        assert . null $ comments
+
 
 listAndSortTicketsSpec :: Spec
 listAndSortTicketsSpec =
@@ -514,7 +601,7 @@ createResponseTicketSpec =
                     responseTags        = getTicketTags $ tTag responseTicket
                 -- in summary, the response tags have the debuggers `analyzed-by-script-version` tag AND
                 -- they remove the `to_be_analysed` tag AND they are unique.
-                in (filter (/= renderTicketStatus ToBeAnalyzed) . nub $ renderTicketStatus AnalyzedByScriptV1_4_3 : mergedTags) === responseTags
+                in (filter (/= renderTicketStatus ToBeAnalyzed) . nub $ renderTicketStatus AnalyzedByScriptV1_4_4 : mergedTags) === responseTags
 
 
 exportZendeskDataToLocalDBSpec :: Spec
@@ -660,7 +747,7 @@ deleteAllDataSpec =
     describe "deleteAllData" $ modifyMaxSuccess (const 200) $ do
        prop "should delete all datas from database" $
            monadicIO $ do
-               (tickets, ticketComments, commentAttachments, attachmentContents) <- 
+               (tickets, ticketComments, commentAttachments, attachmentContents) <-
                    run . withDBSchema ":memory:" $ \conn -> do
                        deleteAllData conn
                        tickets            <- query_ conn "SELECT * from ticket_info"
@@ -694,7 +781,7 @@ insertCommentAttachmentsSpec =
                             return (dbAttachments :: [DBCommentAttachment])
 
                     assert . isJust . safeHead $ dbAttachments
-                    whenJust (safeHead dbAttachments) $ 
+                    whenJust (safeHead dbAttachments) $
                         \(attachmentId, commentId, attUrl, attContentType, attSize) -> do
                            assert $ attachmentId   == aId attachment
                            assert $ commentId      == cId comment
@@ -706,7 +793,7 @@ insertCommentAttachmentsSpec =
             \(comment :: Comment) (attachment :: Attachment) ->
                 monadicIO $ do
                     eResult <- run . try $
-                        withConnection ":memory:" $ \conn 
+                        withConnection ":memory:" $ \conn
                             -> insertCommentAttachments conn comment attachment
 
                     assert $ isLeft (eResult :: Either DBLayerException ())

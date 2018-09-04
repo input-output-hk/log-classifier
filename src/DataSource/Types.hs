@@ -206,9 +206,10 @@ data DataLayer m = DataLayer
 -- We need to use RankNTypes due to some complications that appeared.
 data HTTPNetworkLayer = HTTPNetworkLayer
     { hnlAddJsonBody    :: forall a.    (ToJSON a) => a -> Request -> Request
-    -- TODO(ks): These two below are basically the same, will fix in future PR, requires refactoring.
-    , hnlApiCall        :: forall m a.  (MonadIO m, FromJSON a) => (Value -> Parser a) -> Request -> m a
-    , hnlApiCallSafe    :: forall m a.  (MonadIO m, FromJSON a) => (Value -> Parser a) -> Request -> m (Either String a)
+    , hnlApiCall        :: forall m a.  (MonadIO m, MonadCatch m, FromJSON a)
+                        => (Value -> Parser a)
+                        -> Request
+                        -> m a
     }
 
 -- | The IOLayer interface that we can expose.
@@ -462,6 +463,7 @@ data TicketTag
     | AnalyzedByScriptV1_4_1  -- ^ Ticket has been analyzed by the version 1.4.1
     | AnalyzedByScriptV1_4_2  -- ^ Ticket has been analyzed by the version 1.4.2
     | AnalyzedByScriptV1_4_3  -- ^ Ticket has been analyzed by the version 1.4.3
+    | AnalyzedByScriptV1_4_4  -- ^ Ticket has been analyzed by the version 1.4.4
     | ToBeAnalyzed            -- ^ Ticket needs to be analyzed
     | NoKnownIssue            -- ^ Ticket had no known issue
     | NoLogAttached           -- ^ Log file not attached
@@ -971,6 +973,7 @@ renderTicketStatus AnalyzedByScriptV1_4   = "analyzed-by-script-v1.4"
 renderTicketStatus AnalyzedByScriptV1_4_1 = "analyzed-by-script-v1.4.1"
 renderTicketStatus AnalyzedByScriptV1_4_2 = "analyzed-by-script-v1.4.2"
 renderTicketStatus AnalyzedByScriptV1_4_3 = "analyzed-by-script-v1.4.3"
+renderTicketStatus AnalyzedByScriptV1_4_4 = "analyzed-by-script-v1.4.4"
 renderTicketStatus ToBeAnalyzed           = "to_be_analysed" -- https://iohk.zendesk.com/agent/admin/tags
 renderTicketStatus NoKnownIssue           = "no-known-issues"
 renderTicketStatus NoLogAttached          = "no-log-files"
