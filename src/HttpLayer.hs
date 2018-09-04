@@ -2,7 +2,6 @@ module HttpLayer
     ( HTTPNetworkLayer (..)
     , HttpNetworkLayerException (..)
     , basicHTTPNetworkLayer
-    , emptyHTTPNetworkLayer
     , apiRequest
     , apiRequestAbsolute
     ) where

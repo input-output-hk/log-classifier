@@ -1,0 +1,7 @@
+- package:
+  - name: log-classifier
+  - section:
+    - name: exe:log-classifier-exe
+    - message:
+      - name: Redundant build-depends entry
+      - depends: base
