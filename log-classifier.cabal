@@ -37,7 +37,6 @@ library
   build-depends:       aeson
                      , array
                      , attoparsec
-                     , base >=4.7 && <5
                      , bytestring
                      , containers
                      , directory
@@ -119,7 +118,8 @@ test-suite log-classifier-test
   type:                exitcode-stdio-1.0
   main-is:             Spec.hs
   ghc-options:         -Wall
-  build-depends:       bytestring
+  build-depends:       base >=4.7 && <5
+                     , bytestring
                      , log-classifier
                      , sqlite-simple
                      , text
