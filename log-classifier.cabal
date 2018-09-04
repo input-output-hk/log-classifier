@@ -121,20 +121,12 @@ test-suite log-classifier-test
   type:                exitcode-stdio-1.0
   main-is:             Spec.hs
   ghc-options:         -Wall
-  build-depends:       array
-                     , attoparsec
-                     , base >=4.7 && <5
+  build-depends:       base >=4.7 && <5
                      , bytestring
-                     , containers
-                     , http-conduit
                      , log-classifier
-                     , mtl
-                     , reflection
                      , sqlite-simple
-                     , regex-tdfa
                      , text
                      , universum
-                     , zip-archive
                      , QuickCheck
                      , hspec
 
