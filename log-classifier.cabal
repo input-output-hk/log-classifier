@@ -18,6 +18,7 @@ library
   exposed-modules:     Classify
                        CLI
                        Exceptions
+                       Pure
                        Lib
                        LogAnalysis.Classifier
                        LogAnalysis.Exceptions
