@@ -641,6 +641,7 @@ filterAnalyzedTickets ticketsInfo =
                         , AnalyzedByScriptV1_4_2
                         , AnalyzedByScriptV1_4_3
                         , AnalyzedByScriptV1_4_4
+                        , AnalyzedByScriptV1_4_5
                         ]
 
     isTicketAnalyzed :: TicketInfo -> Bool
