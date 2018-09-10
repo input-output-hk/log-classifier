@@ -8,4 +8,7 @@
 "Network.Socket.recvBuf: resource vanished","ResourceVanished","Daedalus Wallet Support Issue 8 Network error","To fix this issue, please try other ISP provider","234"
 "IO error: Failed to create dir","UserNameError","Daedalus Wallet Support Issue 9 User is using non-latin characters for username","To fix this issue, pleae change your PC's username using only latin-characters","235"
 "open.lock: Locked by","StaleLockFile","Daedalus Wallet Support Issue 10 open.lock file is corrupted due to improper shutdown","The issue is that the application was improperly shutdown. As a workaround, you'll need to delete open.lock file.","236"
+"signalProcesssignalProcess:: permission denied","StaleLockFile","Daedalus Wallet Support Issue 10 open.lock file is corrupted due to improper shutdown","The issue is that the application was improperly shutdown. As a workaround, you'll need to delete open.lock file.","236"
 "Network.Socket.recvBuf: failed (No error)","ConnectionRefused","Daedalus Wallet Support Issue 11 Firewall is blocking the connection","To fix this issue, please try other ISP provider","234"
+"Error: certificate signature failure","Error","Connect After Release 1.3.0 Error: certificate signature failure at TLSSocket.","To Fix the issue, reinstall Daedelus.","208"
+"server.crt: openBinaryFile: does not exist","Error","Connect After Release 1.3.0 Error: certificate signature failure at TLSSocket.","To Fix the issue, reinstall Daedelus.","208"
