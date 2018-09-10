@@ -723,13 +723,8 @@ instance Arbitrary User where
             , uEmail = userEmail
             }
 
-instance Arbitrary POSIXTime where
-    arbitrary = do
-        randomInt <- arbitrary
-        pure . abs . fromInteger $ randomInt
-
 instance Arbitrary ExportFromTime where
-    arbitrary = ExportFromTime <$> arbitrary
+    arbitrary = ExportFromTime . abs . fromInteger <$> arbitrary
 
 instance Arbitrary DeletedTicket where
     arbitrary = DeletedTicket <$> arbitrary

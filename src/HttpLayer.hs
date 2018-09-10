@@ -76,9 +76,16 @@ statusCodeToException request = \case
 
 instance Exception HttpNetworkLayerException
 
--- | TODO(ks): Good enough for our purposes
+
+--newtype ClientRequest = ClientRequest { getClientRequest :: Request }
+--    deriving (Show)
+--
+---- | TODO(ks): Good enough for our purposes
+--instance Arbitrary ClientRequest where
+--    arbitrary = pure . ClientRequest $ defaultRequest
+
 instance Arbitrary Request where
-    arbitrary = pure defaultRequest
+    arbitrary = pure $ defaultRequest
 
 instance Arbitrary HttpNetworkLayerException where
     arbitrary = oneof
