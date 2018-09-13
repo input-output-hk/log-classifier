@@ -581,11 +581,6 @@ filterAnalyzedTicketsSpec =
                 \(ticketInfos :: [TicketInfo]) ->
                     length (filterAnalyzedTickets ticketInfos) `shouldBe` 0
 
-        it "should filter analyzed tickets" $
-            forAll (listOf $ genTicketWithFilteredTags ["analyzed-by-script-v1.0"]) $
-                \(ticketInfos :: [TicketInfo]) ->
-                    length (filterAnalyzedTickets ticketInfos) `shouldBe` 0
-
 createResponseTicketSpec :: Spec
 createResponseTicketSpec =
     describe "createResponseTicket" $ modifyMaxSuccess (const 200) $ do
