@@ -31,6 +31,8 @@ import           Lib (exportZendeskDataToLocalDB, fetchTicket, fetchTicketCommen
 import           Statistics (filterTicketsByStatus, filterTicketsWithAttachments,
                              showAttachmentInfo, showCommentAttachments)
 
+import           HttpQueueSpec
+
 -- TODO(ks): What we are really missing is a realistic @Gen DataLayer m@.
 
 main :: IO ()
@@ -67,6 +69,8 @@ spec =
             insertCommentAttachmentsSpec
             insertTicketInfoSpec
             insertTicketCommentsSpec
+
+        dispatchActionsSpec
 
 -- | A utility function for testing which stubs IO and returns
 -- the @Config@ with the @DataLayer@ that was passed into it.
