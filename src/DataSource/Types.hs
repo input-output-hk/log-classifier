@@ -465,7 +465,7 @@ data TicketTag
     | AnalyzedByScriptV1_4_3  -- ^ Ticket has been analyzed by the version 1.4.3
     | AnalyzedByScriptV1_4_4  -- ^ Ticket has been analyzed by the version 1.4.4
     | AnalyzedByScriptV1_4_5  -- ^ Ticket has been analyzed by the version 1.4.5
-    | AnalyzedByScriptV1_5_0  -- ^ Ticket has been analyzed by the version 1.4.6
+    | AnalyzedByScriptV1_5_0  -- ^ Ticket has been analyzed by the version 1.5.0
     | ToBeAnalyzed            -- ^ Ticket needs to be analyzed
     | NoKnownIssue            -- ^ Ticket had no known issue
     | NoLogAttached           -- ^ Log file not attached
