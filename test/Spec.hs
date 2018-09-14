@@ -596,7 +596,7 @@ createResponseTicketSpec =
                     responseTags        = getTicketTags $ tTag responseTicket
                 -- in summary, the response tags have the debuggers `analyzed-by-script-version` tag AND
                 -- they remove the `to_be_analysed` tag AND they are unique.
-                in (filter (/= renderTicketStatus ToBeAnalyzed) . nub $ renderTicketStatus AnalyzedByScriptV1_4_6 : mergedTags) === responseTags
+                in (filter (/= renderTicketStatus ToBeAnalyzed) . nub $ renderTicketStatus AnalyzedByScriptV1_5_0 : mergedTags) === responseTags
 
 
 exportZendeskDataToLocalDBSpec :: Spec
