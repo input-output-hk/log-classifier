@@ -285,7 +285,17 @@ processTicket tId = do
         Just ticketInfo -> do
             zendeskResponse <- getZendeskResponses comments attachments ticketInfo
 
-            --postTicketComment ticketInfo zendeskResponse
+            postTicketComment ticketInfo zendeskResponse
+
+            -- TODO(ks): Moved back so we can run it in single-threaded mode. Requires a lot of
+            -- refactoring to run it in a multi-threaded mode.
+            let ticketId = getTicketId $ zrTicketId zendeskResponse
+            -- Append ticket result.
+            let tags = getTicketTags $ zrTags zendeskResponse
+            forM_ tags $ \tag -> do
+                let formattedTicketIdAndTag = show ticketId <> " " <> tag
+                printText formattedTicketIdAndTag
+                appendF "logs/analysis-result.log" (formattedTicketIdAndTag <> "\n")
 
             pure zendeskResponse
 
@@ -330,8 +340,15 @@ processTicketsFromTime exportFromTime = do
 processTickets :: HasCallStack => App ()
 processTickets = do
 
-    allTickets          <- fetchTickets
-    _                   <- mapM (processTicketSafe . tiId) allTickets
+    printText <- asksIOLayer iolPrintText
+    printText "Classifier will start processing tickets"
+
+    -- Fetching all the tickets that needs to be processed
+    allTickets <- fetchTickets
+
+    printText $ "Number of tickets to be analyzed: " <> show (length allTickets)
+
+    mapM_ (processTicketSafe . tiId) allTickets
 
     putTextLn "All the tickets has been processed."
 
@@ -398,17 +415,11 @@ listAndSortTickets = do
         agentIds = map uId agents
     -- We first fetch the function from the configuration
     listTickets <- asksDataLayer zlListAssignedTickets
-    printText   <- asksIOLayer iolPrintText
-
-    printText "Classifier is going to process tickets assigned to agents"
 
     ticketInfos <- map concat $ traverse listTickets agentIds
 
     let filteredTicketIds = filterAnalyzedTickets ticketInfos
     let sortedTicketIds   = sortBy compare filteredTicketIds
-
-    printText $ "There are " <> show (length sortedTicketIds) <> " unanalyzed tickets."
-    printText "Processing tickets, this may take hours to finish."
 
     pure sortedTicketIds
 
@@ -417,17 +428,11 @@ listAndSortUnassignedTickets = do
 
     -- We first fetch the function from the configuration
     listUnassignedTickets   <- asksDataLayer zlListUnassignedTickets
-    printText               <- asksIOLayer iolPrintText
-
-    printText "Classifier is going to process tickets assigned to agents"
 
     ticketInfos             <- listUnassignedTickets
 
     let filteredTicketIds   = filterAnalyzedTickets ticketInfos
     let sortedTicketIds     = sortBy compare filteredTicketIds
-
-    printText $ "There are " <> show (length sortedTicketIds) <> " unanalyzed and unassigned tickets."
-    printText "Processing tickets, this may take hours to finish."
 
     pure sortedTicketIds
 
@@ -603,28 +608,9 @@ filterAnalyzedTickets ticketsInfo =
   where
     ticketsFilter :: TicketInfo -> Bool
     ticketsFilter ticketInfo =
-           isTicketAnalyzed ticketInfo
-        && isTicketOpen ticketInfo
+           isTicketOpen ticketInfo
         && isTicketBlacklisted ticketInfo
         && isTicketInGoguenTestnet ticketInfo
-
-    analyzedTags :: [Text]
-    analyzedTags = map renderTicketStatus
-                        [ AnalyzedByScriptV1_0
-                        , AnalyzedByScriptV1_1
-                        , AnalyzedByScriptV1_2
-                        , AnalyzedByScriptV1_3
-                        , AnalyzedByScriptV1_4
-                        , AnalyzedByScriptV1_4_1
-                        , AnalyzedByScriptV1_4_2
-                        , AnalyzedByScriptV1_4_3
-                        , AnalyzedByScriptV1_4_4
-                        , AnalyzedByScriptV1_4_5
-                        ]
-
-    isTicketAnalyzed :: TicketInfo -> Bool
-    isTicketAnalyzed TicketInfo{..} = all (\analyzedTag -> analyzedTag `notElem` (getTicketTags tiTags)) analyzedTags
-    -- ^ This is showing that something is wrong...
 
     unsolvedTicketStatus :: [TicketStatus]
     unsolvedTicketStatus = map TicketStatus ["new", "open", "hold", "pending"]
