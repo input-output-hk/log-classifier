@@ -44,8 +44,6 @@ library
                      , containers
                      , directory
                      , http-conduit
-                     -- concurrency
-                     , stm
                      -- Effects & company
                      , mtl
                      , monad-control
