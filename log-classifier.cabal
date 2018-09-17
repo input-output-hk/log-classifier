@@ -28,8 +28,9 @@ library
                        DataSource
                        Configuration
                        Util
-                       HttpLayer
-                       HttpQueue
+                       Http.Layer
+                       Http.Queue
+                       Http.Exceptions
   other-modules:       Paths_log_classifier
                        DataSource.DB
                        DataSource.Types
@@ -128,6 +129,7 @@ test-suite log-classifier-test
   build-depends:       base >=4.7 && <5
                      , bytestring
                      , unliftio
+                     , http-conduit
                      , log-classifier
                      , sqlite-simple
                      , text

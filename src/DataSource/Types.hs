@@ -57,6 +57,8 @@ module DataSource.Types
 
 import           Universum
 
+import qualified Data.ByteString.Lazy as BL
+
 import           Control.Monad.Base (MonadBase)
 import           Control.Monad.Trans.Control (MonadBaseControl (..))
 
@@ -88,6 +90,7 @@ newtype App a = App { runAppBase :: ReaderT Config IO a }
              , MonadUnliftIO
              , MonadCatch
              , MonadThrow
+             , MonadMask
              )
 
 instance MonadBaseControl IO App where
@@ -206,10 +209,13 @@ data DataLayer m = DataLayer
 -- We need to use RankNTypes due to some complications that appeared.
 data HTTPNetworkLayer = HTTPNetworkLayer
     { hnlAddJsonBody    :: forall a.    (ToJSON a) => a -> Request -> Request
-    , hnlApiCall        :: forall m a.  (MonadIO m, MonadCatch m, FromJSON a)
+    , hnlApiCall        :: forall m a.  (MonadIO m, MonadCatch m, MonadMask m, FromJSON a)
                         => (Value -> Parser a)
                         -> Request
                         -> m a
+    , hnlApiCallBare    :: forall m. (MonadIO m, MonadMask m)
+                        => Request
+                        -> m BL.ByteString
     }
 
 -- | The IOLayer interface that we can expose.

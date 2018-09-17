@@ -1,7 +1,9 @@
 -- Here we need to export just the public info.
 module Configuration
-    ( defaultConfig
+    ( emptyConfig
+    , defaultConfig
     , basicIOLayer
+    , emptyIOLayer
     ) where
 
 import           Universum
@@ -9,12 +11,13 @@ import           Universum
 import           DataSource.DB
 import           DataSource.Http
 import           DataSource.Types
-import           HttpLayer (basicHTTPNetworkLayer)
 
+import           Http.Layer (basicHTTPNetworkLayer, emptyHTTPNetworkLayer)
+import           Http.Queue (ShedulerConfig)
 
 -- | The default configuration.
-defaultConfig :: Config
-defaultConfig = Config
+defaultConfig :: ShedulerConfig -> Config
+defaultConfig shedulerConfig = Config
     { cfgAgentId                = 0
     , cfgZendesk                = "https://iohk.zendesk.com"
     , cfgToken                  = ""
@@ -23,10 +26,29 @@ defaultConfig = Config
     , cfgKnowledgebase          = []
     , cfgNumOfLogsToAnalyze     = 5
     , cfgIsCommentPublic        = False -- TODO(ks): For now, we need this in CLI.
+    -- * Layers
     , cfgDataLayer              = basicDataLayer
-    , cfgHTTPNetworkLayer       = basicHTTPNetworkLayer
+    , cfgHTTPNetworkLayer       = basicHTTPNetworkLayer shedulerConfig
     , cfgIOLayer                = basicIOLayer
     , cfgDBLayer                = connDBLayer
+    }
+
+-- | The empty configuration. Used in tests.
+emptyConfig :: Config
+emptyConfig = Config
+    { cfgAgentId                = 0
+    , cfgZendesk                = mempty
+    , cfgToken                  = mempty
+    , cfgEmail                  = mempty
+    , cfgAssignTo               = 0
+    , cfgKnowledgebase          = mempty
+    , cfgNumOfLogsToAnalyze     = 5
+    , cfgIsCommentPublic        = True
+    -- * Layers
+    , cfgDataLayer              = emptyDataLayer
+    , cfgHTTPNetworkLayer       = emptyHTTPNetworkLayer
+    , cfgIOLayer                = emptyIOLayer
+    , cfgDBLayer                = emptyDBLayer
     }
 
 -- | The @IO@ layer.
@@ -37,5 +59,15 @@ basicIOLayer = IOLayer
     , iolReadFile               = readFile
     , iolLogDebug               = putTextLn
     , iolLogInfo                = putTextLn
+    }
+
+-- | The empty @IO@ layer.
+emptyIOLayer :: IOLayer App
+emptyIOLayer = IOLayer
+    { iolAppendFile             = \_ _   -> pure ()
+    , iolPrintText              = \_     -> pure ()
+    , iolReadFile               = \_     -> pure mempty
+    , iolLogDebug               = \_     -> pure ()
+    , iolLogInfo                = \_     -> pure ()
     }
 

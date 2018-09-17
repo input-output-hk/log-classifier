@@ -12,7 +12,7 @@ import           Test.QuickCheck (Gen, arbitrary, elements, forAll, listOf, list
                                   (===))
 import           Test.QuickCheck.Monadic (assert, monadicIO, pre, run)
 
-import           Configuration (basicIOLayer, defaultConfig)
+import           Configuration (basicIOLayer, emptyConfig)
 import           DataSource (App, Attachment (..), AttachmentId (..), Comment (..),
                              CommentBody (..), CommentId (..), Config (..), DBLayerException (..),
                              DataLayer (..), DeletedTicket (..), ExportFromTime (..),
@@ -24,14 +24,16 @@ import           DataSource (App, Attachment (..), AttachmentId (..), Comment (.
                              insertCommentAttachments, insertTicketComments, insertTicketInfo,
                              renderTicketStatus, runApp, showURL)
 import           Exceptions (ProcessTicketExceptions (..))
-import           HttpLayer (HttpNetworkLayerException (..), basicHTTPNetworkLayer)
+import           Http.Exceptions (HttpNetworkLayerException (..))
+import           Http.Layer (emptyHTTPNetworkLayer)
 
-import           Lib (exportZendeskDataToLocalDB, fetchTicket, fetchTicketComments, filterAnalyzedTickets,
-                      getAttachmentsFromComment, listAndSortTickets, processTicket)
+import           Lib (exportZendeskDataToLocalDB, fetchTicket, fetchTicketComments,
+                      filterAnalyzedTickets, getAttachmentsFromComment, listAndSortTickets,
+                      processTicket)
 import           Statistics (filterTicketsByStatus, filterTicketsWithAttachments,
                              showAttachmentInfo, showCommentAttachments)
 
-import           HttpQueueSpec
+import           HttpQueueSpec (dispatchActionsSpec)
 
 -- TODO(ks): What we are really missing is a realistic @Gen DataLayer m@.
 
@@ -76,7 +78,7 @@ spec =
 -- the @Config@ with the @DataLayer@ that was passed into it.
 withStubbedIOAndDataLayer :: DataLayer App -> Config
 withStubbedIOAndDataLayer stubbedDataLayer =
-    defaultConfig
+    emptyConfig
         { cfgDataLayer          = stubbedDataLayer
         , cfgIOLayer            = stubbedIOLayer
         , cfgDBLayer            = emptyDBLayer
@@ -95,7 +97,7 @@ withStubbedIOAndDataLayer stubbedDataLayer =
 -- the @Config@ with the @DataLayer@ and @HttpNetworkLayer@ that was passed into it.
 withStubbedNetworkAndDataLayer :: HTTPNetworkLayer -> Config
 withStubbedNetworkAndDataLayer stubbedHttpNetworkLayer =
-    defaultConfig
+    emptyConfig
         { cfgDataLayer          = basicDataLayer
         , cfgIOLayer            = stubbedIOLayer
         , cfgDBLayer            = emptyDBLayer
@@ -126,12 +128,12 @@ parsingFailureSpec =
 
                         -- we exclusivly want just @HttpNotFound@, others are rethrown.
                         pre $ case exception of
-                                   HttpNotFound _   -> True
-                                   _                -> False
+                                   HttpNotFound _ -> True
+                                   _              -> False
 
                         let stubbedHttpNetworkLayer :: HTTPNetworkLayer
                             stubbedHttpNetworkLayer =
-                                basicHTTPNetworkLayer
+                                emptyHTTPNetworkLayer
                                     { hnlApiCall                = \_ _   -> throwM exception
                                     }
 
@@ -154,7 +156,7 @@ parsingFailureSpec =
 
                         let stubbedHttpNetworkLayer :: HTTPNetworkLayer
                             stubbedHttpNetworkLayer =
-                                basicHTTPNetworkLayer
+                                emptyHTTPNetworkLayer
                                     { hnlApiCall                = \_ _   -> throwM exception
                                     }
 
@@ -502,9 +504,9 @@ filterTicketsWithAttachmentsSpec =
                         let stubbedDataLayer :: DataLayer App
                             stubbedDataLayer =
                                 emptyDataLayer
-                                    {
-                                      zlGetTicketComments       = \_     -> pure comments
+                                    { zlGetTicketComments       = \_     -> pure comments
                                     }
+
                         let stubbedConfig :: Config
                             stubbedConfig = withStubbedIOAndDataLayer stubbedDataLayer
 

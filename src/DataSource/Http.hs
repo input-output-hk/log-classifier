@@ -16,10 +16,11 @@ import           Control.Monad.Reader (ask)
 import           Data.Aeson (parseJSON)
 import           Data.Aeson.Text (encodeToLazyText)
 import           Data.List (nub)
-import           Network.HTTP.Simple (Request, getResponseBody, httpLBS, parseRequest_)
+-- TODO(ks): We should be able to remove this once we untangle the layers and configuration.
+import           Network.HTTP.Simple (Request, parseRequest_)
 
-import           HttpLayer (HTTPNetworkLayer (..), HttpNetworkLayerException (..), apiRequest,
-                            apiRequestAbsolute)
+import           Http.Exceptions (HttpNetworkLayerException (..))
+import           Http.Layer (HTTPNetworkLayer (..), apiRequest, apiRequestAbsolute)
 
 import           DataSource.Types (Attachment (..), AttachmentContent (..), Comment (..),
                                    CommentBody (..), CommentId (..), Config (..), DataLayer (..),
@@ -40,7 +41,7 @@ import           DataSource.Types (Attachment (..), AttachmentContent (..), Comm
 --   - get returns a single result (wrapped in @Maybe@)
 --   - list returns multiple results
 --   - post submits a result (maybe PUT?!)
-basicDataLayer :: (MonadIO m, MonadCatch m, MonadReader Config m) => DataLayer m
+basicDataLayer :: (MonadIO m, MonadCatch m, MonadMask m, MonadReader Config m) => DataLayer m
 basicDataLayer = DataLayer
     { zlGetTicketInfo           = getTicketInfo
     , zlListDeletedTickets      = listDeletedTickets
@@ -75,7 +76,7 @@ emptyDataLayer = DataLayer
 
 -- | Get single ticket info.
 getTicketInfo
-    :: (HasCallStack, MonadIO m, MonadCatch m, MonadReader Config m)
+    :: (HasCallStack, MonadIO m, MonadCatch m, MonadMask m, MonadReader Config m)
     => TicketId
     -> m (Maybe TicketInfo)
 getTicketInfo ticketId = do
@@ -98,13 +99,13 @@ getTicketInfo ticketId = do
         -> m (Maybe a)
     notFoundExceptionToMaybe result = case result of
         Left exception      -> case exception of
-            HttpNotFound _      -> pure Nothing
-            otherExceptions     -> throwM otherExceptions
+            HttpNotFound _  -> pure Nothing
+            otherExceptions -> throwM otherExceptions
         Right ticketInfo    -> pure $ Just ticketInfo
 
 -- | Get ticket's comments
 getTicketComments
-    :: (HasCallStack, MonadIO m, MonadCatch m, MonadReader Config m)
+    :: (HasCallStack, MonadIO m, MonadCatch m, MonadMask m, MonadReader Config m)
     => TicketId
     -> m [Comment]
 getTicketComments tId = do
@@ -131,8 +132,8 @@ getTicketComments tId = do
         -> m [a]
     notFoundExceptionToList result = case result of
         Left exception      -> case exception of
-            HttpNotFound _      -> pure []
-            otherExceptions     -> throwM otherExceptions
+            HttpNotFound _  -> pure []
+            otherExceptions -> throwM otherExceptions
         Right comments      -> pure comments
 
 -- | Return list of deleted tickets.
@@ -199,7 +200,7 @@ listAdminAgents = do
 -- NOTE: If count is less than 1000, then stop paginating.
 -- Otherwise, use the next_page URL to get the next page of results.
 getExportedTickets
-    :: forall m. (MonadIO m, MonadCatch m, MonadReader Config m)
+    :: forall m. (MonadIO m, MonadCatch m, MonadMask m, MonadReader Config m)
     => ExportFromTime
     -> m [TicketInfo]
 getExportedTickets time = do
@@ -211,37 +212,10 @@ getExportedTickets time = do
     let req = apiRequestAbsolute cfg url
 
     iterateExportedTicketsWithDelay req (apiCall parseJSON)
-  where
-
-    iterateExportedTicketsWithDelay
-        :: Request
-        -> (Request -> m (PageResultList TicketInfo))
-        -> m [TicketInfo]
-    iterateExportedTicketsWithDelay req apiCall = do
-        cfg <- ask
-
-        let go :: [TicketInfo] -> Text -> m [TicketInfo]
-            go list' nextPage' = do
-                liftIO $ threadDelay $ 10 * 1000000 -- Wait, Zendesk allows for 10 per minute.
-
-                let req'      = apiRequestAbsolute cfg nextPage'
-                (PageResultList pagen nextPagen count) <- apiCall req'
-                case nextPagen of
-                    Just nextUrl -> if maybe False (>= 1000) count
-                                        then go (list' <> pagen) nextUrl
-                                        else pure (list' <> pagen)
-
-                    Nothing      -> pure (list' <> pagen)
-
-
-        (PageResultList page0 nextPage _) <- apiCall req
-        case nextPage of
-            Just nextUrl -> go page0 nextUrl
-            Nothing      -> pure page0
 
 -- | Send API request to post comment
 postTicketComment
-    :: (MonadIO m, MonadCatch m, MonadReader Config m)
+    :: (MonadIO m, MonadCatch m, MonadMask m, MonadReader Config m)
     => TicketInfo
     -> ZendeskResponse
     -> m ()
@@ -279,7 +253,7 @@ createResponseTicket agentId TicketInfo{..} ZendeskResponse{..} =
 
 -- | Get user information.
 _getUser
-    :: (MonadIO m, MonadCatch m, MonadReader Config m)
+    :: (MonadIO m, MonadCatch m, MonadMask m, MonadReader Config m)
     => m User
 _getUser = do
     cfg <- ask
@@ -293,13 +267,12 @@ _getUser = do
 
 -- | Given attachmentUrl, return attachment in bytestring
 getAttachment
-    :: (MonadIO m)
+    :: (MonadIO m, MonadMask m, MonadReader Config m)
     => Attachment
     -> m (Maybe AttachmentContent)
-getAttachment Attachment{..} = Just . AttachmentContent . getResponseBody <$> httpLBS req
-    where
-      req :: Request
-      req = parseRequest_ (toString aURL)
+getAttachment Attachment{..} = do
+    apiCallBare <- asksHTTPNetworkLayer hnlApiCallBare
+    Just . AttachmentContent <$> apiCallBare (parseRequest_ (toString aURL))
 
 ------------------------------------------------------------
 -- Utility
@@ -338,5 +311,34 @@ iteratePagesWithDelay seconds req = do
     (PageResultList page0 nextPage _) <- liftIO $ apiCall parseJSON req
     case nextPage of
         Just nextUrl -> liftIO $ go page0 nextUrl
+        Nothing      -> pure page0
+
+-- | A specific call which has a condition for finishing up.
+-- Seems the most general call is this with the delay enabled.
+iterateExportedTicketsWithDelay
+    :: forall m a. (MonadIO m, MonadReader Config m, FromPageResultList a)
+    => Request
+    -> (Request -> m (PageResultList a))
+    -> m [a]
+iterateExportedTicketsWithDelay req apiCall = do
+    cfg <- ask
+
+    let go :: [a] -> Text -> m [a]
+        go list' nextPage' = do
+            liftIO $ threadDelay $ 10 * 1000000 -- Wait, Zendesk allows for 10 per minute.
+
+            let req'      = apiRequestAbsolute cfg nextPage'
+            (PageResultList pagen nextPagen count) <- apiCall req'
+            case nextPagen of
+                Just nextUrl -> if maybe False (>= 1000) count
+                                    then go (list' <> pagen) nextUrl
+                                    else pure (list' <> pagen)
+
+                Nothing      -> pure (list' <> pagen)
+
+
+    (PageResultList page0 nextPage _) <- apiCall req
+    case nextPage of
+        Just nextUrl -> go page0 nextUrl
         Nothing      -> pure page0
 

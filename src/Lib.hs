@@ -45,6 +45,7 @@ import           DataSource (App, Attachment (..), AttachmentContent (..), Comme
                              runApp, tokenPath)
 
 import           Exceptions (ProcessTicketExceptions (..), ZipFileExceptions (..))
+import           Http.Queue (createShedulerConfig, runSheduler)
 import           LogAnalysis.Classifier (extractErrorCodes, extractIssuesFromLogs,
                                          prettyFormatAnalysis, prettyFormatLogReadError,
                                          prettyFormatNoIssues, prettyFormatNoLogs)
@@ -75,13 +76,22 @@ runZendeskMain = do
 
     connPool    <- createProdConnectionPool
 
-    let cfg = defaultConfig
+    -- for now, we limit the rate-limit to 700/minute, which is lower then
+    -- 750/minute, but takes into consideration that other things might be called
+    -- at the same time as well.
+    shedConfig  <- createShedulerConfig 700
+
+    -- Run the sheduler which resets the number of requests to 0 every minute.
+    _           <- runSheduler shedConfig
+
+    let cfg     = (defaultConfig shedConfig)
                    { cfgToken         = stripEnd token
                    , cfgAssignTo      = assignTo
                    , cfgAgentId       = assignTo
                    , cfgKnowledgebase = knowledges
                    , cfgDBLayer       = connPoolDBLayer connPool
                    }
+
 
     -- At this point, the configuration is set up and there is no point in using a pure IO.
     case args of
@@ -261,10 +271,6 @@ processTicketSafe tId = catch (void $ processTicket tId)
 processTicket :: HasCallStack => TicketId -> App ZendeskResponse
 processTicket tId = do
 
-    -- We first fetch the function from the configuration
-    printText           <- asksIOLayer iolPrintText
-    appendF             <- asksIOLayer iolAppendFile -- We need to remove this.
-
     -- We see 3 HTTP calls here.
     getTicketInfo       <- asksDataLayer zlGetTicketInfo
     getTicketComments   <- asksDataLayer zlGetTicketComments
@@ -279,17 +285,7 @@ processTicket tId = do
         Just ticketInfo -> do
             zendeskResponse <- getZendeskResponses comments attachments ticketInfo
 
-            postTicketComment ticketInfo zendeskResponse
-
-            -- TODO(ks): Moved back so we can run it in single-threaded mode. Requires a lot of
-            -- refactoring to run it in a multi-threaded mode.
-            let ticketId = getTicketId $ zrTicketId zendeskResponse
-            -- Append ticket result.
-            let tags = getTicketTags $ zrTags zendeskResponse
-            forM_ tags $ \tag -> do
-                let formattedTicketIdAndTag = show ticketId <> " " <> tag
-                printText formattedTicketIdAndTag
-                appendF "logs/analysis-result.log" (formattedTicketIdAndTag <> "\n")
+            --postTicketComment ticketInfo zendeskResponse
 
             pure zendeskResponse
 
@@ -300,19 +296,12 @@ processTicketsFromTime exportFromTime = do
 
     allTickets          <- fetchTicketsExportedFromTime exportFromTime
 
-    let chunkedTickets = chunks 100 allTickets
+    putTextLn $ "There are " <> show (length allTickets) <> " tickets."
 
-    -- The max requests are 400 per minute, so we wait a minute!
-    mZendeskResponses <- forM chunkedTickets $ \chunkedTickets' -> do
-        -- Wait a minute!
-        threadDelay $ 61 * 1000000
-        -- Concurrently we fetch the ticket data. If a single
-        -- call fails, they all fail. When they all finish, they return the
-        -- result.
-        mapConcurrently (processTicket . tiId) chunkedTickets'
+    mZendeskResponses   <- mapConcurrently (processTicket . tiId) allTickets
 
     -- This is single-threaded.
-    mapM_ processSingleTicket $ concat mZendeskResponses
+    mapM_ processSingleTicket mZendeskResponses
 
     putTextLn "All the tickets has been processed."
   where
@@ -373,19 +362,13 @@ fetchTicketComments ticketId = do
 
 fetchAndShowTickets :: App ()
 fetchAndShowTickets = do
-    allTickets <- fetchTickets
+    allTickets  <- fetchTickets
 
-    -- We want to call in parallel 400 HTTP requests to fetch the data. 3 calls are required.
-    let chunkedTickets = chunks 100 allTickets
+    putTextLn $ "There are " <> show (length allTickets) <> " tickets."
 
-    -- The max requests are 400 per minute, so we wait a minute!
-    output <- forM chunkedTickets $ \chunkedTickets' -> do
-        -- Concurrently we fetch the ticket data. If a single
-        -- call fails, they all fail. When they all finish, they return the
-        -- result.
-        mapConcurrently (pure . show @Text) chunkedTickets'
+    output      <- mapConcurrently (pure . show @Text) allTickets
 
-    mapM_ putTextLn (concat output)
+    mapM_ putTextLn output
 
     putTextLn "All the tickets has been processed."
 
@@ -394,16 +377,11 @@ fetchAndShowTicketsFrom :: ExportFromTime -> App ()
 fetchAndShowTicketsFrom exportFromTime = do
     allTickets <- fetchTicketsExportedFromTime exportFromTime
 
-    let chunkedTickets = chunks 100 allTickets
+    putTextLn $ "There are " <> show (length allTickets) <> " tickets."
 
-    -- The max requests are 400 per minute, so we wait a minute!
-    output <- forM chunkedTickets $ \chunkedTickets' -> do
-        -- Concurrently we fetch the ticket data. If a single
-        -- call fails, they all fail. When they all finish, they return the
-        -- result.
-        mapConcurrently (pure . show . tiId) chunkedTickets'
+    output      <- mapConcurrently (pure . show @Text) allTickets
 
-    mapM_ putTextLn (concat output)
+    mapM_ putTextLn output
 
     putTextLn "All the tickets has been processed."
 
