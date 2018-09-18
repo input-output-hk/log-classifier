@@ -581,11 +581,6 @@ filterAnalyzedTicketsSpec =
                 \(ticketInfos :: [TicketInfo]) ->
                     length (filterAnalyzedTickets ticketInfos) `shouldBe` 0
 
-        it "should filter analyzed tickets" $
-            forAll (listOf $ genTicketWithFilteredTags ["analyzed-by-script-v1.0"]) $
-                \(ticketInfos :: [TicketInfo]) ->
-                    length (filterAnalyzedTickets ticketInfos) `shouldBe` 0
-
 createResponseTicketSpec :: Spec
 createResponseTicketSpec =
     describe "createResponseTicket" $ modifyMaxSuccess (const 200) $ do
@@ -601,7 +596,7 @@ createResponseTicketSpec =
                     responseTags        = getTicketTags $ tTag responseTicket
                 -- in summary, the response tags have the debuggers `analyzed-by-script-version` tag AND
                 -- they remove the `to_be_analysed` tag AND they are unique.
-                in (filter (/= renderTicketStatus ToBeAnalyzed) . nub $ renderTicketStatus AnalyzedByScriptV1_4_5 : mergedTags) === responseTags
+                in (filter (/= renderTicketStatus ToBeAnalyzed) . nub $ renderTicketStatus AnalyzedByScriptV1_5_0 : mergedTags) === responseTags
 
 
 exportZendeskDataToLocalDBSpec :: Spec
