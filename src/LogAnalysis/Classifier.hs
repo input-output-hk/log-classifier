@@ -9,17 +9,22 @@ module LogAnalysis.Classifier
        , prettyFormatLogReadError
        , prettyFormatNoIssues
        , prettyFormatNoLogs
+       , runClassifier
+       , runClassifierJSON
        ) where
 
 import           Universum
 
+import           Data.Aeson (eitherDecodeStrict')
+import qualified Data.ByteString.Char8 as C8
 import qualified Data.Map.Strict as Map
 import           Data.Text (isInfixOf)
 import           Data.Text.Encoding.Error (ignore)
 
 import           DataSource.Types (TicketInfo (..), ZendeskAPIUrl (..), showURL)
 import           LogAnalysis.Exceptions (LogAnalysisException (..))
-import           LogAnalysis.Types (Analysis, Knowledge (..), renderErrorCode)
+import           LogAnalysis.Types (Analysis, CardanoLog (..), Knowledge (..), renderErrorCode)
+import           Prelude as P (head)
 
 -- | Number of error texts it should show
 numberOfErrorText :: Int
@@ -28,21 +33,25 @@ numberOfErrorText = 3
 -- | Analyze each log file based on the knowlodgebases' data.
 extractIssuesFromLogs :: (MonadCatch m) => [ByteString] -> Analysis -> m Analysis
 extractIssuesFromLogs files analysis = do
-    analysisResult <- foldlM runClassifiers analysis files
+     -- When 1.4 is out, switch this function with runClasssifierJSON
+    strictLogFiles  <- mapM checkFile files
+    analysisResult <- foldlM runClassifier analysis strictLogFiles
     filterAnalysis analysisResult
-
--- | Run analysis on given file
-runClassifiers :: (MonadCatch m) => Analysis -> ByteString -> m Analysis
-runClassifiers analysis logfile = do
-    -- Force the evaluation of the whole file.
-    strictLogfile <- catchAnyStrict (pure logfile) $ \_ -> throwM LogReadException
-    pure . foldl' analyzeLine analysis . lines . decodeUtf8With ignore $ strictLogfile
   where
-
+    -- Force the evaluation of the whole file.
+    checkFile :: (MonadCatch m) => ByteString -> m ByteString
+    checkFile logfile = catchAnyStrict (pure logfile) $ \_ -> throwM LogReadException
     -- | A helpful utility function.
     -- TODO(ks): Maybe move it to Util?
     catchAnyStrict :: (MonadCatch m, NFData a) => m a -> (SomeException -> m a) -> m a
     catchAnyStrict m = catchAny $ m >>= (return $!) . force
+
+-- | Run analysis on given file
+runClassifier :: (MonadCatch m) => Analysis -> ByteString -> m Analysis
+runClassifier analysis logfile = do
+    let decodedFile = decodeUtf8With ignore logfile
+    let logLines = lines decodedFile
+    pure $ foldl' analyzeLine analysis logLines
 
 -- | Analyze each line
 analyzeLine :: Analysis -> Text -> Analysis
@@ -65,6 +74,20 @@ filterAnalysis as = do
 
 extractErrorCodes :: Analysis -> [Text]
 extractErrorCodes as = map (\(Knowledge{..}, _) -> renderErrorCode kErrorCode) $ Map.toList as
+
+-- | Run analysis on given JSON file
+runClassifierJSON :: (MonadCatch m) => Analysis -> ByteString -> m Analysis
+runClassifierJSON analysis logfile = do
+    let logLines = C8.lines logfile
+    let decodedLogLines = map eitherDecodeStrict' logLines
+
+    when (any isLeft decodedLogLines) $ do
+        let errorText = P.head $ lefts decodedLogLines
+        throwM $ JSONDecodeFailure errorText
+
+    --  Get message field out since those are the ones we care about
+    let messages = map clMessage (rights decodedLogLines)
+    pure $ foldl' analyzeLine  analysis messages
 
 prettyHeader :: Text
 prettyHeader =

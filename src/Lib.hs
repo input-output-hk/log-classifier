@@ -529,7 +529,7 @@ inspectLocalZipAttachment filePath = do
     let eResults = extractLogsFromZip 100 fileContent
 
     case eResults of
-        Left (err :: ZipFileExceptions) -> do
+        Left (err :: ZipFileExceptions) ->
             printText $ show err
         Right result -> do
             let analysisEnv             = setupAnalysis $ cfgKnowledgebase config
@@ -545,7 +545,7 @@ inspectLocalZipAttachment filePath = do
                     printText "Error codes:"
                     void $ mapM printText errorCodes
 
-                Left (e :: LogAnalysisException) -> do
+                Left (e :: LogAnalysisException) ->
                     printText $ show e
 
 -- | Given number of file of inspect, knowledgebase and attachment,
@@ -601,6 +601,8 @@ inspectAttachment Config{..} ticketInfo@TicketInfo{..} attachment = do
                                 , zrTags        = TicketTags [renderTicketStatus NoKnownIssue]
                                 , zrIsPublic    = cfgIsCommentPublic
                                 }
+                        JSONDecodeFailure errorText ->
+                            throwM $ JSONDecodeFailure errorText
 
 -- | Create 'ZendeskResponse' stating no logs were found on the ticket
 responseNoLogs :: TicketInfo -> App ZendeskResponse

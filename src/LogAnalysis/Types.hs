@@ -2,6 +2,7 @@
 
 module LogAnalysis.Types
        ( Analysis
+       , CardanoLog (..)
        , ErrorCode (..)
        , Knowledge (..)
        , setupAnalysis
@@ -9,10 +10,12 @@ module LogAnalysis.Types
        , toComment
        ) where
 
-import           Universum
 import           Prelude (Show (..))
+import           Universum
 
+import           Data.Aeson (FromJSON (..), withObject, (.:))
 import qualified Data.Map.Strict as Map
+import           Data.Time (UTCTime)
 
 -- | Identifier for each error
 data ErrorCode
@@ -94,3 +97,42 @@ instance Eq Knowledge where
 
 instance Ord Knowledge where
     e1 <= e2 = kErrorCode e1 <= kErrorCode e2
+
+data CardanoLog = CardanoLog {
+      clLoggedAt    :: !UTCTime
+    , clEnv         :: !Text
+    , clNs          :: ![Text]
+    , clApplication :: ![Text]
+    , clMessage     :: !Text
+    , clPid         :: !Text
+    , clLoc         :: !(Maybe Text) -- ?
+    , clHost        :: !Text
+    , clSeverity    :: !Text
+    , clThreadId    :: !Text
+    } deriving (Show)
+
+instance FromJSON CardanoLog where
+    parseJSON = withObject "Cardano node log" $ \o -> do
+        loggedAt    <- o .: "at"
+        env         <- o .: "env"
+        ns          <- o .: "ns"
+        application <- o .: "app"
+        message     <- o .: "msg"
+        pid         <- o .: "pid"
+        loc         <- o .: "loc"
+        host        <- o .: "host"
+        severity    <- o .: "sev"
+        threadId    <- o .: "thread"
+
+        pure CardanoLog {
+              clLoggedAt    = loggedAt
+            , clEnv         = env
+            , clNs          = ns
+            , clApplication = application
+            , clMessage     = message
+            , clPid         = pid
+            , clLoc         = loc
+            , clHost        = host
+            , clSeverity    = severity
+            , clThreadId    = threadId
+            }

@@ -10,6 +10,7 @@ data LogAnalysisException =
     -- ^ Failed to read the log file because the log file was corrupted
     | NoKnownIssueFound
     -- ^ No known issue was found
+    | JSONDecodeFailure String
     deriving Show
 
 instance Exception LogAnalysisException
