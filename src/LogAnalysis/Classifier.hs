@@ -50,7 +50,7 @@ extractIssuesFromLogs files analysis = do
 runClassifier :: (MonadCatch m) => Analysis -> ByteString -> m Analysis
 runClassifier analysis logfile = do
     let decodedFile = decodeUtf8With ignore logfile
-    let logLines = lines decodedFile
+    let logLines    = lines decodedFile
     pure $ foldl' analyzeLine analysis logLines
 
 -- | Analyze each line
@@ -78,14 +78,14 @@ extractErrorCodes as = map (\(Knowledge{..}, _) -> renderErrorCode kErrorCode) $
 -- | Run analysis on given JSON file
 runClassifierJSON :: (MonadCatch m) => Analysis -> ByteString -> m Analysis
 runClassifierJSON analysis logfile = do
-    let logLines = C8.lines logfile
+    let logLines        = C8.lines logfile
     let decodedLogLines = map eitherDecodeStrict' logLines
 
     when (any isLeft decodedLogLines) $ do
         let errorText = P.head $ lefts decodedLogLines
         throwM $ JSONDecodeFailure errorText
 
-    --  Get message field out since those are the ones we care about
+    --  Collect message field since those are the ones we care about
     let messages = map clMessage (rights decodedLogLines)
     pure $ foldl' analyzeLine  analysis messages
 

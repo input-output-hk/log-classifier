@@ -98,17 +98,28 @@ instance Eq Knowledge where
 instance Ord Knowledge where
     e1 <= e2 = kErrorCode e1 <= kErrorCode e2
 
+-- | Cardano log data type
 data CardanoLog = CardanoLog {
       clLoggedAt    :: !UTCTime
+    -- ^ UTCTime of when the message was logged
     , clEnv         :: !Text
+    -- ^ Environment
     , clNs          :: ![Text]
+    -- ^ NS
     , clApplication :: ![Text]
+    -- ^ Application name
     , clMessage     :: !Text
+    -- ^ Log message
     , clPid         :: !Text
-    , clLoc         :: !(Maybe Text) -- ?
+    -- ^ Process Id
+    , clLoc         :: !(Maybe Text) 
+    -- ^ All the sample data had this field empty so I'm not sure what this is.
     , clHost        :: !Text
+    -- ^ Hostname
     , clSeverity    :: !Text
+    -- ^ Severity of an given log (e.g Info, Notice, Warning, Error)
     , clThreadId    :: !Text
+    -- ^ Thread id
     } deriving (Show)
 
 instance FromJSON CardanoLog where

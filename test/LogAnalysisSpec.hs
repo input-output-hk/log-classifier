@@ -40,9 +40,11 @@ instance Arbitrary UTCTime where
 instance Arbitrary ByteString where
     arbitrary = pack <$> arbitrary
 
+-- | Formant given UTCTime into ISO8601
 showIso8601 :: UTCTime -> String
 showIso8601 = formatTime defaultTimeLocale "%FT%T%QZ"
 
+-- | Given an list of text, pick and element and encode it
 encodedElements :: [Text] -> Gen ByteString
 encodedElements xs = encodeUtf8 <$> elements xs
 
@@ -58,7 +60,7 @@ randomLogText = do
         ["Error Message","Passive Wallet kernel initialized.", "塩井ひろと"
         , "Evaluated clock offset NtpOffset {getNtpOffset = 24688mcs}mcs"]
     randomPid  <- arbitrary :: Gen Int
-    randomHost <- encodedElements (["hostname"] :: [Text])
+    randomHost <- encodedElements ["hostname"]
     randomSev  <- encodedElements ["Info", "Warning", "Error", "Notice"]
     randomThreadId <- arbitrary :: Gen Int
 
