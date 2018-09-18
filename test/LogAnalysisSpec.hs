@@ -26,13 +26,16 @@ classifierSpec =
             let decodedText = eitherDecodeStrict' logText :: Either String CardanoLog
             isRight decodedText `shouldBe` True
 
+-- https://gist.github.com/agrafix/2b48ec069693e3ab851e
 instance Arbitrary UTCTime where
     arbitrary =
         do randomDay <- choose (1, 29) :: Gen Int
            randomMonth <- choose (1, 12) :: Gen Int
            randomYear <- choose (2001, 2018) :: Gen Integer
            randomTime <- choose (0, 86401) :: Gen Int64
-           return $ UTCTime (fromGregorian randomYear randomMonth randomDay) (secondsToDiffTime $ fromIntegral randomTime)
+           return $ UTCTime 
+               (fromGregorian randomYear randomMonth randomDay)
+               (secondsToDiffTime $ fromIntegral randomTime)
 
 instance Arbitrary ByteString where
     arbitrary = pack <$> arbitrary
