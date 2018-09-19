@@ -56,6 +56,8 @@ out/
 # Atom
 .haskell-ghc-mod.json
 
+#
+knowledgebase/issues.csv
 # Misc
 .DS_Store
 *.swp

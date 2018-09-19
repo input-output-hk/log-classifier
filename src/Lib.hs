@@ -45,12 +45,12 @@ import           DataSource (App, Attachment (..), AttachmentContent (..), Comme
                              runApp, tokenPath)
 
 import           Exceptions (ProcessTicketExceptions (..), ZipFileExceptions (..))
-import           LogAnalysis.Classifier (extractErrorCodes, extractIssuesFromLogs,
+import           LogAnalysis.Classifier (extractIssuesFromLogs,
                                          prettyFormatAnalysis, prettyFormatLogReadError,
                                          prettyFormatNoIssues, prettyFormatNoLogs)
 import           LogAnalysis.Exceptions (LogAnalysisException (..))
 import           LogAnalysis.KnowledgeCSVParser (parseKnowLedgeBase)
-import           LogAnalysis.Types (ErrorCode (..), Knowledge, renderErrorCode, setupAnalysis)
+import           LogAnalysis.Types (Knowledge, setupAnalysis)
 import           Statistics (showStatistics)
 import           Util (extractLogsFromZip)
 
@@ -537,14 +537,8 @@ inspectLocalZipAttachment filePath = do
 
             case eitherAnalysisResult of
                 Right analysisResult -> do
-                    let errorCodes = extractErrorCodes analysisResult
-
                     printText "Analysis result:"
                     void $ mapM (printText . show) analysisResult
-
-                    printText "Error codes:"
-                    void $ mapM printText errorCodes
-
                 Left (e :: LogAnalysisException) -> do
                     printText $ show e
 
@@ -562,7 +556,7 @@ inspectAttachment Config{..} ticketInfo@TicketInfo{..} attachment = do
             pure $ ZendeskResponse
                 { zrTicketId    = tiId
                 , zrComment     = prettyFormatLogReadError ticketInfo
-                , zrTags        = TicketTags [renderErrorCode SentLogCorrupted]
+                , zrTags        = TicketTags []--renderErrorCode SentLogCorrupted]
                 , zrIsPublic    = cfgIsCommentPublic
                 }
 
@@ -573,13 +567,13 @@ inspectAttachment Config{..} ticketInfo@TicketInfo{..} attachment = do
             case tryAnalysisResult of
                 Right analysisResult -> do
                     -- Known issue was found
-                    let errorCodes = extractErrorCodes analysisResult
+                    --let errorCodes = extractErrorCodes analysisResult
                     let commentRes = prettyFormatAnalysis analysisResult ticketInfo
 
                     pure $ ZendeskResponse
                         { zrTicketId    = tiId
                         , zrComment     = commentRes
-                        , zrTags        = TicketTags errorCodes
+                        , zrTags        = TicketTags []--errorCodes
                         , zrIsPublic    = cfgIsCommentPublic
                         }
 
@@ -590,7 +584,7 @@ inspectAttachment Config{..} ticketInfo@TicketInfo{..} attachment = do
                             pure $ ZendeskResponse
                                 { zrTicketId    = tiId
                                 , zrComment     = prettyFormatLogReadError ticketInfo
-                                , zrTags        = TicketTags [renderErrorCode DecompressionFailure]
+                                , zrTags        = TicketTags []--renderErrorCode DecompressionFailure]
                                 , zrIsPublic    = cfgIsCommentPublic
                                 }
                         -- No known issue was found
@@ -598,7 +592,7 @@ inspectAttachment Config{..} ticketInfo@TicketInfo{..} attachment = do
                             pure $ ZendeskResponse
                                 { zrTicketId    = tiId
                                 , zrComment     = prettyFormatNoIssues ticketInfo
-                                , zrTags        = TicketTags [renderTicketStatus NoKnownIssue]
+                                , zrTags        = TicketTags []--renderTicketStatus NoKnownIssue]
                                 , zrIsPublic    = cfgIsCommentPublic
                                 }
 
@@ -609,7 +603,7 @@ responseNoLogs TicketInfo{..} = do
     pure ZendeskResponse
              { zrTicketId = tiId
              , zrComment  = prettyFormatNoLogs
-             , zrTags     = TicketTags [renderTicketStatus NoLogAttached]
+             , zrTags     = TicketTags []--renderTicketStatus NoLogAttached]
              , zrIsPublic = cfgIsCommentPublic
              }
 

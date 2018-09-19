@@ -8,7 +8,7 @@ import           Universum
 
 import           Data.Attoparsec.Text (Parser, char, endOfLine, takeTill, string)
 
-import           LogAnalysis.Types (ErrorCode (..), Knowledge (..))
+import           LogAnalysis.Types (Knowledge (..))
 
 
 {-
@@ -27,44 +27,82 @@ quotedText = do
     _       <- char '"'
     pure result
 
---- | Parse ErrorCode
-parseErrorCode :: Parser ErrorCode
-parseErrorCode =
-        (string "ShortStorage"      >> return ShortStorage)
-    <|> (string "UserNameError"     >> return UserNameError)
-    <|> (string "TimeSync"          >> return TimeSync)
-    <|> (string "FileNotFound"      >> return FileNotFound)
-    <|> (string "StaleLockFile"     >> return StaleLockFile)
-    <|> (string "DBPath"            >> return DBPath)
-    <|> (string "CannotGetDBSize"   >> return CannotGetDBSize)
-    <|> (string "DBError"           >> return DBError)
-    <|> (string "BalanceError"      >> return BalanceError)
-    <|> (string "NetworkError"      >> return NetworkError)
-    <|> (string "ConnectionRefused" >> return ConnectionRefused)
-    <|> (string "ResourceVanished"  >> return ResourceVanished)
-    <|> (string "Unknown"           >> return Unknown)
-    <|> (string "Error"             >> return Error)
 
 -- | Parse each csv records
-parseKnowledge :: Parser Knowledge  -- not really clean code..
+{-parseCSVHeader :: Parser CSVHeader
+parseCSVHeader = do
+    return $ iterateHeader <* endOfLine
+    where
+        iterateHeader :: a -> [Text]
+        iterateHeader (x : xs) = do
+            x' <- quotedText x
+            _ <- char ','
+            return $ [x' : parseCSVHeader xs]
+-}
+parseKnowledge :: Parser Knowledge
 parseKnowledge = do
-    e <- quotedText
-    _ <- char ','
     _ <- char '"'
-    c <- parseErrorCode
+    issueProj <- takeTill (=='-')
+    _ <- char '-'
+    issueID <- takeTill (=='"') 
     _ <- char '"'
     _ <- char ','
-    p <- quotedText
+    project <- quotedText
     _ <- char ','
-    s <- quotedText
+    tags <- quotedText
     _ <- char ','
-    f <- quotedText
+    summary <- quotedText
+    _ <- char ','
+    reporter <- quotedText
+    _ <- char ','
+    created <- quotedText
+    _ <- char ','
+    updated <- quotedText
+    _ <- char ','
+    resolved <- quotedText
+    _ <- char ','
+    priority <- quotedText
+    _ <- char ','
+    typeCat <- quotedText
+    _ <- char ','
+    state <- quotedText
+    _ <- char ','
+    assignee <- quotedText
+    _ <- char ','
+    subsystem <- quotedText
+    _ <- char ','
+    fixVer <- quotedText
+    _ <- char ','
+    affVer <- quotedText
+    _ <- char ','
+    tarVer <- quotedText
+    _ <- char ','
+    group <- quotedText
+    _ <- char ','
+    resolution <- quotedText
+    _ <- char ','
+    platform <- quotedText
+    _ <- char ','
+    numUserAff <- quotedText
+    _ <- char ','
+    zenDebugger <- quotedText
+    _ <- char ','
+    zenTicketStat <- quotedText
+    _ <- char ','
+    zenFAQNum <- quotedText
+    _ <- char ','
+    zenIdentText <- quotedText
+    _ <- char ','
+    zenProbURL <- quotedText
+    _ <- char ','
+    zenDebSol <- quotedText
+    _ <- char ','
+    zenDebStatus <- quotedText
+
     return $ Knowledge
-        {  kErrorText = e
-        ,  kErrorCode = c
-        ,  kProblem   = p
-        ,  kSolution  = s
-        ,  kFAQNumber = f
+        {  kErrorText = zenIdentText
+        ,  kIssueID = IssueID issueProj issueID
+        ,  kFAQNumber = zenFAQNum
         }
 
 -- | Parse CSV file and create knowledgebase

@@ -3,8 +3,7 @@
 {-# LANGUAGE RecordWildCards   #-}
 
 module LogAnalysis.Classifier
-       ( extractErrorCodes
-       , extractIssuesFromLogs
+       ( extractIssuesFromLogs
        , prettyFormatAnalysis
        , prettyFormatLogReadError
        , prettyFormatNoIssues
@@ -19,7 +18,7 @@ import           Data.Text.Encoding.Error (ignore)
 
 import           DataSource.Types (TicketInfo (..), ZendeskAPIUrl (..), showURL)
 import           LogAnalysis.Exceptions (LogAnalysisException (..))
-import           LogAnalysis.Types (Analysis, Knowledge (..), renderErrorCode)
+import           LogAnalysis.Types (Analysis, Knowledge (..))
 
 -- | Number of error texts it should show
 numberOfErrorText :: Int
@@ -62,9 +61,6 @@ filterAnalysis as = do
     if null filteredAnalysis
     then throwM NoKnownIssueFound
     else pure $ Map.map (take numberOfErrorText) filteredAnalysis
-
-extractErrorCodes :: Analysis -> [Text]
-extractErrorCodes as = map (\(Knowledge{..}, _) -> renderErrorCode kErrorCode) $ Map.toList as
 
 prettyHeader :: Text
 prettyHeader =
