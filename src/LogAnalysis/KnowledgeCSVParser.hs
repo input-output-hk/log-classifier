@@ -29,7 +29,8 @@ quotedText = do
 
 
 -- | Parse each csv records
-{-parseCSVHeader :: Parser CSVHeader
+{-
+parseCSVHeader :: Parser CSVHeader
 parseCSVHeader = do
     return $ iterateHeader <* endOfLine
     where
@@ -39,6 +40,7 @@ parseCSVHeader = do
             _ <- char ','
             return $ [x' : parseCSVHeader xs]
 -}
+
 parseKnowledge :: Parser Knowledge
 parseKnowledge = do
     _ <- char '"'
@@ -102,7 +104,6 @@ parseKnowledge = do
     return $ Knowledge
         {  kErrorText = zenIdentText
         ,  kIssueID = IssueID issueProj issueID
-        ,  kFAQNumber = zenFAQNum
         }
 
 -- | Parse CSV file and create knowledgebase
