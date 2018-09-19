@@ -26,6 +26,7 @@ classifierSpec = do
            forAll randomLogText $ \(logText :: ByteString) -> do
                let decodedText = eitherDecodeStrict' logText :: Either String CardanoLog
                isRight decodedText `shouldBe` True
+
     -- Decoding is actually really slow so we're reducing the number of tests
     describe "extractMessages" $ modifyMaxSuccess (const 50) $ do
         it "should be able to extract log messages from JSON file" $
@@ -39,7 +40,7 @@ testExtractMessage :: (FilePath, ByteString) -> Property
 testExtractMessage logWithFilePath =
     monadicIO $ do
         eLogLines <- run $ tryAny $ extractMessages logWithFilePath
-        
+
         -- Check if the decoding was successfull
         assert $ isRight eLogLines
         whenRight eLogLines $ \logLines ->
@@ -62,7 +63,7 @@ randomLogText = do
     randomApp      <- encodedElements ["cardano-sl"]
     -- Ensure it can decode message with non-latin characters
     randomMsg      <- encodedElements
-        [ "Error Message","Passive Wallet kernel initialized.", "塩井ひろと"
+        [ "Error Message","Passive Wallet kernel initialized.", "暗号通貨", "カルダノ"
         , "Evaluated clock offset NtpOffset {getNtpOffset = 24688mcs}mcs"]
     randomPid      <- arbitrary :: Gen Int
     randomHost     <- encodedElements ["hostname"]
@@ -112,5 +113,5 @@ randomLogFilePath = do
 randomLogFile :: Gen ByteString
 randomLogFile = do
     numOfLines <- choose (1,10000)
-    logLines <- vectorOf numOfLines (arbitrary :: Gen ByteString)
+    logLines   <- vectorOf numOfLines (arbitrary :: Gen ByteString)
     pure $ C8.unlines logLines
