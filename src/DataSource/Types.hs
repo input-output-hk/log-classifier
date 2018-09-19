@@ -66,13 +66,15 @@ import           Data.Aeson (FromJSON, ToJSON, Value (Object), object, parseJSON
                              withObject, (.:), (.:?), (.=))
 import           Data.Aeson.Types (Parser)
 import qualified Data.Aeson.Types as AT
+import qualified Data.ByteString.Char8 as C8
 import qualified Data.Text as T
+import           Data.Time (UTCTime (..), fromGregorian, secondsToDiffTime)
 import           Data.Time.Clock.POSIX (POSIXTime)
 import           Network.HTTP.Simple (Request)
 
 import           LogAnalysis.Types (Knowledge)
 
-import           Test.QuickCheck (Arbitrary (..), sublistOf, elements, listOf1)
+import           Test.QuickCheck (Arbitrary (..), Gen, choose, elements, listOf1, sublistOf)
 
 ------------------------------------------------------------
 -- Configuration
@@ -751,6 +753,20 @@ instance Arbitrary ZendeskResponse where
             , zrIsPublic = zendeskResponseIsPublic
             }
 
+-- https://gist.github.com/agrafix/2b48ec069693e3ab851e
+instance Arbitrary UTCTime where
+    arbitrary = do
+        randomDay   <- choose (1, 29) :: Gen Int
+        randomMonth <- choose (1, 12) :: Gen Int
+        randomYear  <- choose (2001, 2018) :: Gen Integer
+        randomTime  <- choose (0, 86401) :: Gen Int64
+        pure $ UTCTime
+            (fromGregorian randomYear randomMonth randomDay)
+            (secondsToDiffTime $ fromIntegral randomTime)
+
+instance Arbitrary ByteString where
+    arbitrary = C8.pack <$> arbitrary
+
 ------------------------------------------------------------
 -- FromJSON instances
 ------------------------------------------------------------
@@ -967,7 +983,7 @@ parseComments = withObject "comments" $ \o -> o .: "comments"
 
 -- | Defining it's own show instance to use it as tags
 renderTicketStatus :: TicketTag -> Text
-renderTicketStatus AnalyzedByScript     = "analyzed-by-script"
+renderTicketStatus AnalyzedByScript       = "analyzed-by-script"
 renderTicketStatus AnalyzedByScriptV1_0   = "analyzed-by-script-v1.0"
 renderTicketStatus AnalyzedByScriptV1_1   = "analyzed-by-script-v1.1"
 renderTicketStatus AnalyzedByScriptV1_2   = "analyzed-by-script-v1.2"

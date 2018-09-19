@@ -8,8 +8,7 @@ import           Universum
 
 import           Data.Aeson (eitherDecodeStrict')
 import qualified Data.ByteString.Char8 as C8
-import           Data.Time (UTCTime (..), defaultTimeLocale, formatTime, fromGregorian,
-                            secondsToDiffTime)
+import           Data.Time (UTCTime (..), defaultTimeLocale, formatTime)
 import           Test.Hspec (Spec, describe, it, shouldBe)
 import           Test.Hspec.QuickCheck (modifyMaxSuccess)
 import           Test.QuickCheck (Arbitrary (..), Gen, Property, arbitrary, choose, elements,
@@ -45,20 +44,6 @@ testExtractMessage logWithFilePath =
         assert $ isRight eLogLines
         whenRight eLogLines $ \logLines ->
             (assert . not . null) logLines
-
--- https://gist.github.com/agrafix/2b48ec069693e3ab851e
-instance Arbitrary UTCTime where
-    arbitrary = do
-        randomDay   <- choose (1, 29) :: Gen Int
-        randomMonth <- choose (1, 12) :: Gen Int
-        randomYear  <- choose (2001, 2018) :: Gen Integer
-        randomTime  <- choose (0, 86401) :: Gen Int64
-        pure $ UTCTime
-            (fromGregorian randomYear randomMonth randomDay)
-            (secondsToDiffTime $ fromIntegral randomTime)
-
-instance Arbitrary ByteString where
-    arbitrary = C8.pack <$> arbitrary
 
 -- | Formant given UTCTime into ISO8601
 showIso8601 :: UTCTime -> String
