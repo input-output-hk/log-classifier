@@ -11,6 +11,7 @@ data LogAnalysisException =
     | NoKnownIssueFound
     -- ^ No known issue was found
     | JSONDecodeFailure String
+    -- ^ Decoding of CardanoLog failed
     deriving Show
 
 instance Exception LogAnalysisException

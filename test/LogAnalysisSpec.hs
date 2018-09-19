@@ -20,7 +20,7 @@ import           LogAnalysis.Types (CardanoLog)
 -- Test fails when log contains unicode characters!!
 classifierSpec :: Spec
 classifierSpec =
-    describe "runClassifierJSON" $ modifyMaxSuccess (const 1000) $
+    describe "CardanoLog" $ modifyMaxSuccess (const 1000) $
        it "should be able to decode cardano log" $
         forAll randomLogText $ \(logText :: ByteString) -> do
             let decodedText = eitherDecodeStrict' logText :: Either String CardanoLog
@@ -65,19 +65,19 @@ randomLogText = do
     randomThreadId <- arbitrary :: Gen Int
 
     pure $
-        "{\
-        \\"at\": \"" <> (pack . showIso8601) randomTime <>"\",\
-        \\"env\": \"" <> randomEnv <> "\",\
-        \\"ns\": [\
-            \\"cardano-sl\",\
-            \\""<> randomNs <>"\"\
-        \],\
-        \\"data\": {},\
-        \\"app\": [\""<> randomApp <> "\"],\
-        \\"msg\": \""<> randomMsg <> "\",\
-        \\"pid\": \""<> show randomPid <> "\",\
-        \\"loc\": null,\
-        \\"host\": \""<> randomHost <> "\",\
-        \\"sev\": \""<> randomSev <> "\",\
-        \\"thread\": \"ThreadId " <> show randomThreadId <> "\"\
+        "{                                                      \
+        \\"at\": \"" <> (pack . showIso8601) randomTime <>"\",  \
+        \\"env\": \"" <> randomEnv <> "\",                      \
+        \\"ns\": [                                              \
+            \\"cardano-sl\",                                    \
+            \\""<> randomNs <>"\"                               \
+        \],                                                     \
+        \\"data\": {},                                          \
+        \\"app\": [\""<> randomApp <> "\"],                     \
+        \\"msg\": \""<> randomMsg <> "\",                       \
+        \\"pid\": \""<> show randomPid <> "\",                  \
+        \\"loc\": null,                                         \
+        \\"host\": \""<> randomHost <> "\",                     \
+        \\"sev\": \""<> randomSev <> "\",                       \
+        \\"thread\": \"ThreadId " <> show randomThreadId <> "\" \
         \}"
