@@ -45,4 +45,10 @@ instance Eq Knowledge where
     e1 == e2 = (kIssueID proj issueID) e1 == (kIssueID proj' issueID') e2
 
 instance Ord Knowledge where
-    (kIssueID proj issueID) e1 <= (kIssueID proj' issueID') e2 = (proj == proj') && (issueID <= issueID')
+    compare e1 e2 = compare (kIssueID) (kIssueID)
+
+instance Ord IssueID where
+    compare (IssueID p1 n1) (IssueID p2 n2)
+        | (p1 == p2) & (n1 == n2) = EQ
+        | (p1 == p2) & (n1 > n2) = GT
+        | otherwise = LT 
