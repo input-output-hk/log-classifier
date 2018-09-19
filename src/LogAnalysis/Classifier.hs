@@ -9,8 +9,6 @@ module LogAnalysis.Classifier
        , prettyFormatLogReadError
        , prettyFormatNoIssues
        , prettyFormatNoLogs
-       , runClassifier
-       , runClassifierJSON
        ) where
 
 import           Universum
@@ -31,11 +29,16 @@ numberOfErrorText :: Int
 numberOfErrorText = 3
 
 -- | Analyze each log file based on the knowlodgebases' data.
-extractIssuesFromLogs :: (MonadCatch m) => [ByteString] -> Analysis -> m Analysis
+extractIssuesFromLogs :: (MonadCatch m) => [(FilePath, ByteString)] -> Analysis -> m Analysis
 extractIssuesFromLogs files analysis = do
-     -- When 1.4 is out, switch this function with runClasssifierJSON
-    strictLogFiles  <- mapM checkFile files
-    analysisResult <- foldlM runClassifier analysis strictLogFiles
+
+    -- Check if any of the file is corrupted
+    strictLogFiles <- forM files $ \(path, file) -> do
+        checkedFile <- checkFile file
+        return (path, checkedFile)
+
+    logLines       <- concatMapM extractMessages strictLogFiles
+    let analysisResult = foldl' analyzeLine analysis logLines
     filterAnalysis analysisResult
   where
     -- Force the evaluation of the whole file.
@@ -46,12 +49,31 @@ extractIssuesFromLogs files analysis = do
     catchAnyStrict :: (MonadCatch m, NFData a) => m a -> (SomeException -> m a) -> m a
     catchAnyStrict m = catchAny $ m >>= (return $!) . force
 
--- | Run analysis on given file
-runClassifier :: (MonadCatch m) => Analysis -> ByteString -> m Analysis
-runClassifier analysis logfile = do
-    let decodedFile = decodeUtf8With ignore logfile
-    let logLines    = lines decodedFile
-    pure $ foldl' analyzeLine analysis logLines
+-- | Extract messages from either plain or json file
+extractMessages :: (MonadCatch m) => (FilePath, ByteString) -> m [Text]
+extractMessages (path, content) =
+    if toText path `isInfixOf` ".json"
+        then extractMessagesJSON content
+        else extractMessagesPlain content
+  where
+    -- Extract log message from plain log file
+    extractMessagesPlain :: (MonadCatch m) => ByteString -> m [Text]
+    extractMessagesPlain c = do
+        let decodedFile = decodeUtf8With  ignore c
+        return $ lines decodedFile
+    -- Extract log messages from JSON log file
+    extractMessagesJSON :: (MonadCatch m) => ByteString -> m [Text]
+    extractMessagesJSON c = do
+        let logLines = C8.lines c
+        let decodedLogLines = map eitherDecodeStrict' logLines
+
+        when (any isLeft decodedLogLines) $ do
+            let errorText = P.head $ lefts decodedLogLines
+            throwM $ JSONDecodeFailure errorText
+    
+        --  Collect message field since those are the ones we care about
+        let messages = map clMessage (rights decodedLogLines)
+        return messages
 
 -- | Analyze each line
 analyzeLine :: Analysis -> Text -> Analysis
@@ -74,20 +96,6 @@ filterAnalysis as = do
 
 extractErrorCodes :: Analysis -> [Text]
 extractErrorCodes as = map (\(Knowledge{..}, _) -> renderErrorCode kErrorCode) $ Map.toList as
-
--- | Run analysis on given JSON file
-runClassifierJSON :: (MonadCatch m) => Analysis -> ByteString -> m Analysis
-runClassifierJSON analysis logfile = do
-    let logLines        = C8.lines logfile
-    let decodedLogLines = map eitherDecodeStrict' logLines
-
-    when (any isLeft decodedLogLines) $ do
-        let errorText = P.head $ lefts decodedLogLines
-        throwM $ JSONDecodeFailure errorText
-
-    --  Collect message field since those are the ones we care about
-    let messages = map clMessage (rights decodedLogLines)
-    pure $ foldl' analyzeLine  analysis messages
 
 prettyHeader :: Text
 prettyHeader =

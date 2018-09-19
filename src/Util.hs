@@ -13,12 +13,12 @@ import           Exceptions (ZipFileExceptions (..))
 
 -- | Extract log file from given zip file
 -- TODO(ks): What happens with the other files? We just ignore them?
-extractLogsFromZip :: Int -> LByteString -> Either ZipFileExceptions [ByteString]
+extractLogsFromZip :: Int -> LByteString -> Either ZipFileExceptions [(FilePath, ByteString)]
 extractLogsFromZip numberOfFiles file = do
     zipMap <- readZip file  -- Read File
-    let extractedLogs :: [ByteString]
-        extractedLogs = map LBS.toStrict . Map.elems . mTake numberOfFiles $ zipMap
-    return extractedLogs
+    let something = Map.toList $ mTake numberOfFiles zipMap
+    let strictLog = map (\(path, content) -> (path, LBS.toStrict content)) something
+    return strictLog
   where
     mTake :: Int -> Map k a -> Map k a
     mTake n = Map.fromDistinctAscList . take n . Map.toAscList
