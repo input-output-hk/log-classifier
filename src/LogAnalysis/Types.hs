@@ -13,14 +13,14 @@ import qualified Data.Map.Strict as Map
 
 
 -- | Record identifying the issue
-data IssueID = IssueID Text Int
+data IssueID = IssueID Text Int deriving (Eq, Ord)
 
 data Knowledge = Knowledge
     {  kErrorText :: !Text
     -- ^ Text used for matching error lines
     ,  kIssueID :: !IssueID
     -- ^ IssueID 
-    }
+    } deriving (Eq, Ord)
 
 --type CSVHeader = [Text]
 instance Show IssueID where
@@ -41,14 +41,3 @@ type Analysis = Map Knowledge [Text]
 setupAnalysis :: [Knowledge] -> Analysis
 setupAnalysis kbase = Map.fromList $ map (\kn -> (kn, [])) kbase
 
-instance Eq Knowledge where
-    e1 == e2 = (kIssueID proj issueID) e1 == (kIssueID proj' issueID') e2
-
-instance Ord Knowledge where
-    compare e1 e2 = compare (kIssueID) (kIssueID)
-
-instance Ord IssueID where
-    compare (IssueID p1 n1) (IssueID p2 n2)
-        | (p1 == p2) & (n1 == n2) = EQ
-        | (p1 == p2) & (n1 > n2) = GT
-        | otherwise = LT 

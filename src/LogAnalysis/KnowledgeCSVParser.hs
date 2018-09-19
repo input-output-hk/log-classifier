@@ -29,17 +29,6 @@ quotedText = do
 
 
 -- | Parse each csv records
-{-
-parseCSVHeader :: Parser CSVHeader
-parseCSVHeader = do
-    return $ iterateHeader <* endOfLine
-    where
-        iterateHeader :: a -> [Text]
-        iterateHeader (x : xs) = do
-            x' <- quotedText x
-            _ <- char ','
-            return $ [x' : parseCSVHeader xs]
--}
 
 parseKnowledge :: Parser Knowledge
 parseKnowledge = do
@@ -103,7 +92,7 @@ parseKnowledge = do
 
     return $ Knowledge
         {  kErrorText = zenIdentText
-        ,  kIssueID = IssueID issueProj issueID
+        ,  kIssueID = (IssueID issueProj issueID)
         }
 
 -- | Parse CSV file and create knowledgebase
