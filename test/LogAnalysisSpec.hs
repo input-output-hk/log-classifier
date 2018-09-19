@@ -7,38 +7,58 @@ module LogAnalysisSpec
 import           Universum
 
 import           Data.Aeson (eitherDecodeStrict')
-import           Data.ByteString.Char8 (pack)
+import qualified Data.ByteString.Char8 as C8
 import           Data.Time (UTCTime (..), defaultTimeLocale, formatTime, fromGregorian,
                             secondsToDiffTime)
 import           Test.Hspec (Spec, describe, it, shouldBe)
 import           Test.Hspec.QuickCheck (modifyMaxSuccess)
-import           Test.QuickCheck (Arbitrary (..), Gen, arbitrary, choose, elements, forAll)
+import           Test.QuickCheck (Arbitrary (..), Gen, Property, arbitrary, choose, elements,
+                                  forAll, vectorOf)
+import           Test.QuickCheck.Monadic (assert, monadicIO, run)
 
+import           LogAnalysis.Classifier (extractMessages)
 import           LogAnalysis.Types (CardanoLog)
 
--- | Classifier test
--- Test fails when log contains unicode characters!!
+-- | Classifier tests
 classifierSpec :: Spec
-classifierSpec =
-    describe "CardanoLog" $ modifyMaxSuccess (const 1000) $
+classifierSpec = do
+    describe "CardanoLog FromJSON" $ modifyMaxSuccess (const 1000) $
        it "should be able to decode cardano log" $
-        forAll randomLogText $ \(logText :: ByteString) -> do
-            let decodedText = eitherDecodeStrict' logText :: Either String CardanoLog
-            isRight decodedText `shouldBe` True
+           forAll randomLogText $ \(logText :: ByteString) -> do
+               let decodedText = eitherDecodeStrict' logText :: Either String CardanoLog
+               isRight decodedText `shouldBe` True
+    -- Decoding is actually really slow so we're reducing the number of tests
+    describe "extractMessages" $ modifyMaxSuccess (const 50) $ do
+        it "should be able to extract log messages from JSON file" $
+            forAll ((,) <$> randomLogJSONFilePath <*> randomJSONLogFile)
+                $ \logWithFilePath -> testExtractMessage logWithFilePath
+        it "should be able to extract log messages from plain log file" $
+            forAll ((,) <$> randomLogFilePath <*> randomLogFile)
+                $ \logWithFilePath -> testExtractMessage logWithFilePath
+
+testExtractMessage :: (FilePath, ByteString) -> Property
+testExtractMessage logWithFilePath =
+    monadicIO $ do
+        eLogLines <- run $ tryAny $ extractMessages logWithFilePath
+        
+        -- Check if the decoding was successfull
+        assert $ isRight eLogLines
+        whenRight eLogLines $ \logLines ->
+            (assert . not . null) logLines
 
 -- https://gist.github.com/agrafix/2b48ec069693e3ab851e
 instance Arbitrary UTCTime where
-    arbitrary =
-        do randomDay <- choose (1, 29) :: Gen Int
-           randomMonth <- choose (1, 12) :: Gen Int
-           randomYear <- choose (2001, 2018) :: Gen Integer
-           randomTime <- choose (0, 86401) :: Gen Int64
-           return $ UTCTime 
-               (fromGregorian randomYear randomMonth randomDay)
-               (secondsToDiffTime $ fromIntegral randomTime)
+    arbitrary = do
+        randomDay   <- choose (1, 29) :: Gen Int
+        randomMonth <- choose (1, 12) :: Gen Int
+        randomYear  <- choose (2001, 2018) :: Gen Integer
+        randomTime  <- choose (0, 86401) :: Gen Int64
+        pure $ UTCTime
+            (fromGregorian randomYear randomMonth randomDay)
+            (secondsToDiffTime $ fromIntegral randomTime)
 
 instance Arbitrary ByteString where
-    arbitrary = pack <$> arbitrary
+    arbitrary = C8.pack <$> arbitrary
 
 -- | Formant given UTCTime into ISO8601
 showIso8601 :: UTCTime -> String
@@ -51,33 +71,61 @@ encodedElements xs = encodeUtf8 <$> elements xs
 -- | Generate random cardano log
 randomLogText :: Gen ByteString
 randomLogText = do
-    randomTime <- arbitrary :: Gen UTCTime
-    randomEnv  <- encodedElements ["mainnet_wallet_macos64:1.3.0"]
-    randomNs   <- encodedElements ["cardano-sl", "NtpClient"]
-    randomApp  <- encodedElements ["cardano-sl"]
-    -- Ensure it can decode message with unicode characters
-    randomMsg  <- encodedElements
-        ["Error Message","Passive Wallet kernel initialized.", "塩井ひろと"
+    randomTime     <- arbitrary :: Gen UTCTime
+    randomEnv      <- encodedElements ["mainnet_wallet_macos64:1.3.0"]
+    randomNs       <- encodedElements ["cardano-sl", "NtpClient"]
+    randomApp      <- encodedElements ["cardano-sl"]
+    -- Ensure it can decode message with non-latin characters
+    randomMsg      <- encodedElements
+        [ "Error Message","Passive Wallet kernel initialized.", "塩井ひろと"
         , "Evaluated clock offset NtpOffset {getNtpOffset = 24688mcs}mcs"]
-    randomPid  <- arbitrary :: Gen Int
-    randomHost <- encodedElements ["hostname"]
-    randomSev  <- encodedElements ["Info", "Warning", "Error", "Notice"]
+    randomPid      <- arbitrary :: Gen Int
+    randomHost     <- encodedElements ["hostname"]
+    randomSev      <- encodedElements ["Info", "Warning", "Error", "Notice"]
     randomThreadId <- arbitrary :: Gen Int
 
     pure $
-        "{                                                      \
-        \\"at\": \"" <> (pack . showIso8601) randomTime <>"\",  \
-        \\"env\": \"" <> randomEnv <> "\",                      \
-        \\"ns\": [                                              \
-            \\"cardano-sl\",                                    \
-            \\""<> randomNs <>"\"                               \
-        \],                                                     \
-        \\"data\": {},                                          \
-        \\"app\": [\""<> randomApp <> "\"],                     \
-        \\"msg\": \""<> randomMsg <> "\",                       \
-        \\"pid\": \""<> show randomPid <> "\",                  \
-        \\"loc\": null,                                         \
-        \\"host\": \""<> randomHost <> "\",                     \
-        \\"sev\": \""<> randomSev <> "\",                       \
-        \\"thread\": \"ThreadId " <> show randomThreadId <> "\" \
+        "{                                                           \
+        \\"at\": \"" <> (encodeUtf8 . showIso8601) randomTime <>"\", \
+        \\"env\": \"" <> randomEnv <> "\",                           \
+        \\"ns\": [                                                   \
+        \    \"cardano-sl\",                                         \
+        \    \""<> randomNs <>"\"                                    \
+        \],                                                          \
+        \\"data\": {},                                               \
+        \\"app\": [\""<> randomApp <> "\"],                          \
+        \\"msg\": \""<> randomMsg <> "\",                            \
+        \\"pid\": \""<> show randomPid <> "\",                       \
+        \\"loc\": null,                                              \
+        \\"host\": \""<> randomHost <> "\",                          \
+        \\"sev\": \""<> randomSev <> "\",                            \
+        \\"thread\": \"ThreadId " <> show randomThreadId <> "\"      \
         \}"
+
+-- | Generate random cardano-log file path
+-- sample: node.json-20180911134009
+randomLogJSONFilePath :: Gen FilePath
+randomLogJSONFilePath = do
+    randomNum <- arbitrary :: Gen Int
+    pure $ "node.json-" <> show randomNum
+
+-- | Generate random cardano-log json file
+randomJSONLogFile :: Gen ByteString
+randomJSONLogFile = do
+    numOfLines <- choose (1,10000)
+    logLines   <- vectorOf numOfLines randomLogText
+    pure $ C8.unlines logLines
+
+-- | Generate random plain cardano-log file path
+-- Sample: node-20180911134009
+randomLogFilePath :: Gen FilePath
+randomLogFilePath = do
+    randomNum <- arbitrary :: Gen Int
+    pure $ "node-" <> show randomNum
+
+-- | Generate random plain cardano-log file
+randomLogFile :: Gen ByteString
+randomLogFile = do
+    numOfLines <- choose (1,10000)
+    logLines <- vectorOf numOfLines (arbitrary :: Gen ByteString)
+    pure $ C8.unlines logLines

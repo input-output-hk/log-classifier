@@ -9,6 +9,7 @@ module LogAnalysis.Classifier
        , prettyFormatLogReadError
        , prettyFormatNoIssues
        , prettyFormatNoLogs
+       , extractMessages
        ) where
 
 import           Universum
@@ -59,7 +60,7 @@ extractMessages (path, content) =
     -- Extract log message from plain log file
     extractMessagesPlain :: (MonadCatch m) => ByteString -> m [Text]
     extractMessagesPlain c = do
-        let decodedFile = decodeUtf8With  ignore c
+        let decodedFile = decodeUtf8With ignore c
         return $ lines decodedFile
     -- Extract log messages from JSON log file
     extractMessagesJSON :: (MonadCatch m) => ByteString -> m [Text]

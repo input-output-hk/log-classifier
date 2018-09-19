@@ -16,9 +16,9 @@ import           Exceptions (ZipFileExceptions (..))
 extractLogsFromZip :: Int -> LByteString -> Either ZipFileExceptions [(FilePath, ByteString)]
 extractLogsFromZip numberOfFiles file = do
     zipMap <- readZip file  -- Read File
-    let something = Map.toList $ mTake numberOfFiles zipMap
-    let strictLog = map (\(path, content) -> (path, LBS.toStrict content)) something
-    return strictLog
+    let extractedLog = Map.toList $ mTake numberOfFiles zipMap
+    let extractedStrictLog = map (\(path, content) -> (path, LBS.toStrict content)) extractedLog
+    return extractedStrictLog
   where
     mTake :: Int -> Map k a -> Map k a
     mTake n = Map.fromDistinctAscList . take n . Map.toAscList
