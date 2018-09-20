@@ -16,6 +16,7 @@ import           Universum
 import           Data.Aeson (FromJSON (..), withObject, (.:))
 import qualified Data.Map.Strict as Map
 import           Data.Time (UTCTime)
+import           Test.QuickCheck
 
 -- | Identifier for each error
 data ErrorCode
@@ -35,7 +36,7 @@ data ErrorCode
     | DecompressionFailure -- ^ The classifier failed to decompress the log file
     | Unknown              -- ^ Unknown error (currently not used)
     | Error                -- ^ Error (currently not used)
-    deriving (Eq, Ord, Show)
+    deriving (Eq, Ord, Show, Enum)
 
 -- | Record identifying the issue
 data Knowledge = Knowledge
@@ -142,4 +143,27 @@ instance FromJSON CardanoLog where
             , clHost        = host
             , clSeverity    = severity
             , clThreadId    = threadId
+            }
+
+--------------------------------------------------------------------------------
+-- Arbitrary instance
+--------------------------------------------------------------------------------
+
+instance Arbitrary ErrorCode where
+    arbitrary = elements [ShortStorage .. Error]
+
+instance Arbitrary Knowledge where
+    arbitrary = do
+        errorText <- fromString <$> arbitrary
+        errorCode <- arbitrary
+        problem   <- fromString <$> arbitrary
+        solution  <- fromString <$> arbitrary
+        faqNumber <- fromString <$> arbitrary
+
+        pure $ Knowledge {
+              kErrorText = errorText
+            , kErrorCode = errorCode
+            , kProblem   = problem
+            , kSolution  = solution
+            , kFAQNumber = faqNumber
             }
