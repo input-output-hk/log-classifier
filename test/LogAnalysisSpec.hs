@@ -69,7 +69,8 @@ randomLogText = do
     randomHost     <- encodedElements ["hostname"]
     randomSev      <- encodedElements ["Info", "Warning", "Error", "Notice"]
     randomThreadId <- arbitrary :: Gen Int
-
+    
+    -- (TODO): Seems like some of the fields are goingo to be deleted
     pure $
         "{                                                           \
         \\"at\": \"" <> (encodeUtf8 . showIso8601) randomTime <>"\", \

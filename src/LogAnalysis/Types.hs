@@ -112,8 +112,6 @@ data CardanoLog = CardanoLog {
     -- ^ Log message
     , clPid         :: !Text
     -- ^ Process Id
-    , clLoc         :: !(Maybe Text) 
-    -- ^ All the sample data had this field empty so I'm not sure what this is.
     , clHost        :: !Text
     -- ^ Hostname
     , clSeverity    :: !Text
@@ -130,7 +128,6 @@ instance FromJSON CardanoLog where
         application <- o .: "app"
         message     <- o .: "msg"
         pid         <- o .: "pid"
-        loc         <- o .: "loc"
         host        <- o .: "host"
         severity    <- o .: "sev"
         threadId    <- o .: "thread"
@@ -142,7 +139,6 @@ instance FromJSON CardanoLog where
             , clApplication = application
             , clMessage     = message
             , clPid         = pid
-            , clLoc         = loc
             , clHost        = host
             , clSeverity    = severity
             , clThreadId    = threadId
