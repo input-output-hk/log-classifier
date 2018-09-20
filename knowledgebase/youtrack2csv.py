@@ -1,5 +1,4 @@
 import pandas as pd
-import numpy as np
 import csv
 
 df = pd.read_csv('issues.csv', dtype={'Zendesk Debugger FAQ Number': str})
