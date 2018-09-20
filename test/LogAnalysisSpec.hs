@@ -14,10 +14,11 @@ import           Test.Hspec (Spec, describe, it, shouldBe)
 import           Test.Hspec.QuickCheck (modifyMaxSuccess)
 import           Test.QuickCheck (Arbitrary (..), Gen, Property, arbitrary, choose, elements,
                                   forAll, vectorOf)
-import           Test.QuickCheck.Monadic (assert, monadicIO, run)
+import           Test.QuickCheck.Monadic (assert, monadicIO, run, PropertyM)
 
 import           LogAnalysis.Classifier (extractIssuesFromLogs, extractMessages)
-import           LogAnalysis.Types (CardanoLog, Knowledge (..), setupAnalysis)
+import           LogAnalysis.Types (CardanoLog, Knowledge (..), setupAnalysis, Analysis)
+import           LogAnalysis.Exceptions (LogAnalysisException(..))
 
 -- | Classifier tests
 classifierSpec :: Spec
@@ -28,8 +29,7 @@ classifierSpec = do
                let decodedText = eitherDecodeStrict' logText :: Either String CardanoLog
                isRight decodedText `shouldBe` True
 
-    -- Decoding is actually really slow so we're reducing the number of tests
-    describe "extractMessages" $ modifyMaxSuccess (const 50) $ do
+    describe "extractMessages" $ modifyMaxSuccess (const 100) $ do
         it "should be able to extract log messages from JSON file" $
             forAll ((,) <$> genLogJSONFilePath <*> genJSONLogFile)
                 $ \logWithFilePath -> testExtractMessage logWithFilePath
@@ -38,18 +38,37 @@ classifierSpec = do
             forAll ((,) <$> genLogFilePath <*> genLogFile)
                 $ \logWithFilePath -> testExtractMessage logWithFilePath
 
-    describe "extractIssuesFromLogs" $ modifyMaxSuccess (const 50) $ do
+    describe "extractIssuesFromLogs" $ modifyMaxSuccess (const 100) $ do
         it "should be able to catch an error text from json file" $
             forAll genErrorText $ \errorText ->
                 forAll (genKnowledgeWithErrorText errorText) $ \knowledge ->
                     forAll (genJSONWithError errorText) $ \jsonWithFilePath ->
-                        testExtractIssuesFromLogs knowledge jsonWithFilePath
+                        monadicIO $ do
+                            eAnalysisResult <- testExtractIssuesFromLogs knowledge jsonWithFilePath
+   
+                            assert $ isRight eAnalysisResult
+                            whenRight eAnalysisResult $ \analysisResult ->
+                                (assert . not . null . Map.toList) analysisResult
 
         it "should be able to catch an error text from plain log file" $
             forAll genErrorText $ \errorText ->
                 forAll (genKnowledgeWithErrorText errorText) $ \knowledge ->
                     forAll (genLogWithError errorText) $ \logWithFilePath ->
-                         testExtractIssuesFromLogs knowledge logWithFilePath
+                        monadicIO $ do
+                         eAnalysisResult <- testExtractIssuesFromLogs knowledge logWithFilePath
+
+                         assert $ isRight eAnalysisResult
+                         whenRight eAnalysisResult $ \analysisResult ->
+                            (assert . not . null . Map.toList) analysisResult
+
+        it "should throw an exception when no issue is found" $
+            forAll (genKnowledgeWithErrorText "This should not be caught") $ \knowledge ->
+                forAll ((,) <$> genLogJSONFilePath <*> genJSONLogFile) $ \logWithFilePath ->
+                    monadicIO $ do
+                        eAnalysisResult <- testExtractIssuesFromLogs knowledge logWithFilePath
+
+                        assert $ isLeft (eAnalysisResult :: Either LogAnalysisException Analysis)
+
 
 -- | Generalized testing of extractMessage
 testExtractMessage :: (FilePath, ByteString) -> Property
@@ -62,15 +81,12 @@ testExtractMessage logWithFilePath =
             (assert . not . null) logLines
 
 -- | Generalized testing of extractIssuesFromLogs
-testExtractIssuesFromLogs :: Knowledge -> (FilePath, ByteString) -> Property
-testExtractIssuesFromLogs knowledge logWithFilePath = 
-    monadicIO $ do
+testExtractIssuesFromLogs :: Knowledge 
+                          -> (FilePath, ByteString)
+                          -> PropertyM IO (Either LogAnalysisException Analysis)
+testExtractIssuesFromLogs knowledge logWithFilePath = do 
         let analysis = setupAnalysis [knowledge]
-        eAnalysisResult <- run $ tryAny $ extractIssuesFromLogs [logWithFilePath] analysis
-        
-        assert $ isRight eAnalysisResult
-        whenRight eAnalysisResult $ \analysisResult ->
-            (assert . not . null . Map.toList) analysisResult
+        run $ try $ extractIssuesFromLogs [logWithFilePath] analysis
 
 -- | Formant given UTCTime into ISO8601
 showIso8601 :: UTCTime -> String
@@ -126,21 +142,21 @@ genLogJSONFilePath = do
 -- | Generate random cardano-log json file
 genJSONLogFile :: Gen ByteString
 genJSONLogFile = do
-    numOfLines <- choose (1,100)
+    numOfLines <- choose (1,1000)
     logLines   <- vectorOf numOfLines (genLogText Nothing)
     pure $ C8.unlines logLines
 
 -- | Generate random plain cardano-log file path
--- Sample: node-20180911134009
+-- Sample: node-20180911134009, daedalus.log, launcher
 genLogFilePath :: Gen FilePath
 genLogFilePath = do
     randomNum <- arbitrary :: Gen Int
-    pure $ "node-" <> show randomNum
+    elements ["node-" <> show randomNum, "daedalus.log", "launcher"]
 
 -- | Generate random plain cardano-log file
 genLogFile :: Gen ByteString
 genLogFile = do
-    numOfLines <- choose (1,100)
+    numOfLines <- choose (1,1000)
     logLines   <- vectorOf numOfLines (arbitrary :: Gen ByteString)
     pure $ C8.unlines logLines
 
