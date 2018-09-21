@@ -9,15 +9,12 @@ module Configuration
 import           Universum
 
 import           DataSource.DB
-import           DataSource.Http
 import           DataSource.Types
 
-import           Http.Layer (basicHTTPNetworkLayer, emptyHTTPNetworkLayer)
-import           Http.Queue (ShedulerConfig)
-
 -- | The default configuration.
-defaultConfig :: ShedulerConfig -> Config
-defaultConfig shedulerConfig = Config
+-- TODO(ks): Abstract this away!
+defaultConfig :: Config
+defaultConfig = Config
     { cfgAgentId                = 0
     , cfgZendesk                = "https://iohk.zendesk.com"
     , cfgToken                  = ""
@@ -27,9 +24,8 @@ defaultConfig shedulerConfig = Config
     , cfgNumOfLogsToAnalyze     = 5
     , cfgIsCommentPublic        = False -- TODO(ks): For now, we need this in CLI.
     -- * Layers
-    , cfgDataLayer              = basicDataLayer
-    , cfgHTTPNetworkLayer       = basicHTTPNetworkLayer shedulerConfig
     , cfgIOLayer                = basicIOLayer
+    -- TODO(ks): Remove this.
     , cfgDBLayer                = connDBLayer
     }
 
@@ -45,8 +41,6 @@ emptyConfig = Config
     , cfgNumOfLogsToAnalyze     = 5
     , cfgIsCommentPublic        = True
     -- * Layers
-    , cfgDataLayer              = emptyDataLayer
-    , cfgHTTPNetworkLayer       = emptyHTTPNetworkLayer
     , cfgIOLayer                = emptyIOLayer
     , cfgDBLayer                = emptyDBLayer
     }

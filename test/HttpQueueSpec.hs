@@ -4,6 +4,8 @@ module HttpQueueSpec
 
 import           Universum
 
+import           Control.Concurrent.Classy (MonadConc, fork)
+
 import           UnliftIO.Async (mapConcurrently)
 
 import           Network.HTTP.Simple (defaultRequest)
@@ -13,22 +15,45 @@ import           Test.Hspec.QuickCheck (modifyMaxSuccess)
 import           Test.QuickCheck (Arbitrary (..), Gen, Property, choose, oneof, property)
 import           Test.QuickCheck.Monadic (assert, monadicIO, run)
 
-import           Http.Exceptions (HttpNetworkLayerException (..))
-import           Http.Queue (createShedulerConfigTime, runDispatch, runSheduler)
+import           Test.DejaFu (deadlocksNever, exceptionsNever)
+import           Test.Hspec.Contrib.HUnit (fromHUnitTest)
+import           Test.HUnit.DejaFu (testDejafu)
 
--- Ideally, we would like to have a quickcheck-state-machine tests here.
+import           Http.Exceptions (HttpNetworkLayerException (..))
+import           Http.Queue (createSchedulerConfig, createSchedulerConfigTime, runDispatch,
+                             runScheduler)
+
 
 -- stack test log-classifier --fast --test-arguments "-m dispatchActionsSpec"
 dispatchActionsSpec :: Spec
-dispatchActionsSpec =
+dispatchActionsSpec = do
     -- The tests might take longer, but we don't want to have a failure here.
     describe "dispatchActionsSpec" $ modifyMaxSuccess (const 1000) $ do
+
+        -- Testing from the DejaFu run.
+        -- fromHUnitTest $ testDejafu "Assert it never abort" abortsNever simpleRun -- kills memory
+        fromHUnitTest $ testDejafu "Assert it never deadlocks" deadlocksNever simpleRun
+        fromHUnitTest $ testDejafu "Assert it doesn't raise exceptions" exceptionsNever simpleRun
+
         it "should dispatch all the actions and return their results" $
             property generateShedulerSpec
 
         it "should dispatch all the actions and return the exception if they raise an exception" $
             property generateShedulerExceptionalSpec
+  where
+    -- | A simple test for consistency.
+    simpleRun :: forall m. (MonadConc m) => m ()
+    simpleRun = do
 
+        -- Create the configuration
+        schedulerConfig <- createSchedulerConfig 3
+
+        -- Run the sheduler (thread).
+        _               <- runScheduler schedulerConfig
+
+        -- Run the dispatch actions in parallel. Use 3 times more requests so it
+        -- does take queuing into consideration.
+        void . replicateM 10 . fork $ runDispatch schedulerConfig (pure ())
 
 newtype ShedulerExample = ShedulerExample (Int, Int, Int)
     deriving (Show, Eq)
@@ -66,13 +91,13 @@ generateShedulerSpec (ShedulerExample (dispatches, rateLimit, delay)) =
     monadicIO $ do
 
         -- Create the configuration
-        shedulerConfig  <- run $ createShedulerConfigTime rateLimit delay
+        schedulerConfig <- run $ createSchedulerConfigTime rateLimit delay
         -- Run the sheduler (thread).
-        _               <- run $ runSheduler shedulerConfig
+        _               <- run $ runScheduler schedulerConfig
         -- Run the dispatch actions in parallel.
         results         <- run $
             mapConcurrently
-                (runDispatch shedulerConfig . pure)
+                (runDispatch schedulerConfig . pure)
                 [1..dispatches]
 
         -- We better not miss something!
@@ -86,14 +111,14 @@ generateShedulerExceptionalSpec (ShedulerExample (dispatches, rateLimit, delay))
     monadicIO $ do
 
         -- Create the configuration
-        shedulerConfig  <- run $ createShedulerConfigTime rateLimit delay
+        schedulerConfig <- run $ createSchedulerConfigTime rateLimit delay
         -- Run the sheduler (thread).
-        _               <- run $ runSheduler shedulerConfig
+        _               <- run $ runScheduler schedulerConfig
         -- Run the dispatch actions in parallel.
         results         <- run $
             mapConcurrently
                 (try @_ @HttpNetworkLayerException <$>
-                    runDispatch shedulerConfig . pure (throwM $ HttpUnauthorized defaultRequest))
+                    runDispatch schedulerConfig . pure (throwM $ HttpUnauthorized defaultRequest))
                 [1..dispatches]
 
         -- We better not miss something!

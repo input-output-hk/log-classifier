@@ -21,9 +21,7 @@ module Lib
 
 import           Universum
 
-import           UnliftIO (MonadUnliftIO)
 import           UnliftIO.Async (mapConcurrently)
-import           UnliftIO.Concurrent (threadDelay)
 
 import           Data.Attoparsec.Text.Lazy (eitherResult, parse)
 import qualified Data.ByteString.Lazy as BS
@@ -39,13 +37,14 @@ import           DataSource (App, Attachment (..), AttachmentContent (..), Comme
                              CommentBody (..), Config (..), DBLayer (..), DataLayer (..),
                              DeletedTicket (..), ExportFromTime (..), IOLayer (..), TicketId (..),
                              TicketInfo (..), TicketStatus (..), TicketTag (..), TicketTags (..),
-                             User (..), UserId (..), ZendeskResponse (..), asksDBLayer,
-                             asksDataLayer, asksIOLayer, assignToPath, connPoolDBLayer,
+                             User (..), UserId (..), ZendeskResponse (..), asksDBLayer, asksIOLayer,
+                             assignToPath, basicDataLayer, connPoolDBLayer,
                              createProdConnectionPool, knowledgebasePath, renderTicketStatus,
                              runApp, tokenPath)
 
 import           Exceptions (ProcessTicketExceptions (..), ZipFileExceptions (..))
-import           Http.Queue (createShedulerConfig, runSheduler)
+import           Http.Layer (basicHTTPNetworkLayer)
+import           Http.Queue (createSchedulerConfig, runScheduler)
 import           LogAnalysis.Classifier (extractErrorCodes, extractIssuesFromLogs,
                                          prettyFormatAnalysis, prettyFormatLogReadError,
                                          prettyFormatNoIssues, prettyFormatNoLogs)
@@ -76,81 +75,62 @@ runZendeskMain = do
 
     connPool    <- createProdConnectionPool
 
-    -- for now, we limit the rate-limit to 700/minute, which is lower then
-    -- 750/minute, but takes into consideration that other things might be called
-    -- at the same time as well.
-    shedConfig  <- createShedulerConfig 700
+    let cfg     = defaultConfig
+                    { cfgToken         = stripEnd token
+                    , cfgAssignTo      = assignTo
+                    , cfgAgentId       = assignTo
+                    , cfgKnowledgebase = knowledges
+                    , cfgDBLayer       = connPoolDBLayer connPool
+                    }
 
-    -- Run the sheduler which resets the number of requests to 0 every minute.
-    _           <- runSheduler shedConfig
-
-    let cfg     = (defaultConfig shedConfig)
-                   { cfgToken         = stripEnd token
-                   , cfgAssignTo      = assignTo
-                   , cfgAgentId       = assignTo
-                   , cfgKnowledgebase = knowledges
-                   , cfgDBLayer       = connPoolDBLayer connPool
-                   }
-
+    -- We really need to get rid of this...
+    -- We don't need any configuration for this, we could move it down to functions.
+    dataLayer   <- runApp createBasicDataLayer cfg
 
     -- At this point, the configuration is set up and there is no point in using a pure IO.
     case args of
-        CollectEmails                   -> runApp collectEmails cfg
-        FetchAgents                     -> void $ runApp fetchAgents cfg
-        FetchTickets                    -> runApp fetchAndShowTickets cfg
-        FetchTicketsFromTime fromTime   -> runApp (fetchAndShowTicketsFrom fromTime) cfg
-        (ProcessTicket ticketId)        -> void $ runApp (processTicketSafe (TicketId ticketId)) cfg
-        ProcessTickets                  -> void $ runApp processTickets cfg
-        ProcessTicketsFromTime fromTime -> runApp (processTicketsFromTime fromTime) cfg
-        ShowStatistics                  -> void $ runApp (fetchTickets >>= showStatistics) cfg
+        CollectEmails                   -> runApp (collectEmails dataLayer) cfg
+        FetchAgents                     -> void $ runApp (fetchAgents dataLayer) cfg
+        FetchTickets                    -> runApp (fetchAndShowTickets dataLayer) cfg
+        FetchTicketsFromTime fromTime   -> runApp (fetchAndShowTicketsFrom dataLayer fromTime) cfg
+        (ProcessTicket ticketId)        -> void $ runApp (processTicketSafe dataLayer (TicketId ticketId)) cfg
+        ProcessTickets                  -> void $ runApp (processTickets dataLayer) cfg
+        ProcessTicketsFromTime fromTime -> runApp (processTicketsFromTime dataLayer fromTime) cfg
+        ShowStatistics                  ->
+            void $ runApp (fetchTickets dataLayer >>= (showStatistics dataLayer)) cfg
         InspectLocalZip filePath        -> runApp (inspectLocalZipAttachment filePath) cfg
-        ExportData fromTime             -> void $ runApp (exportZendeskDataToLocalDB mapConcurrentlyWithDelay fromTime) cfg
+        ExportData fromTime             -> void $ runApp (exportZendeskDataToLocalDB dataLayer fromTime) cfg
 
--- | A general function for using concurrent calls.
-mapConcurrentlyWithDelay
-    :: forall m a b. (MonadIO m, MonadUnliftIO m)
-    => [a] -> Int -> Int -> (a -> m b) -> m [b]
-mapConcurrentlyWithDelay dataIter chunksNum delayAmount concurrentFunction = do
-    let chunkedData = chunks chunksNum dataIter
 
-    collectedData <- forM chunkedData $ \chunkedData' -> do
-        -- Wait a minute!
-        threadDelay delayAmount
-        -- Concurrently we execute the function. If a single
-        -- call fails, they all fail. When they all finish, they return the
-        -- result.
-        mapConcurrently concurrentFunction chunkedData'
+createBasicDataLayer :: App (DataLayer App)
+createBasicDataLayer = do
+    -- for now, we limit the rate-limit to 700/minute, which is lower then
+    -- 750/minute, but takes into consideration that other things might be called
+    -- at the same time as well.
+    shedConfig  <- createSchedulerConfig 700
 
-    pure . concat $ collectedData
+    -- Run the sheduler which resets the number of requests to 0 every minute.
+    _           <- runScheduler shedConfig
 
--- | Yes, horrible. Seems like we need another layer, but I'm not convinced yet what it should be, so we
--- wait patiently until it forms.
-type MapConcurrentlyFunction
-    =  [TicketInfo]
-    -> Int
-    -> Int
-    -> (TicketInfo -> App (TicketInfo, [Comment]))
-    -> App [(TicketInfo, [Comment])]
+    -- create the data layer
+    pure $ basicDataLayer (basicHTTPNetworkLayer shedConfig)
+
 
 -- | The function for exporting Zendesk data to our local DB so
 -- we can have faster analysis and runs.
 -- We expect that the local database exists and has the correct schema.
 exportZendeskDataToLocalDB
-    :: MapConcurrentlyFunction
+    :: DataLayer App
     -> ExportFromTime
     -> App [TicketInfo]
-exportZendeskDataToLocalDB mapConcurrentlyWithDelay' exportFromTime = do
+exportZendeskDataToLocalDB dataLayer exportFromTime = do
 
     deleteAllData               <- asksDBLayer dlDeleteAllData
 
-    notDeletedExportedTickets   <- fetchTicketsExportedFromTime exportFromTime
+    notDeletedExportedTickets   <- fetchTicketsExportedFromTime dataLayer exportFromTime
 
     -- Map concurrently if required.
-    allTicketData               <-  mapConcurrentlyWithDelay'
-                                        notDeletedExportedTickets
-                                        400
-                                        (60 * 1000000)
-                                        fetchTicketData
+    allTicketData               <-  mapConcurrently fetchTicketData notDeletedExportedTickets
 
     -- Clear the data.
     deleteAllData
@@ -166,7 +146,7 @@ exportZendeskDataToLocalDB mapConcurrentlyWithDelay' exportFromTime = do
     fetchTicketData :: TicketInfo -> App (TicketInfo,[Comment])
     fetchTicketData ticket = do
 
-        getTicketComments           <- asksDataLayer zlGetTicketComments
+        let getTicketComments       = zlGetTicketComments dataLayer
 
         -- First fetch comments, FAIL-FAST
         ticketComments              <- getTicketComments $ tiId ticket
@@ -174,11 +154,11 @@ exportZendeskDataToLocalDB mapConcurrentlyWithDelay' exportFromTime = do
         pure (ticket, ticketComments)
 
 -- | Fetch all tickets changed from a specific date.
-fetchTicketsExportedFromTime :: ExportFromTime -> App [TicketInfo]
-fetchTicketsExportedFromTime exportFromTime = do
+fetchTicketsExportedFromTime :: DataLayer App -> ExportFromTime -> App [TicketInfo]
+fetchTicketsExportedFromTime dataLayer exportFromTime = do
 
-    listDeletedTickets          <- asksDataLayer zlListDeletedTickets
-    exportTickets               <- asksDataLayer zlExportTickets
+    let listDeletedTickets      = zlListDeletedTickets dataLayer
+    let exportTickets           = zlExportTickets dataLayer
 
     -- Yeah, not sure why this happens. Very weird.
     exportedTickets             <- nub <$> exportTickets exportFromTime
@@ -196,13 +176,6 @@ fetchTicketsExportedFromTime exportFromTime = do
     isDeletedTicket :: [DeletedTicket] -> TicketInfo -> Bool
     isDeletedTicket dTickets TicketInfo{..} =
         tiId `elem` map dtId dTickets
-
--- | So we don't have to include another library here.
-chunks :: Int -> [a] -> [[a]]
-chunks _ [] = []
-chunks n xs =
-    let (ys, zs) = splitAt n xs
-    in  ys : chunks n zs
 
 -- | We are missing an intermediate step here to test and separate.
 saveTicketDataToLocalDB :: (TicketInfo,[Comment]) -> App ()
@@ -227,37 +200,38 @@ saveTicketDataToLocalDB (ticket, ticketComments) = do
     pure ()
 
 -- | TODO(hs): Remove this function since it's not used
-collectEmails :: App ()
-collectEmails = do
+collectEmails :: DataLayer App -> App ()
+collectEmails dataLayer = do
     cfg <- ask
 
     let email   = cfgEmail cfg
     let userId  = UserId . fromIntegral $ cfgAgentId cfg
 
     -- We first fetch the function from the configuration
-    listTickets <- asksDataLayer zlListAssignedTickets
+    let listTickets = zlListAssignedTickets dataLayer
     putTextLn $ "Classifier is going to extract emails requested by: " <> email
     tickets     <- listTickets userId
     putTextLn $ "There are " <> show (length tickets) <> " tickets requested by this user."
     let ticketIds = foldr (\TicketInfo{..} acc -> tiId : acc) [] tickets
-    mapM_ extractEmailAddress ticketIds
+    mapM_ (extractEmailAddress dataLayer) ticketIds
 
-fetchAgents :: App [User]
-fetchAgents = do
-    Config{..}      <- ask
-    listAdminAgents <- asksDataLayer zlListAdminAgents
-    printText       <- asksIOLayer iolPrintText
+fetchAgents :: DataLayer App -> App [User]
+fetchAgents dataLayer = do
+    Config{..}          <- ask
+
+    let listAdminAgents = zlListAdminAgents dataLayer
+    printText           <- asksIOLayer iolPrintText
 
     printText "Fetching Zendesk agents"
 
-    agents          <- listAdminAgents
+    agents              <- listAdminAgents
 
     mapM_ print agents
     pure agents
 
 -- | 'processTicket' with exception handling
-processTicketSafe :: TicketId -> App ()
-processTicketSafe tId = catch (void $ processTicket tId)
+processTicketSafe :: DataLayer App ->TicketId -> App ()
+processTicketSafe dataLayer tId = catch (void $ processTicket dataLayer tId)
     -- Print and log any exceptions related to process ticket
     -- TODO(ks): Remove IO from here, return the error.
     (\(e :: ProcessTicketExceptions) -> do
@@ -268,13 +242,13 @@ processTicketSafe tId = catch (void $ processTicket tId)
         appendF "./logs/errors.log" (show e <> "\n"))
 
 -- | Process ticket with given 'TicketId'
-processTicket :: HasCallStack => TicketId -> App ZendeskResponse
-processTicket tId = do
+processTicket :: HasCallStack => DataLayer App -> TicketId -> App ZendeskResponse
+processTicket dataLayer tId = do
 
     -- We see 3 HTTP calls here.
-    getTicketInfo       <- asksDataLayer zlGetTicketInfo
-    getTicketComments   <- asksDataLayer zlGetTicketComments
-    postTicketComment   <- asksDataLayer zlPostTicketComment
+    let getTicketInfo       = zlGetTicketInfo dataLayer
+    let getTicketComments   = zlGetTicketComments dataLayer
+    let postTicketComment   = zlPostTicketComment dataLayer
 
     mTicketInfo         <- getTicketInfo tId
     comments            <- getTicketComments tId
@@ -283,7 +257,7 @@ processTicket tId = do
     case mTicketInfo of
         Nothing -> throwM $ TicketInfoNotFound tId
         Just ticketInfo -> do
-            zendeskResponse <- getZendeskResponses comments attachments ticketInfo
+            zendeskResponse <- getZendeskResponses dataLayer comments attachments ticketInfo
 
             -- post ticket comment
             postTicketComment ticketInfo zendeskResponse
@@ -292,14 +266,14 @@ processTicket tId = do
 
 -- | When we want to process all tickets from a specific time onwards.
 -- Run in parallel.
-processTicketsFromTime :: ExportFromTime -> App ()
-processTicketsFromTime exportFromTime = do
+processTicketsFromTime :: DataLayer App -> ExportFromTime -> App ()
+processTicketsFromTime dataLayer exportFromTime = do
 
-    allTickets          <- fetchTicketsExportedFromTime exportFromTime
+    allTickets          <- fetchTicketsExportedFromTime dataLayer exportFromTime
 
     putTextLn $ "There are " <> show (length allTickets) <> " tickets."
 
-    mZendeskResponses   <- mapConcurrently (processTicket . tiId) allTickets
+    mZendeskResponses   <- mapConcurrently (processTicket dataLayer . tiId) allTickets
 
     -- This is single-threaded.
     mapM_ processSingleTicket mZendeskResponses
@@ -328,26 +302,26 @@ processTicketsFromTime exportFromTime = do
 
 
 -- | When we want to process all possible tickets.
-processTickets :: HasCallStack => App ()
-processTickets = do
+processTickets :: HasCallStack => DataLayer App -> App ()
+processTickets dataLayer = do
 
     printText <- asksIOLayer iolPrintText
     printText "Classifier will start processing tickets"
 
     -- Fetching all the tickets that needs to be processed
-    allTickets <- fetchTickets
+    allTickets <- fetchTickets dataLayer
 
     printText $ "Number of tickets to be analyzed: " <> show (length allTickets)
 
-    mapM_ (processTicketSafe . tiId) allTickets
+    mapM_ (processTicketSafe dataLayer . tiId) allTickets
 
     putTextLn "All the tickets has been processed."
 
 -- | Fetch all tickets.
-fetchTickets :: App [TicketInfo]
-fetchTickets = do
-    sortedTicketIds             <- listAndSortTickets
-    sortedUnassignedTicketIds   <- listAndSortUnassignedTickets
+fetchTickets :: DataLayer App -> App [TicketInfo]
+fetchTickets dataLayer = do
+    sortedTicketIds             <- listAndSortTickets dataLayer
+    sortedUnassignedTicketIds   <- listAndSortUnassignedTickets dataLayer
 
     let allTickets = sortedTicketIds <> sortedUnassignedTicketIds
 
@@ -355,22 +329,22 @@ fetchTickets = do
     pure $ filter (elem (renderTicketStatus ToBeAnalyzed) . getTicketTags . tiTags) allTickets
 
 -- | Fetch a single ticket if found.
-fetchTicket :: TicketId -> App (Maybe TicketInfo)
-fetchTicket ticketId = do
-    getTicketInfo               <- asksDataLayer zlGetTicketInfo
+fetchTicket :: DataLayer App -> TicketId -> App (Maybe TicketInfo)
+fetchTicket dataLayer ticketId = do
+    let getTicketInfo       = zlGetTicketInfo dataLayer
     getTicketInfo ticketId
 
 
 -- | Fetch comments from a ticket, if the ticket is found.
-fetchTicketComments :: TicketId -> App [Comment]
-fetchTicketComments ticketId = do
-    getTicketComments           <- asksDataLayer zlGetTicketComments
+fetchTicketComments :: DataLayer App -> TicketId -> App [Comment]
+fetchTicketComments dataLayer ticketId = do
+    let getTicketComments   = zlGetTicketComments dataLayer
     getTicketComments ticketId
 
 
-fetchAndShowTickets :: App ()
-fetchAndShowTickets = do
-    allTickets  <- fetchTickets
+fetchAndShowTickets :: DataLayer App -> App ()
+fetchAndShowTickets dataLayer = do
+    allTickets  <- fetchTickets dataLayer
 
     putTextLn $ "There are " <> show (length allTickets) <> " tickets."
 
@@ -381,9 +355,9 @@ fetchAndShowTickets = do
     putTextLn "All the tickets has been processed."
 
 -- | Fetch and show tickets from a specific time.
-fetchAndShowTicketsFrom :: ExportFromTime -> App ()
-fetchAndShowTicketsFrom exportFromTime = do
-    allTickets <- fetchTicketsExportedFromTime exportFromTime
+fetchAndShowTicketsFrom :: DataLayer App -> ExportFromTime -> App ()
+fetchAndShowTicketsFrom dataLayer exportFromTime = do
+    allTickets <- fetchTicketsExportedFromTime dataLayer exportFromTime
 
     putTextLn $ "There are " <> show (length allTickets) <> " tickets."
 
@@ -394,18 +368,18 @@ fetchAndShowTicketsFrom exportFromTime = do
     putTextLn "All the tickets has been processed."
 
 -- TODO(ks): Extract repeating code, generalize.
-listAndSortTickets :: HasCallStack => App [TicketInfo]
-listAndSortTickets = do
+listAndSortTickets :: HasCallStack => DataLayer App -> App [TicketInfo]
+listAndSortTickets dataLayer = do
 
     Config{..}  <- ask
 
-    listAgents  <- asksDataLayer zlListAdminAgents
+    let listAgents = zlListAdminAgents dataLayer
     agents      <- listAgents
 
     let agentIds :: [UserId]
         agentIds = map uId agents
     -- We first fetch the function from the configuration
-    listTickets <- asksDataLayer zlListAssignedTickets
+    let listTickets = zlListAssignedTickets dataLayer
 
     ticketInfos <- map concat $ traverse listTickets agentIds
 
@@ -414,11 +388,11 @@ listAndSortTickets = do
 
     pure sortedTicketIds
 
-listAndSortUnassignedTickets :: HasCallStack => App [TicketInfo]
-listAndSortUnassignedTickets = do
+listAndSortUnassignedTickets :: HasCallStack => DataLayer App -> App [TicketInfo]
+listAndSortUnassignedTickets dataLayer = do
 
     -- We first fetch the function from the configuration
-    listUnassignedTickets   <- asksDataLayer zlListUnassignedTickets
+    let listUnassignedTickets = zlListUnassignedTickets dataLayer
 
     ticketInfos             <- listUnassignedTickets
 
@@ -437,10 +411,10 @@ setupKnowledgebaseEnv path = do
         Right ks -> return ks
 
 -- | Collect email
-extractEmailAddress :: TicketId -> App ()
-extractEmailAddress ticketId = do
+extractEmailAddress :: DataLayer App -> TicketId -> App ()
+extractEmailAddress dataLayer ticketId = do
     -- Fetch the function from the configuration.
-    getTicketComments <- asksDataLayer zlGetTicketComments
+    let getTicketComments = zlGetTicketComments dataLayer
 
     comments <- getTicketComments ticketId
     let (CommentBody commentWithEmail) = cBody $ fromMaybe (error "No comment") (safeHead comments)
@@ -473,19 +447,19 @@ getAttachmentsFromComment comments = do
         ["application/zip", "application/x-zip-compressed"]
 
 -- | Inspects the comment, attachment, ticket info and create 'ZendeskResponse'
-getZendeskResponses :: [Comment] -> [Attachment] -> TicketInfo -> App ZendeskResponse
-getZendeskResponses comments attachments ticketInfo
-    | not (null attachments) = inspectAttachments ticketInfo attachments
+getZendeskResponses :: DataLayer App -> [Comment] -> [Attachment] -> TicketInfo -> App ZendeskResponse
+getZendeskResponses dataLayer comments attachments ticketInfo
+    | not (null attachments) = inspectAttachments dataLayer ticketInfo attachments
     | not (null comments)    = responseNoLogs ticketInfo
     | otherwise              = throwM $ CommentAndAttachmentNotFound (tiId ticketInfo)
     -- No attachment, no comments means something is wrong with ticket itself
 
 -- | Inspect the latest attachment
-inspectAttachments :: TicketInfo -> [Attachment] -> App ZendeskResponse
-inspectAttachments ticketInfo attachments = do
+inspectAttachments :: DataLayer App -> TicketInfo -> [Attachment] -> App ZendeskResponse
+inspectAttachments dataLayer ticketInfo attachments = do
 
     config          <- ask
-    getAttachment   <- asksDataLayer zlGetAttachment
+    let getAttachment   = zlGetAttachment dataLayer
 
     lastAttach      <- handleMaybe . safeHead . reverse . sort $ attachments
     att             <- handleMaybe =<< getAttachment lastAttach

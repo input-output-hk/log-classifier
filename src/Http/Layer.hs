@@ -1,3 +1,5 @@
+{-# LANGUAGE RankNTypes #-}
+
 module Http.Layer
     ( HTTPNetworkLayer (..)
     , basicHTTPNetworkLayer
@@ -8,6 +10,8 @@ module Http.Layer
 
 import           Universum
 
+import           Control.Concurrent.Classy (MonadConc)
+
 import qualified Data.ByteString.Lazy as BL
 
 import           Data.Aeson (FromJSON, ToJSON, Value)
@@ -17,23 +21,80 @@ import           Network.HTTP.Simple (Request, addRequestHeader, getResponseBody
                                       setRequestBasicAuth, setRequestBodyJSON, setRequestMethod,
                                       setRequestPath)
 
-import           DataSource.Types (Config (..), HTTPNetworkLayer (..))
+import           DataSource.Types (Config (..))
 
 import           Http.Exceptions (HttpNetworkLayerException (..), statusCodeToException)
-import           Http.Queue (ShedulerConfig, runDispatch)
+import           Http.Queue (SchedulerConfig, runDispatch)
 
 ------------------------------------------------------------
 -- Layer
 ------------------------------------------------------------
 
-basicHTTPNetworkLayer :: ShedulerConfig -> HTTPNetworkLayer
+-- | The HTTP network layer that we want to expose.
+-- We don't want anything to leak out, so we expose only the most relevant information,
+-- anything relating to how it internaly works should NOT be exposed.
+-- Actually, it would be better if we "inject" this into
+-- the @Http@ module, say in the @ZendeskaLayer@, but it's good enough for now.
+-- We need to use RankNTypes due to some complications that appeared.
+data HTTPNetworkLayer m = HTTPNetworkLayer
+    { hnlAddJsonBody    :: forall a.    (ToJSON a)      => a -> Request -> Request
+    , hnlApiCall        :: forall a.    (FromJSON a)    => (Value -> Parser a) -> Request -> m a
+    , hnlApiCallBare    :: Request -> m BL.ByteString
+    }
+
+basicHTTPNetworkLayer
+    :: forall m. (MonadIO m, MonadCatch m, MonadMask m, MonadConc m)
+    => SchedulerConfig m
+    -> HTTPNetworkLayer m
 basicHTTPNetworkLayer shedulerConfig = HTTPNetworkLayer
     { hnlAddJsonBody    = addJsonBody
     , hnlApiCall        = apiCall shedulerConfig
     , hnlApiCallBare    = apiCallBare shedulerConfig
     }
+  where
 
-emptyHTTPNetworkLayer :: HTTPNetworkLayer
+    -- | Request PUT
+    addJsonBody :: forall a. ToJSON a => a -> Request -> Request
+    addJsonBody body req = setRequestBodyJSON body $ setRequestMethod "PUT" req
+
+    -- | Make an api call
+    apiCall
+        :: forall a. (FromJSON a)
+        => SchedulerConfig m
+        -> (Value -> Parser a)
+        -> Request
+        -> m a
+    apiCall schedulerConfig parser request = do
+        -- putTextLn $ show req -- logging !?!
+        httpResult      <- runDispatch schedulerConfig (httpJSONEither request)
+
+        let httpResponseBody = getResponseBody httpResult
+
+        httpResponse    <-  either
+                                (throwM . HttpDecodingJSON request . show)
+                                pure
+                                httpResponseBody
+
+        let httpStatusCode  = getResponseStatusCode httpResult
+
+        _               <- statusCodeToException request httpStatusCode
+
+        case parseEither parser httpResponse of
+            Left reason -> throwM $ HttpDecodingJSON request reason
+            Right value -> pure value
+
+    -- | Make a bare api call which returns a lazy @ByteString@.
+    apiCallBare
+        :: SchedulerConfig m
+        -> Request
+        -> m BL.ByteString
+    apiCallBare schedulerConfig request = do
+        response    <- runDispatch schedulerConfig (httpLBS request)
+        pure $ getResponseBody response
+
+
+
+emptyHTTPNetworkLayer :: HTTPNetworkLayer m
 emptyHTTPNetworkLayer = HTTPNetworkLayer
     { hnlAddJsonBody    = \_ _  -> error "hnlAddJsonBody not implemented!"
     , hnlApiCall        = \_    -> error "hnlApiCall not implemented!"
@@ -63,49 +124,4 @@ apiRequestAbsolute Config{..} u =
     addRequestHeader "Content-Type" "application/json" $
     setRequestBasicAuth (encodeUtf8 cfgEmail <> "/token") (encodeUtf8 cfgToken) $
     parseRequest_(toString u)
-
-------------------------------------------------------------
--- Layer functions
-------------------------------------------------------------
-
--- | Request PUT
-addJsonBody :: forall a. ToJSON a => a -> Request -> Request
-addJsonBody body req = setRequestBodyJSON body $ setRequestMethod "PUT" req
-
--- | Make an api call
-apiCall
-    :: forall m a. (MonadIO m, MonadCatch m, MonadMask m, FromJSON a)
-    => ShedulerConfig
-    -> (Value -> Parser a)
-    -> Request
-    -> m a
-apiCall shedulerConfig parser request = do
-    -- putTextLn $ show req -- logging !?!
-    httpResult      <- runDispatch shedulerConfig (httpJSONEither request)
-
-    let httpResponseBody = getResponseBody httpResult
-
-    httpResponse    <-  either
-                            (throwM . HttpDecodingJSON request . show)
-                            pure
-                            httpResponseBody
-
-    let httpStatusCode  = getResponseStatusCode httpResult
-
-    _               <- statusCodeToException request httpStatusCode
-
-    case parseEither parser httpResponse of
-        Left reason -> throwM $ HttpDecodingJSON request reason
-        Right value -> pure value
-
--- | Make a bare api call which returns a lazy @ByteString@.
-apiCallBare
-    :: forall m. (MonadIO m, MonadMask m)
-    => ShedulerConfig
-    -> Request
-    -> m BL.ByteString
-apiCallBare shedulerConfig request = do
-    response    <- runDispatch shedulerConfig (httpLBS request)
-    pure $ getResponseBody response
-
 

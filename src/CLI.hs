@@ -17,7 +17,7 @@ import           Data.Time (UTCTime (..), defaultTimeLocale, parseTimeM)
 import           Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 
 -- | TODO(ks): Ideally we should drop this and
--- use direct function calls.
+-- use direct function calls. Move to exe.
 data CLI
     = CollectEmails
     -- ^ Collect email addresses

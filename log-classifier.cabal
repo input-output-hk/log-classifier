@@ -57,7 +57,10 @@ library
                      , time
                      , universum
                      , zip-archive
+                     -- Testing
                      , QuickCheck
+                     , concurrency
+                     , dejafu
                      -- Database backend
                      , sqlite-simple 
                      , resource-pool
@@ -132,8 +135,13 @@ test-suite log-classifier-test
                      , sqlite-simple
                      , text
                      , universum
+                     -- * testing
                      , QuickCheck
                      , hspec
+                     , hspec-contrib
+                     , concurrency
+                     , dejafu
+                     , hunit-dejafu
 
   default-language:   Haskell2010
   default-extensions: TypeOperators
