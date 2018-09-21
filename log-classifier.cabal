@@ -60,7 +60,6 @@ library
                      -- Testing
                      , QuickCheck
                      , concurrency
-                     , dejafu
                      -- Database backend
                      , sqlite-simple 
                      , resource-pool
