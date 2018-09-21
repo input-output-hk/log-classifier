@@ -252,7 +252,7 @@ processTicketSafe tId = catch (void $ processTicket tId)
     -- TODO(ks): Remove IO from here, return the error.
     (\(e :: ProcessTicketExceptions) -> do
         printText <- asksIOLayer iolPrintText
-        printText $ show e
+        printText $ "Error on TicketId " <> show (getTicketId tId) <> ":" <> show e
         -- TODO(hs): Implement concurrent logging
         appendF <- asksIOLayer iolAppendFile
         appendF "./logs/errors.log" (show e <> "\n"))
