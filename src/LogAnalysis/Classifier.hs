@@ -22,21 +22,21 @@ import           Data.Text.Encoding.Error (ignore)
 
 import           DataSource.Types (TicketInfo (..), ZendeskAPIUrl (..), showURL)
 import           LogAnalysis.Exceptions (LogAnalysisException (..))
-import           LogAnalysis.Types (Analysis, CardanoLog (..), Knowledge (..), renderErrorCode)
-import           Prelude as P (head)
+import           LogAnalysis.Types (Analysis, CardanoLog (..), FileFormat (..), Knowledge (..),
+                                    LogFile (..), renderErrorCode)
 
 -- | Number of error texts it should show
 numberOfErrorText :: Int
 numberOfErrorText = 3
 
 -- | Analyze each log file based on the knowlodgebases' data.
-extractIssuesFromLogs :: (MonadCatch m) => [(FilePath, ByteString)] -> Analysis -> m Analysis
+extractIssuesFromLogs :: (MonadCatch m) => [LogFile] -> Analysis -> m Analysis
 extractIssuesFromLogs files analysis = do
 
     -- Check if any of the file is corrupted
-    strictLogFiles <- forM files $ \(path, file) -> do
-        checkedFile <- checkFile file
-        return (path, checkedFile)
+    strictLogFiles <- forM files $ \logfile -> do
+        checkedFile <- checkFile (lfContent logfile)
+        return logfile {lfContent = checkedFile}
 
     logLines       <- concatMapM extractMessages strictLogFiles
     let analysisResult = foldl' analyzeLine analysis logLines
@@ -51,25 +51,25 @@ extractIssuesFromLogs files analysis = do
     catchAnyStrict m = catchAny $ m >>= (return $!) . force
 
 -- | Extract messages from either plain or json file
-extractMessages :: (MonadCatch m) => (FilePath, ByteString) -> m [Text]
-extractMessages (path, content) =
-    if ".json" `isInfixOf` toText path
-        then extractMessagesJSON content
-        else extractMessagesPlain content
+extractMessages :: (MonadCatch m) => LogFile -> m [Text]
+extractMessages logfile =
+    case lfFileFormat logfile of
+        Txt  -> extractMessagesPlain (lfContent logfile)
+        JSON -> extractMessagesJSON (lfContent logfile)
   where
     -- Extract log message from plain log file
     extractMessagesPlain :: (MonadCatch m) => ByteString -> m [Text]
-    extractMessagesPlain c = do
-        let decodedFile = decodeUtf8With ignore c
+    extractMessagesPlain logFileContent = do
+        let decodedFile = decodeUtf8With ignore logFileContent
         return $ lines decodedFile
     -- Extract log messages from JSON log file
     extractMessagesJSON :: (MonadCatch m) => ByteString -> m [Text]
-    extractMessagesJSON c = do
-        let logLines = C8.lines c
+    extractMessagesJSON logFileContent = do
+        let logLines = C8.lines logFileContent
         let decodedLogLines = map eitherDecodeStrict' logLines
 
         when (any isLeft decodedLogLines) $ do
-            let errorText = P.head $ lefts decodedLogLines
+            let errorText = fromMaybe "Decoding failed" (safeHead $ lefts decodedLogLines)
             throwM $ JSONDecodeFailure errorText
 
         --  Collect message field since those are the ones we care about

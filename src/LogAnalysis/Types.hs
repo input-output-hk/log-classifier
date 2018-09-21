@@ -5,6 +5,9 @@ module LogAnalysis.Types
        , CardanoLog (..)
        , ErrorCode (..)
        , Knowledge (..)
+       , FileFormat(..)
+       , LogFile(..)
+       , toLogFile
        , setupAnalysis
        , renderErrorCode
        , toComment
@@ -15,6 +18,7 @@ import           Universum
 
 import           Data.Aeson (FromJSON (..), withObject, (.:))
 import qualified Data.Map.Strict as Map
+import qualified Data.Text as T
 import           Data.Time (UTCTime)
 import           Test.QuickCheck
 
@@ -52,6 +56,16 @@ data Knowledge = Knowledge
     -- ^ The FAQ number that will be displayed on the official Cardano FAQ page
     }
 
+data FileFormat
+    = Txt 
+    | JSON
+    deriving (Eq, Show)
+
+data LogFile = LogFile 
+    { lfFileFormat :: !FileFormat
+    , lfContent    :: !ByteString
+    } deriving (Eq, Show)
+
 instance Show Knowledge where
     show Knowledge{..} =
         "{  errorText  = " <> Prelude.show kErrorText   <>
@@ -86,6 +100,13 @@ toComment :: ErrorCode -> Text
 toComment SentLogCorrupted = "Log file is corrupted"
 toComment _                = "Error"
 
+toLogFile :: (FilePath, ByteString) -> LogFile
+toLogFile (path, content) = 
+  let format = if ".json" `T.isInfixOf` toText path
+               then JSON
+               else Txt
+  in LogFile format content
+
 -- | Map used to collect error lines
 type Analysis = Map Knowledge [Text]
 
@@ -113,6 +134,8 @@ data CardanoLog = CardanoLog {
     -- ^ Log message
     , clPid         :: !Text
     -- ^ Process Id
+    , clLoc         :: !(Maybe Text)
+    -- ^ Loc
     , clHost        :: !Text
     -- ^ Hostname
     , clSeverity    :: !Text
@@ -129,6 +152,7 @@ instance FromJSON CardanoLog where
         application <- o .: "app"
         message     <- o .: "msg"
         pid         <- o .: "pid"
+        loc         <- o .: "loc"
         host        <- o .: "host"
         severity    <- o .: "sev"
         threadId    <- o .: "thread"
@@ -140,6 +164,7 @@ instance FromJSON CardanoLog where
             , clApplication = application
             , clMessage     = message
             , clPid         = pid
+            , clLoc         = loc
             , clHost        = host
             , clSeverity    = severity
             , clThreadId    = threadId
