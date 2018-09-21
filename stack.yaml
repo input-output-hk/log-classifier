@@ -42,8 +42,6 @@ packages:
 # (e.g., acme-missiles-0.3)
 # extra-deps: []
 extra-deps:
-- quickcheck-state-machine-0.4.2
-- pretty-show-1.8.2
 # - weeder
 
 # Override default flag values for local packages and extra-deps
