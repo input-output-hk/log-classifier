@@ -18,7 +18,8 @@ import           Test.QuickCheck.Monadic (PropertyM, assert, monadicIO, run)
 
 import           LogAnalysis.Classifier (extractIssuesFromLogs, extractMessages)
 import           LogAnalysis.Exceptions (LogAnalysisException (..))
-import           LogAnalysis.Types (Analysis, CardanoLog, Knowledge (..), setupAnalysis)
+import           LogAnalysis.Types (Analysis, CardanoLog, Knowledge (..), LogFile, setupAnalysis,
+                                    toLogFile)
 
 -- | Classifier tests
 classifierSpec :: Spec
@@ -33,16 +34,16 @@ classifierSpec = do
         it "should be able to extract log messages from JSON file" $
             forAll ((,) <$> genLogJSONFilePath <*> genJSONLogFile) $ \logWithFilePath ->
                 monadicIO $ do
-                    eLogLines <- run $ try $ extractMessages logWithFilePath
+                    eLogLines <- run $ try $ extractMessages (toLogFile logWithFilePath)
                     -- Check if the decoding was successful
                     assert $ isRight (eLogLines :: Either LogAnalysisException [Text])
                     whenRight eLogLines $ \logLines ->
                         (assert . not . null) logLines
 
-        it "should be able to extract log messages from plain log file" $
+        it "should be able to extract log messages from text log file" $
             forAll ((,) <$> genLogFilePath <*> genLogFile) $ \logWithFilePath ->
                 monadicIO $ do
-                    eLogLines <- run $ try $ extractMessages logWithFilePath
+                    eLogLines <- run $ try $ extractMessages (toLogFile logWithFilePath)
 
                     assert $ isRight (eLogLines :: Either LogAnalysisException [Text])
                     whenRight eLogLines $ \logLines ->
@@ -52,7 +53,7 @@ classifierSpec = do
             forAll ((,) <$> genLogJSONFilePath <*> genLogFile)
                 $ \logWithFilePath ->
                     monadicIO $ do
-                        eLogLines <- run $ try $ extractMessages logWithFilePath
+                        eLogLines <- run $ try $ extractMessages (toLogFile logWithFilePath)
 
                         assert $ isLeft (eLogLines :: Either LogAnalysisException [Text])
 
@@ -62,18 +63,22 @@ classifierSpec = do
                 forAll (genKnowledgeWithErrorText errorText) $ \knowledge ->
                     forAll (genJSONWithError errorText) $ \jsonWithFilePath ->
                         monadicIO $ do
-                            eAnalysisResult <- testExtractIssuesFromLogs knowledge jsonWithFilePath
+                            eAnalysisResult <- testExtractIssuesFromLogs
+                                                   knowledge
+                                                   (toLogFile jsonWithFilePath)
 
                             assert $ isRight eAnalysisResult
                             whenRight eAnalysisResult $ \analysisResult ->
                                 (assert . not . null . Map.toList) analysisResult
 
-        it "should be able to catch an error text from plain log file" $
+        it "should be able to catch an error text from text log file" $
             forAll genErrorText $ \errorText ->
                 forAll (genKnowledgeWithErrorText errorText) $ \knowledge ->
                     forAll (genLogWithError errorText) $ \logWithFilePath ->
                         monadicIO $ do
-                         eAnalysisResult <- testExtractIssuesFromLogs knowledge logWithFilePath
+                         eAnalysisResult <- testExtractIssuesFromLogs
+                                                knowledge
+                                                (toLogFile logWithFilePath)
 
                          assert $ isRight eAnalysisResult
                          whenRight eAnalysisResult $ \analysisResult ->
@@ -83,17 +88,19 @@ classifierSpec = do
             forAll (genKnowledgeWithErrorText "This should not be caught") $ \knowledge ->
                 forAll ((,) <$> genLogJSONFilePath <*> genJSONLogFile) $ \logWithFilePath ->
                     monadicIO $ do
-                        eAnalysisResult <- testExtractIssuesFromLogs knowledge logWithFilePath
+                        eAnalysisResult <- testExtractIssuesFromLogs
+                                               knowledge
+                                               (toLogFile logWithFilePath)
 
                         assert $ isLeft (eAnalysisResult :: Either LogAnalysisException Analysis)
 
 -- | Generalized testing of extractIssuesFromLogs
 testExtractIssuesFromLogs :: Knowledge
-                          -> (FilePath, ByteString)
+                          -> LogFile
                           -> PropertyM IO (Either LogAnalysisException Analysis)
-testExtractIssuesFromLogs knowledge logWithFilePath = do
+testExtractIssuesFromLogs knowledge logFile = do
         let analysis = setupAnalysis [knowledge]
-        run $ try $ extractIssuesFromLogs [logWithFilePath] analysis
+        run $ try $ extractIssuesFromLogs [logFile] analysis
 
 -- | Formant given UTCTime into ISO8601
 showIso8601 :: UTCTime -> String
@@ -159,14 +166,14 @@ genJSONLogFile = do
     logLines   <- vectorOf numOfLines (genLogText Nothing)
     pure $ C8.unlines logLines
 
--- | Generate random plain cardano-log file path
+-- | Generate random text cardano-log file path
 -- Sample: node-20180911134009, daedalus.log, launcher
 genLogFilePath :: Gen FilePath
 genLogFilePath = do
     randomNum <- arbitrary :: Gen Int
     elements ["node-" <> show randomNum, "daedalus.log", "launcher"]
 
--- | Generate random plain cardano-log file
+-- | Generate random text cardano-log file
 genLogFile :: Gen ByteString
 genLogFile = do
     numOfLines <- choose (1,1000)
