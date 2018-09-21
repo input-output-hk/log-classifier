@@ -632,7 +632,7 @@ filterAnalyzedTickets ticketsInfo =
 
     -- | If we have a ticket we are having issues with...
     isTicketBlacklisted :: TicketInfo -> Bool
-    isTicketBlacklisted TicketInfo{..} = tiId `notElem` [TicketId 9377,TicketId 10815, TicketId 15066]
+    isTicketBlacklisted TicketInfo{..} = tiId `notElem` [TicketId 9377,TicketId 10815, TicketId 15066, TicketId 30849]
 
     isTicketInGoguenTestnet :: TicketInfo -> Bool
     isTicketInGoguenTestnet TicketInfo{..} = "goguen_testnets" `notElem` getTicketTags tiTags
