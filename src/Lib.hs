@@ -279,7 +279,7 @@ processTicket tId = do
         Just ticketInfo -> do
             zendeskResponse <- getZendeskResponses comments attachments ticketInfo
 
-            --postTicketComment ticketInfo zendeskResponse
+            postTicketComment ticketInfo zendeskResponse
             
             -- TODO(ks): Moved back so we can run it in single-threaded mode. Requires a lot of
             -- refactoring to run it in a multi-threaded mode.
