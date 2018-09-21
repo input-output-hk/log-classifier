@@ -16,11 +16,11 @@ module LogAnalysis.Types
 import           Prelude (Show (..))
 import           Universum
 
-import           Data.Aeson (FromJSON (..), withObject, (.:))
+import           Data.Aeson (FromJSON (..), ToJSON (..), object, withObject, (.:), (.=))
 import qualified Data.Map.Strict as Map
 import qualified Data.Text as T
-import           Data.Time (UTCTime)
-import           Test.QuickCheck
+import           Data.Time (UTCTime (..), fromGregorian, secondsToDiffTime)
+import           Test.QuickCheck (Arbitrary (..), Gen, choose, elements, sublistOf)
 
 -- | Identifier for each error
 data ErrorCode
@@ -57,11 +57,11 @@ data Knowledge = Knowledge
     }
 
 data FileFormat
-    = Txt 
+    = Txt
     | JSON
     deriving (Eq, Show)
 
-data LogFile = LogFile 
+data LogFile = LogFile
     { lfFileFormat :: !FileFormat
     , lfContent    :: !ByteString
     } deriving (Eq, Show)
@@ -101,7 +101,7 @@ toComment SentLogCorrupted = "Log file is corrupted"
 toComment _                = "Error"
 
 toLogFile :: (FilePath, ByteString) -> LogFile
-toLogFile (path, content) = 
+toLogFile (path, content) =
   let format = if ".json" `T.isInfixOf` toText path
                then JSON
                else Txt
@@ -142,10 +142,10 @@ data CardanoLog = CardanoLog {
     -- ^ Severity of an given log (e.g Info, Notice, Warning, Error)
     , clThreadId    :: !Text
     -- ^ Thread id
-    } deriving (Show)
+    } deriving (Eq, Show)
 
 instance FromJSON CardanoLog where
-    parseJSON = withObject "Cardano node log" $ \o -> do
+    parseJSON = withObject "CardanoLog" $ \o -> do
         loggedAt    <- o .: "at"
         env         <- o .: "env"
         ns          <- o .: "ns"
@@ -170,6 +170,19 @@ instance FromJSON CardanoLog where
             , clThreadId    = threadId
             }
 
+instance ToJSON CardanoLog where
+    toJSON CardanoLog{..} =
+        object [ "at"     .= clLoggedAt
+               , "env"    .= clEnv
+               , "ns"     .= clNs
+               , "app"    .= clApplication
+               , "msg"    .= clMessage
+               , "pid"    .= clPid
+               , "loc"    .= clLoc
+               , "host"   .= clHost
+               , "sev"    .= clSeverity
+               , "thread" .= clThreadId
+               ]
 --------------------------------------------------------------------------------
 -- Arbitrary instance
 --------------------------------------------------------------------------------
@@ -191,4 +204,45 @@ instance Arbitrary Knowledge where
             , kProblem   = problem
             , kSolution  = solution
             , kFAQNumber = faqNumber
+            }
+
+instance Arbitrary Text where
+    arbitrary = fromString <$> arbitrary
+
+-- https://gist.github.com/agrafix/2b48ec069693e3ab851e
+instance Arbitrary UTCTime where
+    arbitrary = do
+        randomDay   <- choose (1, 28) :: Gen Int
+        randomMonth <- choose (1, 12) :: Gen Int
+        randomYear  <- choose (2001, 2018) :: Gen Integer
+        randomTime  <- choose (0, 86301) :: Gen Int64
+        pure $ UTCTime
+            (fromGregorian randomYear randomMonth randomDay)
+            (secondsToDiffTime $ fromIntegral randomTime)
+
+instance Arbitrary CardanoLog where
+    arbitrary = do
+        loggedAt <- arbitrary
+        env      <- elements [ "mainnet_wallet_macos64:1.3.0"
+                             , "mainnet_wallet_windows64:1.3.0"]
+        ns       <- sublistOf ["cardano-sl", "NtpClient"]
+        app      <- return    ["cardano-sl"]
+        msg      <- arbitrary
+        pid      <- Universum.show <$> (arbitrary :: Gen Integer)
+        loc      <- arbitrary
+        host     <- arbitrary
+        sev      <- elements ["Info", "Warning", "Error", "Notice"]
+        threadId <- arbitrary :: Gen Int
+
+        pure $ CardanoLog {
+              clLoggedAt    = loggedAt
+            , clEnv         = env
+            , clNs          = ns
+            , clApplication = app
+            , clMessage     = msg
+            , clPid         = pid
+            , clLoc         = loc
+            , clHost        = host
+            , clSeverity    = sev
+            , clThreadId    = "ThreadId-" <> Universum.show threadId
             }

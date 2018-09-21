@@ -6,12 +6,12 @@ module LogAnalysisSpec
 
 import           Universum
 
-import           Data.Aeson (eitherDecodeStrict')
+import           Data.Aeson (eitherDecodeStrict', encode, decode)
 import qualified Data.ByteString.Char8 as C8
 import qualified Data.Map.Strict as Map
 import           Data.Time (UTCTime (..), defaultTimeLocale, formatTime)
 import           Test.Hspec (Spec, describe, it, shouldBe)
-import           Test.Hspec.QuickCheck (modifyMaxSuccess)
+import           Test.Hspec.QuickCheck (modifyMaxSuccess, prop)
 import           Test.QuickCheck (Arbitrary (..), Gen, arbitrary, choose, elements, forAll,
                                   vectorOf)
 import           Test.QuickCheck.Monadic (PropertyM, assert, monadicIO, run)
@@ -24,11 +24,15 @@ import           LogAnalysis.Types (Analysis, CardanoLog, Knowledge (..), LogFil
 -- | Classifier tests
 classifierSpec :: Spec
 classifierSpec = do
-    describe "CardanoLog FromJSON" $ modifyMaxSuccess (const 1000) $
+    describe "CardanoLog FromJSON" $ modifyMaxSuccess (const 1000) $ do
        it "should be able to decode cardano log" $
            forAll (genLogText Nothing) $ \(logText :: ByteString) -> do
                let decodedText = eitherDecodeStrict' logText :: Either String CardanoLog
                isRight decodedText `shouldBe` True
+
+       prop "should be able to perform JSON serialization roundtrip" $
+           \(cardanoLog :: CardanoLog) ->
+                (decode . encode) cardanoLog `shouldBe` Just cardanoLog 
 
     describe "extractMessages" $ modifyMaxSuccess (const 100) $ do
         it "should be able to extract log messages from JSON file" $

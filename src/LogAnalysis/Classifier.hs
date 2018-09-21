@@ -69,7 +69,7 @@ extractMessages logfile =
         let decodedLogLines = map eitherDecodeStrict' logLines
 
         when (any isLeft decodedLogLines) $ do
-            let errorText = fromMaybe "Decoding failed" (safeHead $ lefts decodedLogLines)
+            let errorText = fromMaybe "Failed to decode JSON" (safeHead $ lefts decodedLogLines)
             throwM $ JSONDecodeFailure errorText
 
         --  Collect message field since those are the ones we care about
