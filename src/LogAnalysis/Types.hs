@@ -104,7 +104,7 @@ toComment :: ErrorCode -> Text
 toComment SentLogCorrupted = "Log file is corrupted"
 toComment _                = "Error"
 
--- | Convert tuple of (FilePath, ByteString) into LogFile
+-- | Make LogFile with given Filepath and ByteString
 toLogFile :: FilePath -> ByteString -> LogFile
 toLogFile path content =
   let format = if ".json" `T.isInfixOf` toText path
