@@ -1,5 +1,3 @@
-{-# OPTIONS_GHC -fno-warn-orphans #-}
-
 module LogAnalysisSpec
     ( classifierSpec
     ) where
@@ -196,8 +194,8 @@ genKnowledgeWithErrorText eText = do
     randomKnowledge <- arbitrary
     pure $ randomKnowledge {kErrorText = eText}
 
--- | Generate tuple of (FilePath, JSONFile)
--- with given errorText included as msg
+-- | Generate random cardano-log json file
+-- with given (Maybe Text) included as msg
 genJSONLogFile :: Maybe Text -> Gen ByteString
 genJSONLogFile mErrorText = do
     file <- genJSON
@@ -215,8 +213,8 @@ genJSONLogFile mErrorText = do
         logLines   <- vectorOf numOfLines (genJSONLog Nothing)
         pure $ C8.unlines logLines
 
--- | Generate tuple of (FilePath, LogFile)
--- with given errorText included in the ByteString
+-- | Generate random cardano-log text file
+-- with given (Maybe Text) included in the ByteString
 genLogFile :: Maybe Text -> Gen ByteString
 genLogFile mErrorText = do
     file <- genLog
