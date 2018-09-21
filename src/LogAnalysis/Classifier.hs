@@ -53,7 +53,7 @@ extractIssuesFromLogs files analysis = do
 -- | Extract messages from either plain or json file
 extractMessages :: (MonadCatch m) => (FilePath, ByteString) -> m [Text]
 extractMessages (path, content) =
-    if toText path `isInfixOf` ".json"
+    if ".json" `isInfixOf` toText path
         then extractMessagesJSON content
         else extractMessagesPlain content
   where
@@ -71,7 +71,7 @@ extractMessages (path, content) =
         when (any isLeft decodedLogLines) $ do
             let errorText = P.head $ lefts decodedLogLines
             throwM $ JSONDecodeFailure errorText
-    
+
         --  Collect message field since those are the ones we care about
         let messages = map clMessage (rights decodedLogLines)
         return messages

@@ -12,13 +12,13 @@ import qualified Data.Map.Strict as Map
 import           Data.Time (UTCTime (..), defaultTimeLocale, formatTime)
 import           Test.Hspec (Spec, describe, it, shouldBe)
 import           Test.Hspec.QuickCheck (modifyMaxSuccess)
-import           Test.QuickCheck (Arbitrary (..), Gen, Property, arbitrary, choose, elements,
-                                  forAll, vectorOf)
-import           Test.QuickCheck.Monadic (assert, monadicIO, run, PropertyM)
+import           Test.QuickCheck (Arbitrary (..), Gen, arbitrary, choose, elements, forAll,
+                                  vectorOf)
+import           Test.QuickCheck.Monadic (PropertyM, assert, monadicIO, run)
 
 import           LogAnalysis.Classifier (extractIssuesFromLogs, extractMessages)
-import           LogAnalysis.Types (CardanoLog, Knowledge (..), setupAnalysis, Analysis)
-import           LogAnalysis.Exceptions (LogAnalysisException(..))
+import           LogAnalysis.Exceptions (LogAnalysisException (..))
+import           LogAnalysis.Types (Analysis, CardanoLog, Knowledge (..), setupAnalysis)
 
 -- | Classifier tests
 classifierSpec :: Spec
@@ -31,12 +31,30 @@ classifierSpec = do
 
     describe "extractMessages" $ modifyMaxSuccess (const 100) $ do
         it "should be able to extract log messages from JSON file" $
-            forAll ((,) <$> genLogJSONFilePath <*> genJSONLogFile)
-                $ \logWithFilePath -> testExtractMessage logWithFilePath
+            forAll ((,) <$> genLogJSONFilePath <*> genJSONLogFile) $ \logWithFilePath ->
+                monadicIO $ do
+                    eLogLines <- run $ try $ extractMessages logWithFilePath
+                    -- Check if the decoding was successful
+                    assert $ isRight (eLogLines :: Either LogAnalysisException [Text])
+                    whenRight eLogLines $ \logLines ->
+                        (assert . not . null) logLines
 
         it "should be able to extract log messages from plain log file" $
-            forAll ((,) <$> genLogFilePath <*> genLogFile)
-                $ \logWithFilePath -> testExtractMessage logWithFilePath
+            forAll ((,) <$> genLogFilePath <*> genLogFile) $ \logWithFilePath ->
+                monadicIO $ do
+                    eLogLines <- run $ try $ extractMessages logWithFilePath
+
+                    assert $ isRight (eLogLines :: Either LogAnalysisException [Text])
+                    whenRight eLogLines $ \logLines ->
+                        (assert . not . null) logLines
+
+        it "should throw exception when it failed to decode json file" $
+            forAll ((,) <$> genLogJSONFilePath <*> genLogFile)
+                $ \logWithFilePath ->
+                    monadicIO $ do
+                        eLogLines <- run $ try $ extractMessages logWithFilePath
+
+                        assert $ isLeft (eLogLines :: Either LogAnalysisException [Text])
 
     describe "extractIssuesFromLogs" $ modifyMaxSuccess (const 100) $ do
         it "should be able to catch an error text from json file" $
@@ -45,7 +63,7 @@ classifierSpec = do
                     forAll (genJSONWithError errorText) $ \jsonWithFilePath ->
                         monadicIO $ do
                             eAnalysisResult <- testExtractIssuesFromLogs knowledge jsonWithFilePath
-   
+
                             assert $ isRight eAnalysisResult
                             whenRight eAnalysisResult $ \analysisResult ->
                                 (assert . not . null . Map.toList) analysisResult
@@ -69,22 +87,11 @@ classifierSpec = do
 
                         assert $ isLeft (eAnalysisResult :: Either LogAnalysisException Analysis)
 
-
--- | Generalized testing of extractMessage
-testExtractMessage :: (FilePath, ByteString) -> Property
-testExtractMessage logWithFilePath =
-    monadicIO $ do
-        eLogLines <- run $ tryAny $ extractMessages logWithFilePath
-        -- Check if the decoding was successfull
-        assert $ isRight eLogLines
-        whenRight eLogLines $ \logLines ->
-            (assert . not . null) logLines
-
 -- | Generalized testing of extractIssuesFromLogs
-testExtractIssuesFromLogs :: Knowledge 
+testExtractIssuesFromLogs :: Knowledge
                           -> (FilePath, ByteString)
                           -> PropertyM IO (Either LogAnalysisException Analysis)
-testExtractIssuesFromLogs knowledge logWithFilePath = do 
+testExtractIssuesFromLogs knowledge logWithFilePath = do
         let analysis = setupAnalysis [knowledge]
         run $ try $ extractIssuesFromLogs [logWithFilePath] analysis
 
@@ -103,17 +110,23 @@ genLogText mErrorText = do
     randomEnv      <- encodedElements ["mainnet_wallet_macos64:1.3.0"]
     randomNs       <- encodedElements ["cardano-sl", "NtpClient"]
     randomApp      <- encodedElements ["cardano-sl"]
-    -- Ensure it can decode message with non-latin characters
+    -- Check aeson can decode message with non-latin characters
     randomMsg      <- encodedElements
-        [ "Error Message","Passive Wallet kernel initialized.", "暗号通貨", "カルダノ"
-        , "Evaluated clock offset NtpOffset {getNtpOffset = 24688mcs}mcs"]
+        [ "Error Message","Passive Wallet kernel initialized."
+        , "Evaluated clock offset NtpOffset {getNtpOffset = 24688mcs}mcs"
+        , "Blocks have been adopted: [fbef251d89a2105f, "
+        , "Trying to apply blocks w/o rollback. First 3: "
+        , "Verifying and applying blocks..."
+        , "Verifying and applying blocks done"
+        , "デンバー　コロラド", "暗号通貨", "カルダノ"]
     let message = maybe randomMsg encodeUtf8 mErrorText
     randomPid      <- arbitrary :: Gen Int
     randomHost     <- encodedElements ["hostname"]
     randomSev      <- encodedElements ["Info", "Warning", "Error", "Notice"]
     randomThreadId <- arbitrary :: Gen Int
 
-    -- (TODO): Seems like some of the fields are goingo to be deleted
+    -- (TODO): Seems like some of the fields are going to be modified/deleted
+    -- Update when needed
     pure $
         "{                                                           \
         \\"at\": \"" <> (encodeUtf8 . showIso8601) randomTime <>"\", \
@@ -193,7 +206,7 @@ genJSONWithError errorText = do
     let fileWithError = jsonWithError <> "\n" <> file
     pure (filepath, fileWithError)
 
--- | Generate tuple of (FilePath, LogFile) 
+-- | Generate tuple of (FilePath, LogFile)
 -- with given errorText included in the ByteString
 genLogWithError :: Text -> Gen (FilePath, ByteString)
 genLogWithError errorText = do
