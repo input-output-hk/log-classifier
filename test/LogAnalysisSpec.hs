@@ -10,6 +10,7 @@ import           Data.Aeson (decode, eitherDecodeStrict', encode)
 import qualified Data.ByteString.Char8 as C8
 import qualified Data.Map.Strict as Map
 import           Data.Time (UTCTime (..), defaultTimeLocale, formatTime)
+
 import           Test.Hspec (Spec, describe, it, shouldBe)
 import           Test.Hspec.QuickCheck (modifyMaxSuccess, prop)
 import           Test.QuickCheck (Arbitrary (..), Gen, arbitrary, choose, elements, forAll,
@@ -24,9 +25,9 @@ import           LogAnalysis.Types (Analysis, CardanoLog, Knowledge (..), LogFil
 -- | Classifier tests
 classifierSpec :: Spec
 classifierSpec = do
-    describe "CardanoLog FromJSON" $ modifyMaxSuccess (const 1000) $ do
+    describe "CardanoLog JSON" $ modifyMaxSuccess (const 1000) $ do
        it "should be able to decode cardano log" $
-           forAll (genLogText Nothing) $ \(logText :: ByteString) -> do
+           forAll (genJSONLog Nothing) $ \(logText :: ByteString) -> do
                let decodedText = eitherDecodeStrict' logText :: Either String CardanoLog
                isRight decodedText `shouldBe` True
 
@@ -37,7 +38,7 @@ classifierSpec = do
     describe "extractMessages" $ modifyMaxSuccess (const 100) $ do
         it "should be able to extract log messages from JSON file" $
             forAll genLogJSONFilePath $ \path ->
-                forAll genJSONLogFile $ \file ->
+                forAll (genJSONLogFile Nothing) $ \file ->
                     monadicIO $ do
                         eLogLines <- run $ try $ extractMessages (toLogFile path file)
                         -- Check if the decoding was successful
@@ -47,7 +48,7 @@ classifierSpec = do
 
         it "should be able to extract log messages from text log file" $
             forAll genLogFilePath $ \path ->
-                forAll genLogFile $ \file ->
+                forAll (genLogFile Nothing) $ \file ->
                     monadicIO $ do
                         eLogLines <- run $ try $ extractMessages (toLogFile path file)
 
@@ -57,7 +58,7 @@ classifierSpec = do
 
         it "should throw exception when it failed to decode json file" $
             forAll genLogJSONFilePath $ \path ->
-                forAll genLogFile $ \file ->
+                forAll (genLogFile Nothing) $ \file ->
                     monadicIO $ do
                         eLogLines <- run $ try $ extractMessages (toLogFile path file)
 
@@ -68,7 +69,7 @@ classifierSpec = do
             forAll genErrorText $ \errorText ->
                 forAll (genKnowledgeWithErrorText errorText) $ \knowledge ->
                     forAll genLogJSONFilePath $ \path ->
-                        forAll (genJSONWithError errorText) $ \file ->
+                        forAll (genJSONLogFile $ Just errorText) $ \file ->
                             monadicIO $ do
                                 eAnalysisResult <- testExtractIssuesFromLogs
                                                        knowledge
@@ -82,7 +83,7 @@ classifierSpec = do
             forAll genErrorText $ \errorText ->
                 forAll (genKnowledgeWithErrorText errorText) $ \knowledge ->
                     forAll genLogFilePath $ \path ->
-                        forAll (genLogWithError errorText) $ \file ->
+                        forAll (genLogFile $ Just errorText) $ \file ->
                             monadicIO $ do
                                 eAnalysisResult <- testExtractIssuesFromLogs
                                                        knowledge
@@ -95,7 +96,7 @@ classifierSpec = do
         it "should throw an exception when no issue is found" $
             forAll (genKnowledgeWithErrorText "This should not be caught") $ \knowledge ->
                 forAll genLogJSONFilePath $ \path ->
-                    forAll genJSONLogFile $ \file ->
+                    forAll (genJSONLogFile Nothing) $ \file ->
                         monadicIO $ do
                             eAnalysisResult <- testExtractIssuesFromLogs
                                                    knowledge
@@ -111,17 +112,9 @@ testExtractIssuesFromLogs knowledge logFile = do
         let analysis = setupAnalysis [knowledge]
         run $ try $ extractIssuesFromLogs [logFile] analysis
 
--- | Formant given UTCTime into ISO8601
-showIso8601 :: UTCTime -> String
-showIso8601 = formatTime defaultTimeLocale "%FT%T%QZ"
-
--- | Given an list of text, pick and element and encode it
-encodedElements :: [Text] -> Gen ByteString
-encodedElements xs = encodeUtf8 <$> elements xs
-
--- | Generate random cardano log
-genLogText :: Maybe Text -> Gen ByteString
-genLogText mErrorText = do
+-- | Generate random cardano json log line
+genJSONLog :: Maybe Text -> Gen ByteString
+genJSONLog mErrorText = do
     randomTime     <- arbitrary :: Gen UTCTime
     randomEnv      <- encodedElements ["mainnet_wallet_macos64:1.3.0"]
     randomNs       <- encodedElements ["cardano-sl", "NtpClient"]
@@ -130,7 +123,7 @@ genLogText mErrorText = do
     randomMsg      <- encodedElements
         [ "Error Message","Passive Wallet kernel initialized."
         , "Evaluated clock offset NtpOffset {getNtpOffset = 24688mcs}mcs"
-        , "Blocks have been adopted: [fbef251d89a2105f, "
+        , "Blocks have been adopted: [aabbcddeeff112233, "
         , "Trying to apply blocks w/o rollback. First 3: "
         , "Verifying and applying blocks..."
         , "Verifying and applying blocks done"
@@ -160,6 +153,12 @@ genLogText mErrorText = do
         \\"sev\": \""<> randomSev <> "\",                            \
         \\"thread\": \"ThreadId " <> show randomThreadId <> "\"      \
         \}"
+ where
+    encodedElements :: [Text] -> Gen ByteString
+    encodedElements xs = encodeUtf8 <$> elements xs
+    -- | Formant given UTCTime into ISO8601
+    showIso8601 :: UTCTime -> String
+    showIso8601 = formatTime defaultTimeLocale "%FT%T%QZ"
 
 -- | Generate random cardano-log file path
 -- sample: node.json-20180911134009
@@ -168,26 +167,12 @@ genLogJSONFilePath = do
     randomNum <- arbitrary :: Gen Int
     pure $ "node.json-" <> show randomNum
 
--- | Generate random cardano-log json file
-genJSONLogFile :: Gen ByteString
-genJSONLogFile = do
-    numOfLines <- choose (1,1000)
-    logLines   <- vectorOf numOfLines (genLogText Nothing)
-    pure $ C8.unlines logLines
-
 -- | Generate random text cardano-log file path
 -- Sample: node-20180911134009, daedalus.log, launcher
 genLogFilePath :: Gen FilePath
 genLogFilePath = do
     randomNum <- arbitrary :: Gen Int
     elements ["node-" <> show randomNum, "daedalus.log", "launcher"]
-
--- | Generate random text cardano-log file
-genLogFile :: Gen ByteString
-genLogFile = do
-    numOfLines <- choose (1,1000)
-    logLines   <- vectorOf numOfLines (arbitrary :: Gen ByteString)
-    pure $ C8.unlines logLines
 
 -- | Generate error messages that classifier needs to catch
 genErrorText :: Gen Text
@@ -213,18 +198,34 @@ genKnowledgeWithErrorText eText = do
 
 -- | Generate tuple of (FilePath, JSONFile)
 -- with given errorText included as msg
-genJSONWithError :: Text -> Gen ByteString
-genJSONWithError errorText = do
-    file          <- genJSONLogFile
-    jsonWithError <- genLogText (Just errorText)
+genJSONLogFile :: Maybe Text -> Gen ByteString
+genJSONLogFile mErrorText = do
+    file <- genJSON
 
-    let fileWithError = jsonWithError <> "\n" <> file
-    pure fileWithError
+    case mErrorText of
+        Just errorText -> do
+            jsonWithError <- genJSONLog (Just errorText)
+            let fileWithError = jsonWithError <> "\n" <> file
+            pure fileWithError
+        Nothing -> pure file
+ where
+    genJSON :: Gen ByteString
+    genJSON = do
+        numOfLines <- choose (1,1000)
+        logLines   <- vectorOf numOfLines (genJSONLog Nothing)
+        pure $ C8.unlines logLines
 
 -- | Generate tuple of (FilePath, LogFile)
 -- with given errorText included in the ByteString
-genLogWithError :: Text -> Gen ByteString
-genLogWithError errorText = do
-    file     <- genLogFile
-    let fileWithError = encodeUtf8 errorText <> "\n" <> file
+genLogFile :: Maybe Text -> Gen ByteString
+genLogFile mErrorText = do
+    file <- genLog
+    let errorText = maybe mempty encodeUtf8 mErrorText
+    let fileWithError = errorText <> "\n" <> file
     pure fileWithError
+  where
+    genLog :: Gen ByteString
+    genLog = do
+        numOfLines <- choose (1,1000)
+        logLines   <- vectorOf numOfLines (arbitrary :: Gen ByteString)
+        pure $ C8.unlines logLines
