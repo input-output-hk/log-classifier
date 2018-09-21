@@ -56,14 +56,18 @@ data Knowledge = Knowledge
     -- ^ The FAQ number that will be displayed on the official Cardano FAQ page
     }
 
+-- | File format
 data FileFormat
     = Txt
     | JSON
     deriving (Eq, Show)
 
+-- | Logfile data type
 data LogFile = LogFile
     { lfFileFormat :: !FileFormat
+    -- ^ File format of a log file
     , lfContent    :: !ByteString
+    -- ^ Log file
     } deriving (Eq, Show)
 
 instance Show Knowledge where
@@ -100,8 +104,9 @@ toComment :: ErrorCode -> Text
 toComment SentLogCorrupted = "Log file is corrupted"
 toComment _                = "Error"
 
-toLogFile :: (FilePath, ByteString) -> LogFile
-toLogFile (path, content) =
+-- | Convert tuple of (FilePath, ByteString) into LogFile
+toLogFile :: FilePath -> ByteString -> LogFile
+toLogFile path content =
   let format = if ".json" `T.isInfixOf` toText path
                then JSON
                else Txt

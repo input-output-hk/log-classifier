@@ -6,7 +6,7 @@ module LogAnalysisSpec
 
 import           Universum
 
-import           Data.Aeson (eitherDecodeStrict', encode, decode)
+import           Data.Aeson (decode, eitherDecodeStrict', encode)
 import qualified Data.ByteString.Char8 as C8
 import qualified Data.Map.Strict as Map
 import           Data.Time (UTCTime (..), defaultTimeLocale, formatTime)
@@ -32,32 +32,34 @@ classifierSpec = do
 
        prop "should be able to perform JSON serialization roundtrip" $
            \(cardanoLog :: CardanoLog) ->
-                (decode . encode) cardanoLog `shouldBe` Just cardanoLog 
+                (decode . encode) cardanoLog `shouldBe` Just cardanoLog
 
     describe "extractMessages" $ modifyMaxSuccess (const 100) $ do
         it "should be able to extract log messages from JSON file" $
-            forAll ((,) <$> genLogJSONFilePath <*> genJSONLogFile) $ \logWithFilePath ->
-                monadicIO $ do
-                    eLogLines <- run $ try $ extractMessages (toLogFile logWithFilePath)
-                    -- Check if the decoding was successful
-                    assert $ isRight (eLogLines :: Either LogAnalysisException [Text])
-                    whenRight eLogLines $ \logLines ->
-                        (assert . not . null) logLines
+            forAll genLogJSONFilePath $ \path ->
+                forAll genJSONLogFile $ \file ->
+                    monadicIO $ do
+                        eLogLines <- run $ try $ extractMessages (toLogFile path file)
+                        -- Check if the decoding was successful
+                        assert $ isRight (eLogLines :: Either LogAnalysisException [Text])
+                        whenRight eLogLines $ \logLines ->
+                            (assert . not . null) logLines
 
         it "should be able to extract log messages from text log file" $
-            forAll ((,) <$> genLogFilePath <*> genLogFile) $ \logWithFilePath ->
-                monadicIO $ do
-                    eLogLines <- run $ try $ extractMessages (toLogFile logWithFilePath)
+            forAll genLogFilePath $ \path ->
+                forAll genLogFile $ \file ->
+                    monadicIO $ do
+                        eLogLines <- run $ try $ extractMessages (toLogFile path file)
 
-                    assert $ isRight (eLogLines :: Either LogAnalysisException [Text])
-                    whenRight eLogLines $ \logLines ->
-                        (assert . not . null) logLines
+                        assert $ isRight (eLogLines :: Either LogAnalysisException [Text])
+                        whenRight eLogLines $ \logLines ->
+                            (assert . not . null) logLines
 
         it "should throw exception when it failed to decode json file" $
-            forAll ((,) <$> genLogJSONFilePath <*> genLogFile)
-                $ \logWithFilePath ->
+            forAll genLogJSONFilePath $ \path ->
+                forAll genLogFile $ \file ->
                     monadicIO $ do
-                        eLogLines <- run $ try $ extractMessages (toLogFile logWithFilePath)
+                        eLogLines <- run $ try $ extractMessages (toLogFile path file)
 
                         assert $ isLeft (eLogLines :: Either LogAnalysisException [Text])
 
@@ -65,38 +67,41 @@ classifierSpec = do
         it "should be able to catch an error text from json file" $
             forAll genErrorText $ \errorText ->
                 forAll (genKnowledgeWithErrorText errorText) $ \knowledge ->
-                    forAll (genJSONWithError errorText) $ \jsonWithFilePath ->
-                        monadicIO $ do
-                            eAnalysisResult <- testExtractIssuesFromLogs
-                                                   knowledge
-                                                   (toLogFile jsonWithFilePath)
+                    forAll genLogJSONFilePath $ \path ->
+                        forAll (genJSONWithError errorText) $ \file ->
+                            monadicIO $ do
+                                eAnalysisResult <- testExtractIssuesFromLogs
+                                                       knowledge
+                                                       (toLogFile path file)
 
-                            assert $ isRight eAnalysisResult
-                            whenRight eAnalysisResult $ \analysisResult ->
-                                (assert . not . null . Map.toList) analysisResult
+                                assert $ isRight eAnalysisResult
+                                whenRight eAnalysisResult $ \analysisResult ->
+                                    (assert . not . null . Map.toList) analysisResult
 
         it "should be able to catch an error text from text log file" $
             forAll genErrorText $ \errorText ->
                 forAll (genKnowledgeWithErrorText errorText) $ \knowledge ->
-                    forAll (genLogWithError errorText) $ \logWithFilePath ->
-                        monadicIO $ do
-                         eAnalysisResult <- testExtractIssuesFromLogs
-                                                knowledge
-                                                (toLogFile logWithFilePath)
+                    forAll genLogFilePath $ \path ->
+                        forAll (genLogWithError errorText) $ \file ->
+                            monadicIO $ do
+                                eAnalysisResult <- testExtractIssuesFromLogs
+                                                       knowledge
+                                                       (toLogFile path file)
 
-                         assert $ isRight eAnalysisResult
-                         whenRight eAnalysisResult $ \analysisResult ->
-                            (assert . not . null . Map.toList) analysisResult
+                                assert $ isRight eAnalysisResult
+                                whenRight eAnalysisResult $ \analysisResult ->
+                                    (assert . not . null . Map.toList) analysisResult
 
         it "should throw an exception when no issue is found" $
             forAll (genKnowledgeWithErrorText "This should not be caught") $ \knowledge ->
-                forAll ((,) <$> genLogJSONFilePath <*> genJSONLogFile) $ \logWithFilePath ->
-                    monadicIO $ do
-                        eAnalysisResult <- testExtractIssuesFromLogs
-                                               knowledge
-                                               (toLogFile logWithFilePath)
+                forAll genLogJSONFilePath $ \path ->
+                    forAll genJSONLogFile $ \file ->
+                        monadicIO $ do
+                            eAnalysisResult <- testExtractIssuesFromLogs
+                                                   knowledge
+                                                   (toLogFile path file)
 
-                        assert $ isLeft (eAnalysisResult :: Either LogAnalysisException Analysis)
+                            assert $ isLeft (eAnalysisResult :: Either LogAnalysisException Analysis)
 
 -- | Generalized testing of extractIssuesFromLogs
 testExtractIssuesFromLogs :: Knowledge
@@ -208,20 +213,18 @@ genKnowledgeWithErrorText eText = do
 
 -- | Generate tuple of (FilePath, JSONFile)
 -- with given errorText included as msg
-genJSONWithError :: Text -> Gen (FilePath, ByteString)
+genJSONWithError :: Text -> Gen ByteString
 genJSONWithError errorText = do
-    filepath      <- genLogJSONFilePath
     file          <- genJSONLogFile
     jsonWithError <- genLogText (Just errorText)
 
     let fileWithError = jsonWithError <> "\n" <> file
-    pure (filepath, fileWithError)
+    pure fileWithError
 
 -- | Generate tuple of (FilePath, LogFile)
 -- with given errorText included in the ByteString
-genLogWithError :: Text -> Gen (FilePath, ByteString)
+genLogWithError :: Text -> Gen ByteString
 genLogWithError errorText = do
-    filepath <- genLogFilePath
     file     <- genLogFile
     let fileWithError = encodeUtf8 errorText <> "\n" <> file
-    pure (filepath, fileWithError)
+    pure fileWithError
