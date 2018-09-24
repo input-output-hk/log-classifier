@@ -68,13 +68,12 @@ import           Data.Aeson.Types (Parser)
 import qualified Data.Aeson.Types as AT
 import qualified Data.ByteString.Char8 as C8
 import qualified Data.Text as T
-import           Data.Time (UTCTime (..), fromGregorian, secondsToDiffTime)
 import           Data.Time.Clock.POSIX (POSIXTime)
 import           Network.HTTP.Simple (Request)
 
 import           LogAnalysis.Types (Knowledge)
 
-import           Test.QuickCheck (Arbitrary (..), Gen, choose, elements, listOf1, sublistOf)
+import           Test.QuickCheck (Arbitrary (..), elements, listOf1, sublistOf)
 
 ------------------------------------------------------------
 -- Configuration

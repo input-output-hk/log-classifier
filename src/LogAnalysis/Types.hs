@@ -5,8 +5,8 @@ module LogAnalysis.Types
        , CardanoLog (..)
        , ErrorCode (..)
        , Knowledge (..)
-       , FileFormat(..)
-       , LogFile(..)
+       , LogFile (..) -- we don't need to export this
+       , getLogFileContent
        , toLogFile
        , setupAnalysis
        , renderErrorCode
@@ -57,18 +57,16 @@ data Knowledge = Knowledge
     }
 
 -- | File format
-data FileFormat
-    = Txt
-    | JSON
+data LogFile
+    = TxtFormat     !ByteString
+    | JSONFormat    !ByteString
     deriving (Eq, Show)
 
--- | Logfile data type
-data LogFile = LogFile
-    { lfFileFormat :: !FileFormat
-    -- ^ File format of a log file
-    , lfContent    :: !ByteString
-    -- ^ Log file
-    } deriving (Eq, Show)
+-- | Get content from either.
+getLogFileContent :: LogFile -> ByteString
+getLogFileContent = \case
+    TxtFormat  content      -> content
+    JSONFormat content      -> content
 
 instance Show Knowledge where
     show Knowledge{..} =
@@ -107,10 +105,9 @@ toComment _                = "Error"
 -- | Make LogFile with given Filepath and ByteString
 toLogFile :: FilePath -> ByteString -> LogFile
 toLogFile path content =
-  let format = if ".json" `T.isInfixOf` toText path
-               then JSON
-               else Txt
-  in LogFile format content
+    if ".json" `T.isInfixOf` toText path
+        then JSONFormat content
+        else TxtFormat content
 
 -- | Map used to collect error lines
 type Analysis = Map Knowledge [Text]
@@ -211,9 +208,6 @@ instance Arbitrary Knowledge where
             , kFAQNumber = faqNumber
             }
 
-instance Arbitrary Text where
-    arbitrary = fromString <$> arbitrary
-
 -- https://gist.github.com/agrafix/2b48ec069693e3ab851e
 instance Arbitrary UTCTime where
     arbitrary = do
@@ -232,10 +226,10 @@ instance Arbitrary CardanoLog where
                              , "mainnet_wallet_windows64:1.3.0"]
         ns       <- sublistOf ["cardano-sl", "NtpClient"]
         app      <- return    ["cardano-sl"]
-        msg      <- arbitrary
+        msg      <- fromString <$> arbitrary @String
         pid      <- Universum.show <$> (arbitrary :: Gen Integer)
-        loc      <- arbitrary
-        host     <- arbitrary
+        loc      <- pure Nothing
+        host     <- fromString <$> arbitrary @String
         sev      <- elements ["Info", "Warning", "Error", "Notice"]
         threadId <- arbitrary :: Gen Int
 
