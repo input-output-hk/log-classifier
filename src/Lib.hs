@@ -236,7 +236,7 @@ processTicketSafe dataLayer tId = catch (void $ processTicket dataLayer tId)
     -- TODO(ks): Remove IO from here, return the error.
     (\(e :: ProcessTicketExceptions) -> do
         printText <- asksIOLayer iolPrintText
-        printText $ show e
+        printText $ "Error on TicketId " <> show (getTicketId tId) <> ":" <> show e
         -- TODO(hs): Implement concurrent logging
         appendF <- asksIOLayer iolAppendFile
         appendF "./logs/errors.log" (show e <> "\n"))
@@ -482,7 +482,7 @@ inspectLocalZipAttachment filePath = do
     let eResults = extractLogsFromZip 100 fileContent
 
     case eResults of
-        Left (err :: ZipFileExceptions) -> do
+        Left (err :: ZipFileExceptions) ->
             printText $ show err
         Right result -> do
             let analysisEnv             = setupAnalysis $ cfgKnowledgebase config
@@ -498,7 +498,7 @@ inspectLocalZipAttachment filePath = do
                     printText "Error codes:"
                     void $ mapM printText errorCodes
 
-                Left (e :: LogAnalysisException) -> do
+                Left (e :: LogAnalysisException) ->
                     printText $ show e
 
 -- | Given number of file of inspect, knowledgebase and attachment,
@@ -554,6 +554,8 @@ inspectAttachment Config{..} ticketInfo@TicketInfo{..} attachment = do
                                 , zrTags        = TicketTags [renderTicketStatus NoKnownIssue]
                                 , zrIsPublic    = cfgIsCommentPublic
                                 }
+                        JSONDecodeFailure errorText ->
+                            throwM $ JSONDecodeFailure errorText
 
 -- | Create 'ZendeskResponse' stating no logs were found on the ticket
 responseNoLogs :: TicketInfo -> App ZendeskResponse
@@ -585,7 +587,7 @@ filterAnalyzedTickets ticketsInfo =
 
     -- | If we have a ticket we are having issues with...
     isTicketBlacklisted :: TicketInfo -> Bool
-    isTicketBlacklisted TicketInfo{..} = tiId `notElem` [TicketId 9377,TicketId 10815, TicketId 15066]
+    isTicketBlacklisted TicketInfo{..} = tiId `notElem` [TicketId 9377,TicketId 10815, TicketId 15066, TicketId 30849]
 
     isTicketInGoguenTestnet :: TicketInfo -> Bool
     isTicketInGoguenTestnet TicketInfo{..} = "goguen_testnets" `notElem` getTicketTags tiTags
