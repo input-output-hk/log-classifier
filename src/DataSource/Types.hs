@@ -66,7 +66,6 @@ import           Data.Aeson (FromJSON, ToJSON, Value (Object), object, parseJSON
                              withObject, (.:), (.:?), (.=))
 import           Data.Aeson.Types (Parser)
 import qualified Data.Aeson.Types as AT
-import qualified Data.ByteString.Char8 as C8
 import qualified Data.Text as T
 import           Data.Time.Clock.POSIX (POSIXTime)
 import           Network.HTTP.Simple (Request)
@@ -751,9 +750,6 @@ instance Arbitrary ZendeskResponse where
             , zrTags     = zendeskResponseTags
             , zrIsPublic = zendeskResponseIsPublic
             }
-
-instance Arbitrary ByteString where
-    arbitrary = C8.pack <$> arbitrary
 
 ------------------------------------------------------------
 -- FromJSON instances

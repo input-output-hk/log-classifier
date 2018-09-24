@@ -1,4 +1,6 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedStrings          #-}
 
 module LogAnalysis.Types
        ( Analysis
@@ -6,6 +8,7 @@ module LogAnalysis.Types
        , ErrorCode (..)
        , Knowledge (..)
        , LogFile (..) -- we don't need to export this
+       , CoordinatedUniversalTime (..)
        , getLogFileContent
        , toLogFile
        , setupAnalysis
@@ -20,7 +23,7 @@ import           Data.Aeson (FromJSON (..), ToJSON (..), object, withObject, (.:
 import qualified Data.Map.Strict as Map
 import qualified Data.Text as T
 import           Data.Time (UTCTime (..), fromGregorian, secondsToDiffTime)
-import           Test.QuickCheck (Arbitrary (..), Gen, choose, elements, sublistOf)
+import           Test.QuickCheck (Arbitrary (..), Gen, choose, elements, oneof, sublistOf)
 
 -- | Identifier for each error
 data ErrorCode
@@ -124,7 +127,7 @@ instance Ord Knowledge where
 
 -- | Cardano log data type
 data CardanoLog = CardanoLog {
-      clLoggedAt    :: !UTCTime
+      clLoggedAt    :: !CoordinatedUniversalTime
     -- ^ UTCTime of when the message was logged
     , clEnv         :: !Text
     -- ^ Environment
@@ -138,7 +141,7 @@ data CardanoLog = CardanoLog {
     -- ^ Process Id
     , clLoc         :: !(Maybe Text)
     -- ^ Loc
-    , clHost        :: !Text
+    , clHost        :: !(Maybe Text)
     -- ^ Hostname
     , clSeverity    :: !Text
     -- ^ Severity of an given log (e.g Info, Notice, Warning, Error)
@@ -208,14 +211,28 @@ instance Arbitrary Knowledge where
             , kFAQNumber = faqNumber
             }
 
+{-
+
+λ> import LogAnalysis.Types
+λ> decode (encode ["2018-09-11T17:08:31.002287Z"]) :: Maybe [CoordinatedUniversalTime]
+
+Just [CoordinatedUniversalTime {getCoordinatedUniversalTime = 2018-09-11 17:08:31.002287 UTC}]
+
+-}
+
+-- | We wrap this into a newtype, since we can change the format more easily in the future.
+newtype CoordinatedUniversalTime
+    = CoordinatedUniversalTime { getCoordinatedUniversalTime :: UTCTime }
+    deriving (Show, Eq, Generic, FromJSON, ToJSON)
+
 -- https://gist.github.com/agrafix/2b48ec069693e3ab851e
-instance Arbitrary UTCTime where
+instance Arbitrary CoordinatedUniversalTime where
     arbitrary = do
-        randomDay   <- choose (1, 28) :: Gen Int
-        randomMonth <- choose (1, 12) :: Gen Int
-        randomYear  <- choose (2001, 2018) :: Gen Integer
-        randomTime  <- choose (0, 86301) :: Gen Int64
-        pure $ UTCTime
+        randomDay   <- choose (1, 28)       :: Gen Int
+        randomMonth <- choose (1, 12)       :: Gen Int
+        randomYear  <- choose (2001, 2018)  :: Gen Integer
+        randomTime  <- choose (0, 86301)    :: Gen Int64
+        pure . CoordinatedUniversalTime $ UTCTime
             (fromGregorian randomYear randomMonth randomDay)
             (secondsToDiffTime $ fromIntegral randomTime)
 
@@ -226,12 +243,12 @@ instance Arbitrary CardanoLog where
                              , "mainnet_wallet_windows64:1.3.0"]
         ns       <- sublistOf ["cardano-sl", "NtpClient"]
         app      <- return    ["cardano-sl"]
-        msg      <- fromString <$> arbitrary @String
-        pid      <- Universum.show <$> (arbitrary :: Gen Integer)
-        loc      <- pure Nothing
-        host     <- fromString <$> arbitrary @String
+        msg      <- arbitraryText
+        pid      <- Universum.show <$> arbitrary @Integer
+        loc      <- arbitraryMaybeText
+        host     <- arbitraryMaybeText
         sev      <- elements ["Info", "Warning", "Error", "Notice"]
-        threadId <- arbitrary :: Gen Int
+        threadId <- arbitrary @Int
 
         pure $ CardanoLog {
               clLoggedAt    = loggedAt
@@ -245,3 +262,13 @@ instance Arbitrary CardanoLog where
             , clSeverity    = sev
             , clThreadId    = "ThreadId-" <> Universum.show threadId
             }
+      where
+        arbitraryText :: Gen Text
+        arbitraryText = fromString <$> arbitrary @String
+
+        arbitraryMaybeText :: Gen (Maybe Text)
+        arbitraryMaybeText = oneof
+            [ pure Nothing
+            , Just <$> arbitraryText
+            ]
+

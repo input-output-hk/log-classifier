@@ -17,8 +17,8 @@ import           Test.QuickCheck.Monadic (PropertyM, assert, monadicIO, run)
 
 import           LogAnalysis.Classifier (extractIssuesFromLogs, extractMessages)
 import           LogAnalysis.Exceptions (LogAnalysisException (..))
-import           LogAnalysis.Types (Analysis, CardanoLog, Knowledge (..), LogFile, setupAnalysis,
-                                    toLogFile)
+import           LogAnalysis.Types (Analysis, CardanoLog, CoordinatedUniversalTime (..),
+                                    Knowledge (..), LogFile, setupAnalysis, toLogFile)
 
 -- | Classifier tests
 classifierSpec :: Spec
@@ -113,7 +113,7 @@ testExtractIssuesFromLogs knowledge logFile = do
 -- | Generate random cardano json log line
 genJSONLog :: Maybe Text -> Gen ByteString
 genJSONLog mErrorText = do
-    randomTime     <- arbitrary :: Gen UTCTime
+    randomTime     <- arbitrary :: Gen CoordinatedUniversalTime
     randomEnv      <- encodedElements ["mainnet_wallet_macos64:1.3.0"]
     randomNs       <- encodedElements ["cardano-sl", "NtpClient"]
     randomApp      <- encodedElements ["cardano-sl"]
@@ -136,7 +136,7 @@ genJSONLog mErrorText = do
     -- Update when needed
     pure $
         "{                                                           \
-        \\"at\": \"" <> (encodeUtf8 . showIso8601) randomTime <>"\", \
+        \\"at\": \"" <> utcToByteString randomTime <>"\",            \
         \\"env\": \"" <> randomEnv <> "\",                           \
         \\"ns\": [                                                   \
         \    \"cardano-sl\",                                         \
@@ -154,9 +154,13 @@ genJSONLog mErrorText = do
  where
     encodedElements :: [Text] -> Gen ByteString
     encodedElements xs = encodeUtf8 <$> elements xs
+
     -- | Formant given UTCTime into ISO8601
     showIso8601 :: UTCTime -> String
     showIso8601 = formatTime defaultTimeLocale "%FT%T%QZ"
+
+    utcToByteString :: CoordinatedUniversalTime -> ByteString
+    utcToByteString = encodeUtf8 . showIso8601 . getCoordinatedUniversalTime
 
 -- | Generate random cardano-log file path
 -- sample: node.json-20180911134009
@@ -225,5 +229,5 @@ genLogFile mErrorText = do
     genLog :: Gen ByteString
     genLog = do
         numOfLines <- choose (1,1000)
-        logLines   <- vectorOf numOfLines (arbitrary :: Gen ByteString)
+        logLines   <- vectorOf numOfLines (C8.pack <$> arbitrary)
         pure $ C8.unlines logLines

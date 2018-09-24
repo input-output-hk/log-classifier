@@ -34,7 +34,7 @@ extractIssuesFromLogs :: (MonadCatch m) => [LogFile] -> Analysis -> m Analysis
 extractIssuesFromLogs logFiles analysis = do
 
     -- Will raise exception if we find an issue.
-    _                   <- mapM checkFile . map getLogFileContent $ logFiles
+    _                   <- mapM (checkFile . getLogFileContent) logFiles
 
     logLines            <- concatMapM extractMessages logFiles
     let analysisResult  = foldl' analyzeLine analysis logLines
