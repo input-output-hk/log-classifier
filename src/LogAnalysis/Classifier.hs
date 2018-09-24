@@ -9,40 +9,70 @@ module LogAnalysis.Classifier
        , prettyFormatLogReadError
        , prettyFormatNoIssues
        , prettyFormatNoLogs
+       , extractMessages
        ) where
 
 import           Universum
 
+import           Data.Aeson (eitherDecodeStrict')
+import qualified Data.ByteString.Char8 as C8
 import qualified Data.Map.Strict as Map
 import           Data.Text (isInfixOf)
 import           Data.Text.Encoding.Error (ignore)
 
 import           DataSource.Types (TicketInfo (..), ZendeskAPIUrl (..), showURL)
 import           LogAnalysis.Exceptions (LogAnalysisException (..))
-import           LogAnalysis.Types (Analysis, Knowledge (..), renderErrorCode)
+import           LogAnalysis.Types (Analysis, CardanoLog (..), Knowledge (..), LogFile (..),
+                                    getLogFileContent, renderErrorCode)
 
 -- | Number of error texts it should show
 numberOfErrorText :: Int
 numberOfErrorText = 3
 
 -- | Analyze each log file based on the knowlodgebases' data.
-extractIssuesFromLogs :: (MonadCatch m) => [ByteString] -> Analysis -> m Analysis
-extractIssuesFromLogs files analysis = do
-    analysisResult <- foldlM runClassifiers analysis files
+extractIssuesFromLogs :: (MonadCatch m) => [LogFile] -> Analysis -> m Analysis
+extractIssuesFromLogs logFiles analysis = do
+
+    -- Will raise exception if we find an issue.
+    _                   <- mapM (checkFile . getLogFileContent) logFiles
+
+    logLines            <- concatMapM extractMessages logFiles
+    let analysisResult  = foldl' analyzeLine analysis logLines
     filterAnalysis analysisResult
-
--- | Run analysis on given file
-runClassifiers :: (MonadCatch m) => Analysis -> ByteString -> m Analysis
-runClassifiers analysis logfile = do
-    -- Force the evaluation of the whole file.
-    strictLogfile <- catchAnyStrict (pure logfile) $ \_ -> throwM LogReadException
-    pure . foldl' analyzeLine analysis . lines . decodeUtf8With ignore $ strictLogfile
   where
-
+    -- Force the evaluation of the whole file.
+    checkFile :: (MonadCatch m) => ByteString -> m ByteString
+    checkFile logfile = catchAnyStrict (pure logfile) $ \_ -> throwM LogReadException
     -- | A helpful utility function.
     -- TODO(ks): Maybe move it to Util?
     catchAnyStrict :: (MonadCatch m, NFData a) => m a -> (SomeException -> m a) -> m a
     catchAnyStrict m = catchAny $ m >>= (return $!) . force
+
+-- | Extract messages from either plain or json file
+extractMessages :: (MonadCatch m) => LogFile -> m [Text]
+extractMessages = \case
+    TxtFormat  content  -> extractMessagesPlain content
+    JSONFormat content  -> extractMessagesJSON content
+  where
+    -- Extract log message from plain log file
+    extractMessagesPlain :: (MonadCatch m) => ByteString -> m [Text]
+    extractMessagesPlain logFileContent = do
+        let decodedFile = decodeUtf8With ignore logFileContent
+        return $ lines decodedFile
+
+    -- Extract log messages from JSON log file
+    extractMessagesJSON :: (MonadCatch m) => ByteString -> m [Text]
+    extractMessagesJSON logFileContent = do
+        let logLines = C8.lines logFileContent
+        let decodedLogLines = map eitherDecodeStrict' logLines
+
+        when (any isLeft decodedLogLines) $ do
+            let errorText = fromMaybe "Failed to decode JSON" (safeHead $ lefts decodedLogLines)
+            throwM $ JSONDecodeFailure errorText
+
+        --  Collect message field since those are the ones we care about
+        let messages = map clMessage (rights decodedLogLines)
+        return messages
 
 -- | Analyze each line
 analyzeLine :: Analysis -> Text -> Analysis

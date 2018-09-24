@@ -26,10 +26,13 @@ import           DataSource (App, Attachment (..), AttachmentId (..), Comment (.
 import           Exceptions (ProcessTicketExceptions (..))
 import           HttpLayer (HttpNetworkLayerException (..), basicHTTPNetworkLayer)
 
-import           Lib (exportZendeskDataToLocalDB, fetchTicket, fetchTicketComments, filterAnalyzedTickets,
-                      getAttachmentsFromComment, listAndSortTickets, processTicket)
+import           Lib (exportZendeskDataToLocalDB, fetchTicket, fetchTicketComments,
+                      filterAnalyzedTickets, getAttachmentsFromComment, listAndSortTickets,
+                      processTicket)
 import           Statistics (filterTicketsByStatus, filterTicketsWithAttachments,
                              showAttachmentInfo, showCommentAttachments)
+
+import           LogAnalysisSpec (classifierSpec)
 
 -- TODO(ks): What we are really missing is a realistic @Gen DataLayer m@.
 
@@ -67,6 +70,9 @@ spec =
             insertCommentAttachmentsSpec
             insertTicketInfoSpec
             insertTicketCommentsSpec
+
+        describe "LogAnalysis" $ do
+            classifierSpec
 
 -- | A utility function for testing which stubs IO and returns
 -- the @Config@ with the @DataLayer@ that was passed into it.
@@ -122,8 +128,8 @@ parsingFailureSpec =
 
                         -- we exclusivly want just @HttpNotFound@, others are rethrown.
                         pre $ case exception of
-                                   HttpNotFound _   -> True
-                                   _                -> False
+                                   HttpNotFound _ -> True
+                                   _              -> False
 
                         let stubbedHttpNetworkLayer :: HTTPNetworkLayer
                             stubbedHttpNetworkLayer =

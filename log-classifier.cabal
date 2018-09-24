@@ -116,14 +116,18 @@ executable log-classifier-exe
 
 test-suite log-classifier-test
   hs-source-dirs:      test
+  other-modules:       LogAnalysisSpec
   type:                exitcode-stdio-1.0
   main-is:             Spec.hs
   ghc-options:         -Wall
-  build-depends:       base >=4.7 && <5
+  build-depends:       aeson
+                     , base >=4.7 && <5
                      , bytestring
+                     , containers
                      , log-classifier
                      , sqlite-simple
                      , text
+                     , time
                      , universum
                      , QuickCheck
                      , hspec

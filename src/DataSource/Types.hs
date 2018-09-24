@@ -72,7 +72,7 @@ import           Network.HTTP.Simple (Request)
 
 import           LogAnalysis.Types (Knowledge)
 
-import           Test.QuickCheck (Arbitrary (..), sublistOf, elements, listOf1)
+import           Test.QuickCheck (Arbitrary (..), elements, listOf1, sublistOf)
 
 ------------------------------------------------------------
 -- Configuration
@@ -967,7 +967,7 @@ parseComments = withObject "comments" $ \o -> o .: "comments"
 
 -- | Defining it's own show instance to use it as tags
 renderTicketStatus :: TicketTag -> Text
-renderTicketStatus AnalyzedByScript     = "analyzed-by-script"
+renderTicketStatus AnalyzedByScript       = "analyzed-by-script"
 renderTicketStatus AnalyzedByScriptV1_0   = "analyzed-by-script-v1.0"
 renderTicketStatus AnalyzedByScriptV1_1   = "analyzed-by-script-v1.1"
 renderTicketStatus AnalyzedByScriptV1_2   = "analyzed-by-script-v1.2"
