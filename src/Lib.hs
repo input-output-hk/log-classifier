@@ -71,7 +71,7 @@ runZendeskMain = do
     knowledges  <- setupKnowledgebaseEnv knowledgebasePath
     assignTo    <- case readEither assignFile of
         Right agentid -> return agentid
-        Left  err     -> error err
+        Left  err     -> error err -- Exception handling!
 
     connPool    <- createProdConnectionPool
 
@@ -95,6 +95,15 @@ runZendeskMain = do
         ShowStatistics                  -> void $ runApp (fetchTickets >>= showStatistics) cfg
         InspectLocalZip filePath        -> runApp (inspectLocalZipAttachment filePath) cfg
         ExportData fromTime             -> void $ runApp (exportZendeskDataToLocalDB mapConcurrentlyWithDelay fromTime) cfg
+  where
+    -- Read CSV file and setup knowledge base
+    setupKnowledgebaseEnv :: FilePath -> IO [Knowledge]
+    setupKnowledgebaseEnv path = do
+        kfile <- toLText <$> readFile path
+        let kb = parse parseKnowLedgeBase kfile
+        case eitherResult kb of
+            Left e   -> error $ toText e
+            Right ks -> return ks
 
 -- | A general function for using concurrent calls.
 mapConcurrentlyWithDelay
@@ -275,7 +284,7 @@ processTicket tId = do
 
     let attachments     = getAttachmentsFromComment comments
     case mTicketInfo of
-        Nothing -> throwM $ TicketInfoNotFound tId
+        Nothing         -> throwM $ TicketInfoNotFound tId
         Just ticketInfo -> do
             zendeskResponse <- getZendeskResponses comments attachments ticketInfo
 
@@ -448,16 +457,8 @@ listAndSortUnassignedTickets = do
 
     pure sortedTicketIds
 
--- | Read CSV file and setup knowledge base
-setupKnowledgebaseEnv :: FilePath -> IO [Knowledge]
-setupKnowledgebaseEnv path = do
-    kfile <- toLText <$> readFile path
-    let kb = parse parseKnowLedgeBase kfile
-    case eitherResult kb of
-        Left e   -> error $ toText e
-        Right ks -> return ks
-
 -- | Collect email
+-- TODO (hs): Remove this function since it's not used anymore
 extractEmailAddress :: TicketId -> App ()
 extractEmailAddress ticketId = do
     -- Fetch the function from the configuration.
@@ -500,6 +501,17 @@ getZendeskResponses comments attachments ticketInfo
     | not (null comments)    = responseNoLogs ticketInfo
     | otherwise              = throwM $ CommentAndAttachmentNotFound (tiId ticketInfo)
     -- No attachment, no comments means something is wrong with ticket itself
+  where
+    -- Create 'ZendeskResponse' stating no logs were found on the ticket
+    responseNoLogs :: TicketInfo -> App ZendeskResponse
+    responseNoLogs TicketInfo{..} = do
+        Config {..} <- ask
+        pure ZendeskResponse
+                { zrTicketId = tiId
+                , zrComment  = prettyFormatNoLogs
+                , zrTags     = TicketTags [renderTicketStatus NoLogAttached]
+                , zrIsPublic = cfgIsCommentPublic
+                }
 
 -- | Inspect the latest attachment
 inspectAttachments :: TicketInfo -> [Attachment] -> App ZendeskResponse
@@ -532,7 +544,7 @@ inspectLocalZipAttachment filePath = do
         Left (err :: ZipFileExceptions) ->
             printText $ show err
         Right result -> do
-            let analysisEnv             = setupAnalysis $ cfgKnowledgebase config
+            let analysisEnv = setupAnalysis $ cfgKnowledgebase config
             eitherAnalysisResult    <- try $ extractIssuesFromLogs result analysisEnv
 
             case eitherAnalysisResult of
@@ -603,17 +615,6 @@ inspectAttachment Config{..} ticketInfo@TicketInfo{..} attachment = do
                                 }
                         JSONDecodeFailure errorText ->
                             throwM $ JSONDecodeFailure errorText
-
--- | Create 'ZendeskResponse' stating no logs were found on the ticket
-responseNoLogs :: TicketInfo -> App ZendeskResponse
-responseNoLogs TicketInfo{..} = do
-    Config {..} <- ask
-    pure ZendeskResponse
-             { zrTicketId = tiId
-             , zrComment  = prettyFormatNoLogs
-             , zrTags     = TicketTags [renderTicketStatus NoLogAttached]
-             , zrIsPublic = cfgIsCommentPublic
-             }
 
 -- | Filter tickets
 filterAnalyzedTickets :: [TicketInfo] -> [TicketInfo]
