@@ -1,5 +1,6 @@
 module Exceptions
-    ( ProcessTicketExceptions (..)
+    ( ClassifierExceptions (..)
+    , ProcessTicketExceptions (..)
     , ZipFileExceptions (..)
     ) where
 
@@ -27,8 +28,15 @@ data ZipFileExceptions
     -- ^ Decompresson of a zip file was not sucessful
     deriving Show
 
+-- | Exception on running log-classifier
+data ClassifierExceptions
+    = FailedToReadAssignFile
+    | FailedToParseKnowledgebase
+    deriving (Show)
+
 instance Exception ProcessTicketExceptions
 instance Exception ZipFileExceptions
+instance Exception ClassifierExceptions
 
 instance Show ProcessTicketExceptions where
     show (AttachmentNotFound tid)           = "Attachment was not found on ticket ID: " <> showTicketId tid

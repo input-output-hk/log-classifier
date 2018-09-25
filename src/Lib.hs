@@ -42,9 +42,11 @@ import           DataSource (App, Attachment (..), AttachmentContent (..), Comme
                              createProdConnectionPool, knowledgebasePath, renderTicketStatus,
                              runApp, tokenPath)
 
-import           Exceptions (ProcessTicketExceptions (..), ZipFileExceptions (..))
+import           Exceptions (ClassifierExceptions (..), ProcessTicketExceptions (..),
+                             ZipFileExceptions (..))
 import           Http.Layer (basicHTTPNetworkLayer)
 import           Http.Queue (createSchedulerConfig, runScheduler)
+
 import           LogAnalysis.Classifier (extractErrorCodes, extractIssuesFromLogs,
                                          prettyFormatAnalysis, prettyFormatLogReadError,
                                          prettyFormatNoIssues, prettyFormatNoLogs)
@@ -71,7 +73,7 @@ runZendeskMain = do
     knowledges  <- setupKnowledgebaseEnv knowledgebasePath
     assignTo    <- case readEither assignFile of
         Right agentid -> return agentid
-        Left  err     -> error err
+        Left  _       -> throwM FailedToReadAssignFile
 
     connPool    <- createProdConnectionPool
 
@@ -100,20 +102,29 @@ runZendeskMain = do
             void $ runApp (fetchTickets dataLayer >>= (showStatistics dataLayer)) cfg
         InspectLocalZip filePath        -> runApp (inspectLocalZipAttachment filePath) cfg
         ExportData fromTime             -> void $ runApp (exportZendeskDataToLocalDB dataLayer fromTime) cfg
+  where
+    -- Read CSV file and setup knowledge base
+    setupKnowledgebaseEnv :: FilePath -> IO [Knowledge]
+    setupKnowledgebaseEnv path = do
+        kfile <- toLText <$> readFile path
+        let kb = parse parseKnowLedgeBase kfile
+        case eitherResult kb of
+            Left _   -> throwM FailedToParseKnowledgebase
+            Right ks -> return ks
 
+    -- | Create a basic @DataLayer@.
+    createBasicDataLayer :: App (DataLayer App)
+    createBasicDataLayer = do
+        -- for now, we limit the rate-limit to 700/minute, which is lower then
+        -- 750/minute, but takes into consideration that other things might be called
+        -- at the same time as well.
+        shedConfig  <- createSchedulerConfig 700
 
-createBasicDataLayer :: App (DataLayer App)
-createBasicDataLayer = do
-    -- for now, we limit the rate-limit to 700/minute, which is lower then
-    -- 750/minute, but takes into consideration that other things might be called
-    -- at the same time as well.
-    shedConfig  <- createSchedulerConfig 700
+        -- Run the sheduler which resets the number of requests to 0 every minute.
+        _           <- runScheduler shedConfig
 
-    -- Run the sheduler which resets the number of requests to 0 every minute.
-    _           <- runScheduler shedConfig
-
-    -- create the data layer
-    pure $ basicDataLayer (basicHTTPNetworkLayer shedConfig)
+        -- create the data layer
+        pure $ basicDataLayer (basicHTTPNetworkLayer shedConfig)
 
 
 -- | The function for exporting Zendesk data to our local DB so
@@ -255,7 +266,7 @@ processTicket dataLayer tId = do
 
     let attachments     = getAttachmentsFromComment comments
     case mTicketInfo of
-        Nothing -> throwM $ TicketInfoNotFound tId
+        Nothing         -> throwM $ TicketInfoNotFound tId
         Just ticketInfo -> do
             zendeskResponse <- getZendeskResponses dataLayer comments attachments ticketInfo
 
@@ -401,16 +412,7 @@ listAndSortUnassignedTickets dataLayer = do
 
     pure sortedTicketIds
 
--- | Read CSV file and setup knowledge base
-setupKnowledgebaseEnv :: FilePath -> IO [Knowledge]
-setupKnowledgebaseEnv path = do
-    kfile <- toLText <$> readFile path
-    let kb = parse parseKnowLedgeBase kfile
-    case eitherResult kb of
-        Left e   -> error $ toText e
-        Right ks -> return ks
-
--- | Collect email
+-- TODO (hs): Remove this function since it's not used anymore
 extractEmailAddress :: DataLayer App -> TicketId -> App ()
 extractEmailAddress dataLayer ticketId = do
     -- Fetch the function from the configuration.
@@ -453,6 +455,17 @@ getZendeskResponses dataLayer comments attachments ticketInfo
     | not (null comments)    = responseNoLogs ticketInfo
     | otherwise              = throwM $ CommentAndAttachmentNotFound (tiId ticketInfo)
     -- No attachment, no comments means something is wrong with ticket itself
+  where
+    -- Create 'ZendeskResponse' stating no logs were found on the ticket
+    responseNoLogs :: TicketInfo -> App ZendeskResponse
+    responseNoLogs TicketInfo{..} = do
+        Config {..} <- ask
+        pure ZendeskResponse
+                { zrTicketId = tiId
+                , zrComment  = prettyFormatNoLogs
+                , zrTags     = TicketTags [renderTicketStatus NoLogAttached]
+                , zrIsPublic = cfgIsCommentPublic
+                }
 
 -- | Inspect the latest attachment
 inspectAttachments :: DataLayer App -> TicketInfo -> [Attachment] -> App ZendeskResponse
@@ -485,7 +498,7 @@ inspectLocalZipAttachment filePath = do
         Left (err :: ZipFileExceptions) ->
             printText $ show err
         Right result -> do
-            let analysisEnv             = setupAnalysis $ cfgKnowledgebase config
+            let analysisEnv = setupAnalysis $ cfgKnowledgebase config
             eitherAnalysisResult    <- try $ extractIssuesFromLogs result analysisEnv
 
             case eitherAnalysisResult of
@@ -556,17 +569,6 @@ inspectAttachment Config{..} ticketInfo@TicketInfo{..} attachment = do
                                 }
                         JSONDecodeFailure errorText ->
                             throwM $ JSONDecodeFailure errorText
-
--- | Create 'ZendeskResponse' stating no logs were found on the ticket
-responseNoLogs :: TicketInfo -> App ZendeskResponse
-responseNoLogs TicketInfo{..} = do
-    Config {..} <- ask
-    pure ZendeskResponse
-             { zrTicketId = tiId
-             , zrComment  = prettyFormatNoLogs
-             , zrTags     = TicketTags [renderTicketStatus NoLogAttached]
-             , zrIsPublic = cfgIsCommentPublic
-             }
 
 -- | Filter tickets
 filterAnalyzedTickets :: [TicketInfo] -> [TicketInfo]
