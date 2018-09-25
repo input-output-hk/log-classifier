@@ -44,7 +44,8 @@ import           DataSource (App, Attachment (..), AttachmentContent (..), Comme
                              createProdConnectionPool, knowledgebasePath, renderTicketStatus,
                              runApp, tokenPath)
 
-import           Exceptions (ProcessTicketExceptions (..), ZipFileExceptions (..))
+import           Exceptions (ClassifierExceptions (..), ProcessTicketExceptions (..),
+                             ZipFileExceptions (..))
 import           LogAnalysis.Classifier (extractErrorCodes, extractIssuesFromLogs,
                                          prettyFormatAnalysis, prettyFormatLogReadError,
                                          prettyFormatNoIssues, prettyFormatNoLogs)
@@ -71,7 +72,7 @@ runZendeskMain = do
     knowledges  <- setupKnowledgebaseEnv knowledgebasePath
     assignTo    <- case readEither assignFile of
         Right agentid -> return agentid
-        Left  err     -> error err -- Exception handling!
+        Left  _       -> throwM FailedToReadAssignFile
 
     connPool    <- createProdConnectionPool
 
@@ -102,7 +103,7 @@ runZendeskMain = do
         kfile <- toLText <$> readFile path
         let kb = parse parseKnowLedgeBase kfile
         case eitherResult kb of
-            Left e   -> error $ toText e
+            Left _   -> throwM FailedToParseKnowledgebase
             Right ks -> return ks
 
 -- | A general function for using concurrent calls.
@@ -289,7 +290,7 @@ processTicket tId = do
             zendeskResponse <- getZendeskResponses comments attachments ticketInfo
 
             postTicketComment ticketInfo zendeskResponse
-            
+
             -- TODO(ks): Moved back so we can run it in single-threaded mode. Requires a lot of
             -- refactoring to run it in a multi-threaded mode.
             let ticketId = getTicketId $ zrTicketId zendeskResponse
@@ -352,7 +353,7 @@ processTickets = do
 
     printText <- asksIOLayer iolPrintText
     printText "Classifier will start processing tickets"
-    
+
     -- Fetching all the tickets that needs to be processed
     allTickets <- fetchTickets
 
