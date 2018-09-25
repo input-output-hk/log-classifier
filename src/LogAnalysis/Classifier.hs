@@ -34,15 +34,15 @@ extractIssuesFromLogs :: (MonadCatch m) => [LogFile] -> Analysis -> m Analysis
 extractIssuesFromLogs logFiles analysis = do
 
     -- Will raise exception if we find an issue.
-    _                   <- mapM (checkFile . getLogFileContent) logFiles
+    _  <- checkFiles $ map getLogFileContent logFiles
 
     logLines            <- concatMapM extractMessages logFiles
     let analysisResult  = foldl' analyzeLine analysis logLines
     filterAnalysis analysisResult
   where
-    -- Force the evaluation of the whole file.
-    checkFile :: (MonadCatch m) => ByteString -> m ByteString
-    checkFile logfile = catchAnyStrict (pure logfile) $ \_ -> throwM LogReadException
+    -- Force the evaluation on list of files
+    checkFiles :: (MonadCatch m) => [ByteString] -> m [ByteString]
+    checkFiles logfiles = catchAnyStrict (pure logfiles) $ \_ -> throwM LogReadException
     -- | A helpful utility function.
     -- TODO(ks): Maybe move it to Util?
     catchAnyStrict :: (MonadCatch m, NFData a) => m a -> (SomeException -> m a) -> m a
