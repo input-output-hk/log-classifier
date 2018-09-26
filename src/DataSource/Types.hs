@@ -1,7 +1,6 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE RecordWildCards            #-}
 
 module DataSource.Types
@@ -40,15 +39,11 @@ module DataSource.Types
     -- * General configuration
     , App
     , Config (..)
-    , DataLayer (..)
-    , HTTPNetworkLayer (..)
     , IOLayer (..)
     , DBLayer (..)
     , knowledgebasePath
     , tokenPath
     , assignToPath
-    , asksDataLayer
-    , asksHTTPNetworkLayer
     , asksIOLayer
     , asksDBLayer
     , showURL
@@ -56,6 +51,8 @@ module DataSource.Types
     ) where
 
 import           Universum
+
+import           Control.Concurrent.Classy (MonadConc)
 
 import           Control.Monad.Base (MonadBase)
 import           Control.Monad.Trans.Control (MonadBaseControl (..))
@@ -68,7 +65,6 @@ import           Data.Aeson.Types (Parser)
 import qualified Data.Aeson.Types as AT
 import qualified Data.Text as T
 import           Data.Time.Clock.POSIX (POSIXTime)
-import           Network.HTTP.Simple (Request)
 
 import           LogAnalysis.Types (Knowledge)
 
@@ -88,6 +84,8 @@ newtype App a = App { runAppBase :: ReaderT Config IO a }
              , MonadUnliftIO
              , MonadCatch
              , MonadThrow
+             , MonadMask
+             , MonadConc
              )
 
 instance MonadBaseControl IO App where
@@ -116,37 +114,13 @@ data Config = Config
     -- ^ Number of files classifier will analyze
     , cfgIsCommentPublic    :: !Bool
     -- ^ If the comment is public or not, for a test run we use an internal comment.
-    , cfgDataLayer          :: !(DataLayer App)
-    -- ^ The Zendesk API layer. We will ideally move this into a
-    -- separate configuration containing all the layer (yes, there a couple of them).
     , cfgIOLayer            :: !(IOLayer App)
     -- ^ The _IO@ layer. This is containing all the functions we have for IO.
     , cfgDBLayer            :: !(DBLayer App)
     -- ^ The _DB_ layer. This is containing all the modification functions.
     -- TODO(ks): @Maybe@ db layer. It's not really required.
-    , cfgHTTPNetworkLayer   :: !HTTPNetworkLayer
-    -- ^ The HTTP network layer. Required so we can mock out the responses and separate
-    -- the specific HTTP communication (library) from the code that uses it.
     }
 
-
--- | Utility function for getting a function of the @DataLayer@.
-asksDataLayer
-    :: forall m a. (MonadReader Config m)
-    => (DataLayer App -> a)
-    -> m a
-asksDataLayer getter = do
-    Config{..} <- ask
-    pure $ getter cfgDataLayer
-
--- | Utility function for getting a function of the @cfgHTTPNetworkLayer@.
-asksHTTPNetworkLayer
-    :: forall m a. (MonadReader Config m)
-    => (HTTPNetworkLayer -> a)
-    -> m a
-asksHTTPNetworkLayer getter = do
-    Config{..} <- ask
-    pure $ getter cfgHTTPNetworkLayer
 
 -- | Utility function for getting a function of the @ZendeskLayer@.
 asksIOLayer
@@ -179,38 +153,6 @@ tokenPath = "./tmp-secrets/token"
 assignToPath :: FilePath
 assignToPath = "./tmp-secrets/assign_to"
 
-
--- | The Zendesk API interface that we want to expose.
--- We don't want anything to leak out, so we expose only the most relevant information,
--- anything relating to how it internaly works should NOT be exposed.
-data DataLayer m = DataLayer
-    { zlGetTicketInfo         :: TicketId         -> m (Maybe TicketInfo)
-    , zlListDeletedTickets    ::                     m [DeletedTicket]
-    , zlListRequestedTickets  :: UserId           -> m [TicketInfo]
-    , zlListAssignedTickets   :: UserId           -> m [TicketInfo]
-    , zlListUnassignedTickets ::                     m [TicketInfo]
-    , zlListAdminAgents       ::                     m [User]
-    , zlGetTicketComments     :: TicketId         -> m [Comment]
-    , zlGetAttachment         :: Attachment       -> m (Maybe AttachmentContent)
-    , zlPostTicketComment     :: TicketInfo
-                              -> ZendeskResponse
-                              -> m ()
-    , zlExportTickets         :: ExportFromTime   -> m [TicketInfo]
-    }
-
--- | The HTTP network layer that we want to expose.
--- We don't want anything to leak out, so we expose only the most relevant information,
--- anything relating to how it internaly works should NOT be exposed.
--- Actually, it would be better if we "inject" this into
--- the @Http@ module, say in the @ZendeskaLayer@, but it's good enough for now.
--- We need to use RankNTypes due to some complications that appeared.
-data HTTPNetworkLayer = HTTPNetworkLayer
-    { hnlAddJsonBody    :: forall a.    (ToJSON a) => a -> Request -> Request
-    , hnlApiCall        :: forall m a.  (MonadIO m, MonadCatch m, FromJSON a)
-                        => (Value -> Parser a)
-                        -> Request
-                        -> m a
-    }
 
 -- | The IOLayer interface that we can expose.
 -- We want to do this since we want to be able to mock out any function tied to @IO@.

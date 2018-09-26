@@ -3,31 +3,34 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module DataSource.Http
-    ( basicDataLayer
+    ( DataLayer (..)
+    , basicDataLayer
     , emptyDataLayer
     , createResponseTicket
     ) where
 
 import           Universum
 
-import           Control.Concurrent (threadDelay)
+import           Control.Concurrent.Classy (MonadConc, threadDelay)
+
 import           Control.Monad.Reader (ask)
 
 import           Data.Aeson (parseJSON)
 import           Data.Aeson.Text (encodeToLazyText)
 import           Data.List (nub)
-import           Network.HTTP.Simple (Request, getResponseBody, httpLBS, parseRequest_)
+-- TODO(ks): We should be able to remove this once we untangle the layers and configuration.
+import           Network.HTTP.Simple (Request, parseRequest_)
 
-import           HttpLayer (HTTPNetworkLayer (..), HttpNetworkLayerException (..), apiRequest,
-                            apiRequestAbsolute)
+import           Http.Exceptions (HttpNetworkLayerException (..))
+import           Http.Layer (HTTPNetworkLayer (..), apiRequest, apiRequestAbsolute)
 
 import           DataSource.Types (Attachment (..), AttachmentContent (..), Comment (..),
-                                   CommentBody (..), CommentId (..), Config (..), DataLayer (..),
+                                   CommentBody (..), CommentId (..), Config (..),
                                    DeletedTicket (..), ExportFromTime (..), FromPageResultList (..),
                                    PageResultList (..), Ticket (..), TicketId (..), TicketInfo (..),
                                    TicketTag (..), TicketTags (..), User, UserId (..),
-                                   ZendeskAPIUrl (..), ZendeskResponse (..), asksHTTPNetworkLayer,
-                                   parseComments, parseTicket, renderTicketStatus, showURL)
+                                   ZendeskAPIUrl (..), ZendeskResponse (..), parseComments,
+                                   parseTicket, renderTicketStatus, showURL)
 
 -- ./mitmproxy --mode reverse:https://iohk.zendesk.com -p 4001
 
@@ -35,23 +38,44 @@ import           DataSource.Types (Attachment (..), AttachmentContent (..), Comm
 -- Zendesk layer
 ------------------------------------------------------------
 
+-- | The Zendesk API interface that we want to expose.
+-- We don't want anything to leak out, so we expose only the most relevant information,
+-- anything relating to how it internaly works should NOT be exposed.
+data DataLayer m = DataLayer
+    { zlGetTicketInfo         :: TicketId         -> m (Maybe TicketInfo)
+    , zlListDeletedTickets    ::                     m [DeletedTicket]
+    , zlListRequestedTickets  :: UserId           -> m [TicketInfo]
+    , zlListAssignedTickets   :: UserId           -> m [TicketInfo]
+    , zlListUnassignedTickets ::                     m [TicketInfo]
+    , zlListAdminAgents       ::                     m [User]
+    , zlGetTicketComments     :: TicketId         -> m [Comment]
+    , zlGetAttachment         :: Attachment       -> m (Maybe AttachmentContent)
+    , zlPostTicketComment     :: TicketInfo
+                              -> ZendeskResponse
+                              -> m ()
+    , zlExportTickets         :: ExportFromTime   -> m [TicketInfo]
+    }
+
 -- | The basic Zendesk layer.
 -- The convention:
 --   - get returns a single result (wrapped in @Maybe@)
 --   - list returns multiple results
 --   - post submits a result (maybe PUT?!)
-basicDataLayer :: (MonadIO m, MonadCatch m, MonadReader Config m) => DataLayer m
-basicDataLayer = DataLayer
-    { zlGetTicketInfo           = getTicketInfo
-    , zlListDeletedTickets      = listDeletedTickets
-    , zlListRequestedTickets    = listRequestedTickets
-    , zlListAssignedTickets     = listAssignedTickets
-    , zlListUnassignedTickets   = listUnassignedTickets
-    , zlListAdminAgents         = listAdminAgents
-    , zlPostTicketComment       = postTicketComment
-    , zlGetAttachment           = getAttachment
-    , zlGetTicketComments       = getTicketComments
-    , zlExportTickets           = getExportedTickets
+basicDataLayer
+    :: (MonadIO m, MonadConc m, MonadCatch m, MonadMask m, MonadReader Config m)
+    => HTTPNetworkLayer m
+    -> DataLayer m
+basicDataLayer httpNetworkLayer = DataLayer
+    { zlGetTicketInfo           = getTicketInfo httpNetworkLayer
+    , zlListDeletedTickets      = listDeletedTickets httpNetworkLayer
+    , zlListRequestedTickets    = listRequestedTickets httpNetworkLayer
+    , zlListAssignedTickets     = listAssignedTickets httpNetworkLayer
+    , zlListUnassignedTickets   = listUnassignedTickets httpNetworkLayer
+    , zlListAdminAgents         = listAdminAgents httpNetworkLayer
+    , zlPostTicketComment       = postTicketComment httpNetworkLayer
+    , zlGetAttachment           = getAttachment httpNetworkLayer
+    , zlGetTicketComments       = getTicketComments httpNetworkLayer
+    , zlExportTickets           = getExportedTickets httpNetworkLayer
     }
 
 -- | The non-implemented Zendesk layer.
@@ -75,16 +99,17 @@ emptyDataLayer = DataLayer
 
 -- | Get single ticket info.
 getTicketInfo
-    :: (HasCallStack, MonadIO m, MonadCatch m, MonadReader Config m)
-    => TicketId
+    :: (HasCallStack, MonadIO m, MonadConc m, MonadCatch m, MonadMask m, MonadReader Config m)
+    => HTTPNetworkLayer m
+    -> TicketId
     -> m (Maybe TicketInfo)
-getTicketInfo ticketId = do
+getTicketInfo httpNetworkLayer ticketId = do
     cfg <- ask
 
     let url = showURL $ TicketsURL ticketId
     let req = apiRequest cfg url
 
-    apiCall <- asksHTTPNetworkLayer hnlApiCall
+    let apiCall = hnlApiCall httpNetworkLayer
 
     result  <- try $ apiCall parseTicket req
 
@@ -98,19 +123,20 @@ getTicketInfo ticketId = do
         -> m (Maybe a)
     notFoundExceptionToMaybe result = case result of
         Left exception      -> case exception of
-            HttpNotFound _      -> pure Nothing
-            otherExceptions     -> throwM otherExceptions
+            HttpNotFound _  -> pure Nothing
+            otherExceptions -> throwM otherExceptions
         Right ticketInfo    -> pure $ Just ticketInfo
 
 -- | Get ticket's comments
 getTicketComments
-    :: (HasCallStack, MonadIO m, MonadCatch m, MonadReader Config m)
-    => TicketId
+    :: (HasCallStack, MonadIO m, MonadConc m, MonadCatch m, MonadMask m, MonadReader Config m)
+    => HTTPNetworkLayer m
+    -> TicketId
     -> m [Comment]
-getTicketComments tId = do
+getTicketComments httpNetworkLayer tId = do
     cfg <- ask
 
-    apiCall <- asksHTTPNetworkLayer hnlApiCall
+    let apiCall = hnlApiCall httpNetworkLayer
 
     let url = showURL $ TicketCommentsURL tId
     let req = apiRequest cfg url
@@ -131,125 +157,116 @@ getTicketComments tId = do
         -> m [a]
     notFoundExceptionToList result = case result of
         Left exception      -> case exception of
-            HttpNotFound _      -> pure []
-            otherExceptions     -> throwM otherExceptions
+            HttpNotFound _  -> pure []
+            otherExceptions -> throwM otherExceptions
         Right comments      -> pure comments
 
 -- | Return list of deleted tickets.
 listDeletedTickets
-    :: forall m. (MonadIO m, MonadReader Config m)
-    => m [DeletedTicket]
-listDeletedTickets = do
+    :: forall m. (MonadIO m, MonadConc m, MonadReader Config m)
+    => HTTPNetworkLayer m
+    -> m [DeletedTicket]
+listDeletedTickets httpNetworkLayer = do
     cfg <- ask
+
+    let apiCall = hnlApiCall httpNetworkLayer
 
     let url = showURL $ DeletedTicketsURL
     let req = apiRequest cfg url
 
-    iteratePages req
+    iteratePages (apiCall parseJSON) req
 
 -- | Return list of ticketIds that has been requested by config user.
 listRequestedTickets
-    :: forall m. (MonadIO m, MonadReader Config m)
-    => UserId
+    :: forall m. (MonadIO m, MonadConc m, MonadReader Config m)
+    => HTTPNetworkLayer m
+    -> UserId
     -> m [TicketInfo]
-listRequestedTickets userId = do
+listRequestedTickets httpNetworkLayer userId = do
     cfg <- ask
+
+    let apiCall = hnlApiCall httpNetworkLayer
 
     let url = showURL $ UserRequestedTicketsURL userId
     let req = apiRequest cfg url
 
-    iteratePages req
+    iteratePages (apiCall parseJSON) req
 
 -- | Return list of ticketIds that has been assigned by config user.
 listAssignedTickets
-    :: forall m. (MonadIO m, MonadReader Config m)
-    => UserId
+    :: forall m. (MonadIO m, MonadConc m, MonadReader Config m)
+    => HTTPNetworkLayer m
+    -> UserId
     -> m [TicketInfo]
-listAssignedTickets userId = do
+listAssignedTickets httpNetworkLayer userId = do
     cfg <- ask
+
+    let apiCall = hnlApiCall httpNetworkLayer
 
     let url = showURL $ UserAssignedTicketsURL userId
     let req = apiRequest cfg url
 
-    iteratePages req
+    iteratePages (apiCall parseJSON) req
 
 -- | Return list of ticketIds that has been unassigned.
 listUnassignedTickets
-    :: forall m. (MonadIO m, MonadReader Config m)
-    => m [TicketInfo]
-listUnassignedTickets = do
+    :: forall m. (MonadIO m, MonadConc m, MonadReader Config m)
+    => HTTPNetworkLayer m
+    -> m [TicketInfo]
+listUnassignedTickets httpNetworkLayer = do
     cfg <- ask
+
+    let apiCall = hnlApiCall httpNetworkLayer
 
     let url = showURL $ UserUnassignedTicketsURL
     let req = apiRequest cfg url
 
-    iteratePages req
+    iteratePages (apiCall parseJSON) req
 
 listAdminAgents
-    :: forall m. (MonadIO m, MonadReader Config m)
-    => m [User]
-listAdminAgents = do
+    :: forall m. (MonadIO m, MonadConc m, MonadReader Config m)
+    => HTTPNetworkLayer m
+    -> m [User]
+listAdminAgents httpNetworkLayer = do
     cfg <- ask
+
+    let apiCall = hnlApiCall httpNetworkLayer
+
     let url = showURL AgentGroupURL
     let req = apiRequest cfg url
 
-    iteratePages req
+    iteratePages (apiCall parseJSON) req
 
 -- | Export tickets from Zendesk - https://developer.zendesk.com/rest_api/docs/core/incremental_export
 -- NOTE: If count is less than 1000, then stop paginating.
 -- Otherwise, use the next_page URL to get the next page of results.
 getExportedTickets
-    :: forall m. (MonadIO m, MonadCatch m, MonadReader Config m)
-    => ExportFromTime
+    :: forall m. (MonadIO m, MonadConc m, MonadCatch m, MonadMask m, MonadReader Config m)
+    => HTTPNetworkLayer m
+    -> ExportFromTime
     -> m [TicketInfo]
-getExportedTickets time = do
+getExportedTickets httpNetworkLayer time = do
     cfg <- ask
 
-    apiCall <- asksHTTPNetworkLayer hnlApiCall
+    let apiCall = hnlApiCall httpNetworkLayer
 
     let url = showURL $ ExportDataByTimestamp time
     let req = apiRequestAbsolute cfg url
 
-    iterateExportedTicketsWithDelay req (apiCall parseJSON)
-  where
-
-    iterateExportedTicketsWithDelay
-        :: Request
-        -> (Request -> m (PageResultList TicketInfo))
-        -> m [TicketInfo]
-    iterateExportedTicketsWithDelay req apiCall = do
-        cfg <- ask
-
-        let go :: [TicketInfo] -> Text -> m [TicketInfo]
-            go list' nextPage' = do
-                liftIO $ threadDelay $ 10 * 1000000 -- Wait, Zendesk allows for 10 per minute.
-
-                let req'      = apiRequestAbsolute cfg nextPage'
-                (PageResultList pagen nextPagen count) <- apiCall req'
-                case nextPagen of
-                    Just nextUrl -> if maybe False (>= 1000) count
-                                        then go (list' <> pagen) nextUrl
-                                        else pure (list' <> pagen)
-
-                    Nothing      -> pure (list' <> pagen)
-
-
-        (PageResultList page0 nextPage _) <- apiCall req
-        case nextPage of
-            Just nextUrl -> go page0 nextUrl
-            Nothing      -> pure page0
+    iterateExportedTicketsWithDelay (apiCall parseJSON) req
 
 -- | Send API request to post comment
 postTicketComment
-    :: (MonadIO m, MonadCatch m, MonadReader Config m)
-    => TicketInfo
+    :: forall m. (MonadIO m, MonadConc m, MonadCatch m, MonadMask m, MonadReader Config m)
+    => HTTPNetworkLayer m
+    -> TicketInfo
     -> ZendeskResponse
     -> m ()
-postTicketComment ticketInfo zendeskResponse = do
+postTicketComment httpNetworkLayer ticketInfo zendeskResponse = do
     cfg <- ask
 
-    addJsonBody <- asksHTTPNetworkLayer hnlAddJsonBody
-    apiCall     <- asksHTTPNetworkLayer hnlApiCall
+    let addJsonBody = hnlAddJsonBody httpNetworkLayer
+    let apiCall = hnlApiCall httpNetworkLayer
 
     let responseTicket = createResponseTicket (cfgAgentId cfg) ticketInfo zendeskResponse
     let url  = showURL $ TicketsURL (zrTicketId zendeskResponse)
@@ -279,12 +296,13 @@ createResponseTicket agentId TicketInfo{..} ZendeskResponse{..} =
 
 -- | Get user information.
 _getUser
-    :: (MonadIO m, MonadCatch m, MonadReader Config m)
-    => m User
-_getUser = do
+    :: forall m. (MonadIO m, MonadConc m, MonadCatch m, MonadMask m, MonadReader Config m)
+    => HTTPNetworkLayer m
+    -> m User
+_getUser httpNetworkLayer = do
     cfg <- ask
 
-    apiCall     <- asksHTTPNetworkLayer hnlApiCall
+    let apiCall = hnlApiCall httpNetworkLayer
 
     let url = showURL UserInfoURL
     let req = apiRequest cfg url
@@ -293,13 +311,13 @@ _getUser = do
 
 -- | Given attachmentUrl, return attachment in bytestring
 getAttachment
-    :: (MonadIO m)
-    => Attachment
+    :: forall m. (MonadIO m, MonadConc m, MonadMask m, MonadReader Config m)
+    => HTTPNetworkLayer m
+    -> Attachment
     -> m (Maybe AttachmentContent)
-getAttachment Attachment{..} = Just . AttachmentContent . getResponseBody <$> httpLBS req
-    where
-      req :: Request
-      req = parseRequest_ (toString aURL)
+getAttachment httpNetworkLayer Attachment{..} = do
+    let apiCallBare = hnlApiCallBare httpNetworkLayer
+    Just . AttachmentContent <$> apiCallBare (parseRequest_ (toString aURL))
 
 ------------------------------------------------------------
 -- Utility
@@ -307,36 +325,65 @@ getAttachment Attachment{..} = Just . AttachmentContent . getResponseBody <$> ht
 
 -- | Iterate all the ticket pages and combine into a result.
 iteratePages
-    :: forall m a. (MonadIO m, MonadReader Config m, FromPageResultList a)
-    => Request
+    :: forall m a. (MonadIO m, MonadConc m, MonadReader Config m, FromPageResultList a)
+    => (Request -> m (PageResultList a))
+    -> Request
     -> m [a]
-iteratePages req = iteratePagesWithDelay 0 req
+iteratePages apiCall req = iteratePagesWithDelay apiCall 0 req
 
 -- | Iterate all the ticket pages and combine into a result. Wait for
 -- some time in-between the requests.
 iteratePagesWithDelay
-    :: forall m a. (MonadIO m, MonadReader Config m, FromPageResultList a)
-    => Int
+    :: forall m a. (MonadIO m, MonadConc m, MonadReader Config m, FromPageResultList a)
+    => (Request -> m (PageResultList a))
+    -> Int
     -> Request
     -> m [a]
-iteratePagesWithDelay seconds req = do
+iteratePagesWithDelay apiCall seconds req = do
     cfg <- ask
 
-    apiCall     <- asksHTTPNetworkLayer hnlApiCall
-
-    let go :: [a] -> Text -> IO [a]
+    let go :: [a] -> Text -> m [a]
         go list' nextPage' = do
             -- Wait for @Int@ seconds.
             threadDelay $ seconds * 1000000
 
             let req'      = apiRequestAbsolute cfg nextPage'
-            (PageResultList pagen nextPagen _) <- apiCall parseJSON req'
+            (PageResultList pagen nextPagen _) <- apiCall req'
             case nextPagen of
                 Just nextUrl -> go (list' <> pagen) nextUrl
                 Nothing      -> pure (list' <> pagen)
 
-    (PageResultList page0 nextPage _) <- liftIO $ apiCall parseJSON req
+    (PageResultList page0 nextPage _) <- apiCall req
     case nextPage of
-        Just nextUrl -> liftIO $ go page0 nextUrl
+        Just nextUrl -> go page0 nextUrl
+        Nothing      -> pure page0
+
+-- | A specific call which has a condition for finishing up.
+-- Seems the most general call is this with the delay enabled.
+iterateExportedTicketsWithDelay
+    :: forall m a. (MonadIO m, MonadReader Config m, FromPageResultList a)
+    => (Request -> m (PageResultList a))
+    -> Request
+    -> m [a]
+iterateExportedTicketsWithDelay apiCall req = do
+    cfg <- ask
+
+    let go :: [a] -> Text -> m [a]
+        go list' nextPage' = do
+            liftIO $ threadDelay $ 10 * 1000000 -- Wait, Zendesk allows for 10 per minute.
+
+            let req'      = apiRequestAbsolute cfg nextPage'
+            (PageResultList pagen nextPagen count) <- apiCall req'
+            case nextPagen of
+                Just nextUrl -> if maybe False (>= 1000) count
+                                    then go (list' <> pagen) nextUrl
+                                    else pure (list' <> pagen)
+
+                Nothing      -> pure (list' <> pagen)
+
+
+    (PageResultList page0 nextPage _) <- apiCall req
+    case nextPage of
+        Just nextUrl -> go page0 nextUrl
         Nothing      -> pure page0
 

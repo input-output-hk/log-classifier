@@ -12,19 +12,19 @@ import           Test.QuickCheck (Gen, arbitrary, elements, forAll, listOf, list
                                   (===))
 import           Test.QuickCheck.Monadic (assert, monadicIO, pre, run)
 
-import           Configuration (basicIOLayer, defaultConfig)
+import           Configuration (basicIOLayer, emptyConfig)
 import           DataSource (App, Attachment (..), AttachmentId (..), Comment (..),
                              CommentBody (..), CommentId (..), Config (..), DBLayerException (..),
-                             DataLayer (..), DeletedTicket (..), ExportFromTime (..),
-                             HTTPNetworkLayer (..), IOLayer (..), Ticket (..), TicketId (..),
-                             TicketInfo (..), TicketStatus (..), TicketTag (..), TicketTags (..),
-                             TicketURL (..), User, UserId (..), ZendeskAPIUrl (..),
-                             ZendeskResponse (..), basicDataLayer, createResponseTicket,
-                             createSchema, deleteAllData, emptyDBLayer, emptyDataLayer,
-                             insertCommentAttachments, insertTicketComments, insertTicketInfo,
-                             renderTicketStatus, runApp, showURL)
+                             DataLayer (..), DeletedTicket (..), ExportFromTime (..), IOLayer (..),
+                             Ticket (..), TicketId (..), TicketInfo (..), TicketStatus (..),
+                             TicketTag (..), TicketTags (..), TicketURL (..), User, UserId (..),
+                             ZendeskAPIUrl (..), ZendeskResponse (..), basicDataLayer,
+                             createResponseTicket, createSchema, deleteAllData, emptyDBLayer,
+                             emptyDataLayer, insertCommentAttachments, insertTicketComments,
+                             insertTicketInfo, renderTicketStatus, runApp, showURL)
 import           Exceptions (ProcessTicketExceptions (..))
-import           HttpLayer (HttpNetworkLayerException (..), basicHTTPNetworkLayer)
+import           Http.Exceptions (HttpNetworkLayerException (..))
+import           Http.Layer (HTTPNetworkLayer (..), emptyHTTPNetworkLayer)
 
 import           Lib (exportZendeskDataToLocalDB, fetchTicket, fetchTicketComments,
                       filterAnalyzedTickets, getAttachmentsFromComment, listAndSortTickets,
@@ -32,6 +32,7 @@ import           Lib (exportZendeskDataToLocalDB, fetchTicket, fetchTicketCommen
 import           Statistics (filterTicketsByStatus, filterTicketsWithAttachments,
                              showAttachmentInfo, showCommentAttachments)
 
+import           HttpQueueSpec (dispatchActionsSpec)
 import           LogAnalysisSpec (classifierSpec)
 
 -- TODO(ks): What we are really missing is a realistic @Gen DataLayer m@.
@@ -71,37 +72,18 @@ spec =
             insertTicketInfoSpec
             insertTicketCommentsSpec
 
+        dispatchActionsSpec
+
         describe "LogAnalysis" $ do
             classifierSpec
 
 -- | A utility function for testing which stubs IO and returns
--- the @Config@ with the @DataLayer@ that was passed into it.
-withStubbedIOAndDataLayer :: DataLayer App -> Config
-withStubbedIOAndDataLayer stubbedDataLayer =
-    defaultConfig
-        { cfgDataLayer          = stubbedDataLayer
-        , cfgIOLayer            = stubbedIOLayer
+-- the @Config@.
+stubbedConfig :: Config
+stubbedConfig =
+    emptyConfig
+        { cfgIOLayer            = stubbedIOLayer
         , cfgDBLayer            = emptyDBLayer
-        }
-  where
-    stubbedIOLayer :: IOLayer App
-    stubbedIOLayer =
-        basicIOLayer
-            { iolPrintText      = \_     -> pure ()
-            , iolAppendFile     = \_ _   -> pure ()
-            -- ^ Do nothing with the output
-            }
-
-
--- | A utility function for testing which stubs http network and returns
--- the @Config@ with the @DataLayer@ and @HttpNetworkLayer@ that was passed into it.
-withStubbedNetworkAndDataLayer :: HTTPNetworkLayer -> Config
-withStubbedNetworkAndDataLayer stubbedHttpNetworkLayer =
-    defaultConfig
-        { cfgDataLayer          = basicDataLayer
-        , cfgIOLayer            = stubbedIOLayer
-        , cfgDBLayer            = emptyDBLayer
-        , cfgHTTPNetworkLayer   = stubbedHttpNetworkLayer
         }
   where
     stubbedIOLayer :: IOLayer App
@@ -131,17 +113,17 @@ parsingFailureSpec =
                                    HttpNotFound _ -> True
                                    _              -> False
 
-                        let stubbedHttpNetworkLayer :: HTTPNetworkLayer
+                        let stubbedHttpNetworkLayer :: HTTPNetworkLayer App
                             stubbedHttpNetworkLayer =
-                                basicHTTPNetworkLayer
+                                emptyHTTPNetworkLayer
                                     { hnlApiCall                = \_ _   -> throwM exception
                                     }
 
-                        let stubbedConfig :: Config
-                            stubbedConfig = withStubbedNetworkAndDataLayer stubbedHttpNetworkLayer
+                        let stubbedDataLayer :: DataLayer App
+                            stubbedDataLayer = basicDataLayer stubbedHttpNetworkLayer
 
                         let appExecution :: IO (Maybe TicketInfo)
-                            appExecution = runApp (fetchTicket ticketId) stubbedConfig
+                            appExecution = runApp (fetchTicket stubbedDataLayer ticketId) stubbedConfig
 
                         ticket <- run appExecution
 
@@ -154,18 +136,18 @@ parsingFailureSpec =
 
                     monadicIO $ do
 
-                        let stubbedHttpNetworkLayer :: HTTPNetworkLayer
+                        let stubbedHttpNetworkLayer :: HTTPNetworkLayer App
                             stubbedHttpNetworkLayer =
-                                basicHTTPNetworkLayer
+                                emptyHTTPNetworkLayer
                                     { hnlApiCall                = \_ _   -> throwM exception
                                     }
 
-                        let stubbedConfig :: Config
-                            stubbedConfig = withStubbedNetworkAndDataLayer stubbedHttpNetworkLayer
+                        let stubbedDataLayer :: DataLayer App
+                            stubbedDataLayer = basicDataLayer stubbedHttpNetworkLayer
 
                         -- TODO(ks): There is an indication that we need to propage this exception.
                         let appExecution :: IO [Comment]
-                            appExecution = runApp (fetchTicketComments ticketId) stubbedConfig
+                            appExecution = runApp (fetchTicketComments stubbedDataLayer ticketId) stubbedConfig
 
                         comments <- run appExecution
 
@@ -189,11 +171,8 @@ listAndSortTicketsSpec =
                                 , zlListAdminAgents         =           pure []
                                 }
 
-                    let stubbedConfig :: Config
-                        stubbedConfig = withStubbedIOAndDataLayer stubbedDataLayer
-
                     let appExecution :: IO [TicketInfo]
-                        appExecution = runApp listAndSortTickets stubbedConfig
+                        appExecution = runApp (listAndSortTickets stubbedDataLayer) stubbedConfig
 
                     tickets <- run appExecution
 
@@ -216,11 +195,8 @@ listAndSortTicketsSpec =
                                         , zlListAdminAgents         =           pure agents
                                         }
 
-                            let stubbedConfig :: Config
-                                stubbedConfig = withStubbedIOAndDataLayer stubbedDataLayer
-
                             let appExecution :: IO [TicketInfo]
-                                appExecution = runApp listAndSortTickets stubbedConfig
+                                appExecution = runApp (listAndSortTickets stubbedDataLayer) stubbedConfig
 
                             tickets <- run appExecution
 
@@ -249,11 +225,8 @@ processTicketSpec =
                                     , zlGetAttachment           = \_     -> pure $ Just mempty
                                     }
 
-                        let stubbedConfig :: Config
-                            stubbedConfig = withStubbedIOAndDataLayer stubbedDataLayer
-
                         let appExecution :: IO ZendeskResponse
-                            appExecution = runApp (processTicket . tiId $ ticketInfo) stubbedConfig
+                            appExecution = runApp (processTicket stubbedDataLayer . tiId $ ticketInfo) stubbedConfig
 
                         zendeskResponse <- run appExecution
 
@@ -273,11 +246,8 @@ processTicketSpec =
                                 , zlPostTicketComment = \_ _ -> pure ()
                                 }
 
-                    let stubbedConfig :: Config
-                        stubbedConfig = withStubbedIOAndDataLayer stubbedDataLayer
-
                     let appExecution :: IO ZendeskResponse
-                        appExecution = runApp (processTicket . tiId $ ticketInfo) stubbedConfig
+                        appExecution = runApp (processTicket stubbedDataLayer . tiId $ ticketInfo) stubbedConfig
 
                     zendeskResponse <- run appExecution
 
@@ -300,11 +270,8 @@ processTicketSpec =
                                 , zlGetAttachment     = \_   -> pure $ Just mempty
                                 }
 
-                    let stubbedConfig :: Config
-                        stubbedConfig = withStubbedIOAndDataLayer stubbedDataLayer
-
                     let appExecution :: IO ZendeskResponse
-                        appExecution = runApp (processTicket . tiId $ ticketInfo) stubbedConfig
+                        appExecution = runApp (processTicket stubbedDataLayer . tiId $ ticketInfo) stubbedConfig
 
                     zendeskResponse <- run appExecution
 
@@ -325,11 +292,8 @@ processTicketSpec =
                                 , zlGetAttachment           = \_     -> pure Nothing
                                 }
 
-                    let stubbedConfig :: Config
-                        stubbedConfig = withStubbedIOAndDataLayer stubbedDataLayer
-
                     let appExecution :: IO ZendeskResponse
-                        appExecution = runApp (processTicket . tiId $ ticketInfo) stubbedConfig
+                        appExecution = runApp (processTicket stubbedDataLayer . tiId $ ticketInfo) stubbedConfig
 
                     eZendeskResponse <- run (try appExecution)
 
@@ -355,11 +319,8 @@ processTicketSpec =
                                     , zlGetAttachment           = \_     -> pure Nothing
                                     }
 
-                        let stubbedConfig :: Config
-                            stubbedConfig = withStubbedIOAndDataLayer stubbedDataLayer
-
                         let appExecution :: IO ZendeskResponse
-                            appExecution = runApp (processTicket . tiId $ ticketInfo) stubbedConfig
+                            appExecution = runApp (processTicket stubbedDataLayer . tiId $ ticketInfo) stubbedConfig
 
                         eZendeskResponse <- run (try appExecution)
 
@@ -381,11 +342,8 @@ processTicketSpec =
                                     , zlGetTicketComments       = \_     -> pure empty
                                     }
 
-                        let stubbedConfig :: Config
-                            stubbedConfig = withStubbedIOAndDataLayer stubbedDataLayer
-
                         let appExecution :: IO ZendeskResponse
-                            appExecution = runApp (processTicket ticketId) stubbedConfig
+                            appExecution = runApp (processTicket stubbedDataLayer ticketId) stubbedConfig
 
                         eZendeskResponse <- run (try appExecution)
 
@@ -504,14 +462,11 @@ filterTicketsWithAttachmentsSpec =
                         let stubbedDataLayer :: DataLayer App
                             stubbedDataLayer =
                                 emptyDataLayer
-                                    {
-                                      zlGetTicketComments       = \_     -> pure comments
+                                    { zlGetTicketComments       = \_     -> pure comments
                                     }
-                        let stubbedConfig :: Config
-                            stubbedConfig = withStubbedIOAndDataLayer stubbedDataLayer
 
                         let appExecution :: IO [TicketInfo]
-                            appExecution = runApp (filterTicketsWithAttachments listTickets) stubbedConfig
+                            appExecution = runApp (filterTicketsWithAttachments stubbedDataLayer listTickets) stubbedConfig
 
                         tickets <- run appExecution
                         -- Check we have some tickets.
@@ -528,11 +483,9 @@ filterTicketsWithAttachmentsSpec =
                                 emptyDataLayer
                                     { zlGetTicketComments       = \_     -> pure comments
                                     }
-                        let stubbedConfig :: Config
-                            stubbedConfig = withStubbedIOAndDataLayer stubbedDataLayer
 
                         let appExecution :: IO [TicketInfo]
-                            appExecution = runApp (filterTicketsWithAttachments listTickets) stubbedConfig
+                            appExecution = runApp (filterTicketsWithAttachments stubbedDataLayer listTickets) stubbedConfig
 
                         tickets <- run appExecution
                         -- Check we have some tickets.
@@ -621,11 +574,8 @@ exportZendeskDataToLocalDBSpec =
                                , zlGetTicketComments       = \_     -> pure []
                                }
 
-                   let stubbedConfig :: Config
-                       stubbedConfig = withStubbedIOAndDataLayer stubbedDataLayer
-
                    let appExecution :: IO [TicketInfo]
-                       appExecution = runApp (exportZendeskDataToLocalDB mapNotConcurrent exportFromTime) stubbedConfig
+                       appExecution = runApp (exportZendeskDataToLocalDB stubbedDataLayer exportFromTime) stubbedConfig
 
                    ticketsToExport <- run appExecution
 
@@ -646,11 +596,8 @@ exportZendeskDataToLocalDBSpec =
                                     , zlGetTicketComments       = \_     -> pure []
                                     }
 
-                        let stubbedConfig :: Config
-                            stubbedConfig = withStubbedIOAndDataLayer stubbedDataLayer
-
                         let appExecution :: IO [TicketInfo]
-                            appExecution = runApp (exportZendeskDataToLocalDB mapNotConcurrent exportFromTime) stubbedConfig
+                            appExecution = runApp (exportZendeskDataToLocalDB stubbedDataLayer exportFromTime) stubbedConfig
 
                         ticketsToExport <- run appExecution
 
@@ -672,11 +619,8 @@ exportZendeskDataToLocalDBSpec =
                                     , zlGetTicketComments       = \_     -> pure []
                                     }
 
-                        let stubbedConfig :: Config
-                            stubbedConfig = withStubbedIOAndDataLayer stubbedDataLayer
-
                         let appExecution :: IO [TicketInfo]
-                            appExecution = runApp (exportZendeskDataToLocalDB mapNotConcurrent exportFromTime) stubbedConfig
+                            appExecution = runApp (exportZendeskDataToLocalDB stubbedDataLayer exportFromTime) stubbedConfig
 
                         ticketsToExport <- run appExecution
 
@@ -700,26 +644,14 @@ exportZendeskDataToLocalDBSpec =
                                     , zlGetTicketComments       = \_     -> pure []
                                     }
 
-                        let stubbedConfig :: Config
-                            stubbedConfig = withStubbedIOAndDataLayer stubbedDataLayer
-
                         let appExecution :: IO [TicketInfo]
-                            appExecution = runApp (exportZendeskDataToLocalDB mapNotConcurrent exportFromTime) stubbedConfig
+                            appExecution = runApp (exportZendeskDataToLocalDB stubbedDataLayer exportFromTime) stubbedConfig
 
                         ticketsToExport <- run appExecution
 
                         -- Check that we have tickets.
                         assert . not . null $ ticketsToExport
                         assert $ length ticketsToExport == length listTickets
-  where
-    -- [a] -> Int -> Int -> (a -> m b) -> m [b]
-    mapNotConcurrent
-        :: [TicketInfo]
-        -> Int
-        -> Int
-        -> (TicketInfo -> App (TicketInfo, [Comment]))
-        -> App [(TicketInfo, [Comment])]
-    mapNotConcurrent tickets _ _ fetchTicketData = forM tickets fetchTicketData
 
 getAttachmentsFromCommentSpec :: Spec
 getAttachmentsFromCommentSpec =

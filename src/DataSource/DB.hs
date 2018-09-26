@@ -29,6 +29,8 @@ module DataSource.DB
 
 import           Universum
 
+import           Control.Concurrent.Classy (MonadConc)
+
 import           Control.Exception.Safe (Handler (..), catches)
 import           Control.Monad.Trans.Control (MonadBaseControl)
 
@@ -44,13 +46,13 @@ import           Database.SQLite.Simple.Internal (Connection, Field (..))
 import           Database.SQLite.Simple.Ok (Ok (..))
 import           Database.SQLite.Simple.ToField (ToField (..))
 
-import           DataSource.Http (basicDataLayer)
 import           DataSource.Types (Attachment (..), AttachmentContent (..), AttachmentId (..),
                                    Comment (..), CommentBody (..), CommentId (..), Config,
-                                   DBLayer (..), DataLayer (..), TicketField (..),
+                                   DBLayer (..), TicketField (..),
                                    TicketFieldId (..), TicketFieldValue (..), TicketId (..),
                                    TicketInfo (..), TicketStatus (..), TicketTags (..),
                                    TicketURL (..), UserId (..))
+import           DataSource.Http (DataLayer (..))
 
 ------------------------------------------------------------
 -- Single connection, simple
@@ -123,18 +125,18 @@ emptyDBLayer = DBLayer
 
 -- | The simple connection Zendesk layer. Used for database querying.
 -- We need to sync occasionaly.
-connDataLayer :: forall m. (MonadIO m, MonadCatch m, MonadReader Config m) => DataLayer m
+connDataLayer :: forall m. (MonadIO m, MonadConc m, MonadCatch m, MonadMask m, MonadReader Config m) => DataLayer m
 connDataLayer = DataLayer
     { zlGetTicketInfo           = \tId -> withProdDatabase $ \conn -> getTicketInfoByTicketId conn tId
-    , zlListDeletedTickets      = zlListDeletedTickets basicDataLayer
+    , zlListDeletedTickets      = error "This needs to be combined in a module higher up" -- zlListDeletedTickets basicDataLayer
     , zlListAssignedTickets     = \uId -> withProdDatabase $ \conn -> getAllAssignedTicketsByUser conn uId
     , zlListRequestedTickets    = \uId -> withProdDatabase $ \conn -> getAllRequestedTicketsByUser conn uId
     , zlListUnassignedTickets   =         withProdDatabase getAllUnassignedTicketsByUser
-    , zlListAdminAgents         = zlListAdminAgents basicDataLayer
+    , zlListAdminAgents         = error "This needs to be combined in a module higher up" -- zlListAdminAgents basicDataLayer
     , zlGetAttachment           = \att -> withProdDatabase $ \conn -> DataSource.DB.getAttachmentContent conn att
     , zlGetTicketComments       = \tId -> withProdDatabase $ \conn -> getTicketComments conn tId
-    , zlPostTicketComment       = zlPostTicketComment basicDataLayer
-    , zlExportTickets           = zlExportTickets basicDataLayer
+    , zlPostTicketComment       = error "This needs to be combined in a module higher up" -- zlPostTicketComment basicDataLayer
+    , zlExportTickets           = error "This needs to be combined in a module higher up" -- zlExportTickets basicDataLayer
     }
 
 
@@ -158,20 +160,20 @@ connDBLayer = DBLayer
 -- | The connection pooled Zendesk layer. Used for database querying.
 -- We need to sync occasionaly.
 connPoolDataLayer
-    :: forall m. (MonadBaseControl IO m, MonadIO m, MonadCatch m, MonadReader Config m)
+    :: forall m. (MonadBaseControl IO m, MonadIO m, MonadConc m, MonadCatch m, MonadMask m, MonadReader Config m)
     => DBConnPool
     -> DataLayer m
 connPoolDataLayer connPool = DataLayer
     { zlGetTicketInfo           = \tId -> withConnPool connPool $ \conn -> getTicketInfoByTicketId conn tId
-    , zlListDeletedTickets      = zlListDeletedTickets basicDataLayer
+    , zlListDeletedTickets      = error "This needs to be combined in a module higher up" -- zlListDeletedTickets basicDataLayer
     , zlListAssignedTickets     = \uId -> withConnPool connPool $ \conn -> getAllAssignedTicketsByUser conn uId
     , zlListRequestedTickets    = \uId -> withConnPool connPool $ \conn -> getAllRequestedTicketsByUser conn uId
     , zlListUnassignedTickets   =         withConnPool connPool getAllUnassignedTicketsByUser
-    , zlListAdminAgents         = zlListAdminAgents basicDataLayer
+    , zlListAdminAgents         = error "This needs to be combined in a module higher up" -- zlListAdminAgents basicDataLayer
     , zlGetAttachment           = \att -> withConnPool connPool $ \conn -> DataSource.DB.getAttachmentContent conn att
     , zlGetTicketComments       = \tId -> withConnPool connPool $ \conn -> getTicketComments conn tId
-    , zlPostTicketComment       = zlPostTicketComment basicDataLayer
-    , zlExportTickets           = zlExportTickets basicDataLayer
+    , zlPostTicketComment       = error "This needs to be combined in a module higher up" -- zlPostTicketComment basicDataLayer
+    , zlExportTickets           = error "This needs to be combined in a module higher up" -- zlExportTickets basicDataLayer
     }
 
 
@@ -220,8 +222,8 @@ instance FromField UserId where
     fromField f                             = returnError ConversionFailed f "need an integer, user id"
 
 instance FromField TicketURL where
-    fromField (Field (SQLText tURL) _)      = Ok . TicketURL $ tURL
-    fromField f                             = returnError ConversionFailed f "need a text, ticket url"
+    fromField (Field (SQLText tURL) _) = Ok . TicketURL $ tURL
+    fromField f                        = returnError ConversionFailed f "need a text, ticket url"
 
 -- | TODO(ks): Yes, yes, normal form...
 instance FromField TicketTags where

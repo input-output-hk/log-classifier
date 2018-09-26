@@ -10,37 +10,37 @@ module Statistics
 
 import           Universum
 
-import           DataSource (App, Attachment (..), Comment (..), DataLayer (..), TicketInfo (..),
-                             TicketStatus (..), asksDataLayer)
+import           DataSource (Attachment (..), Comment (..), DataLayer (..), TicketInfo (..),
+                             TicketStatus (..))
 
 -----------------------------------------------------------
 -- Functions
 ------------------------------------------------------------
 
 -- | Show ticket statistics
-showStatistics :: [TicketInfo] -> App [Text]
-showStatistics tickets = do
+showStatistics :: forall m. (Monad m) => DataLayer m -> [TicketInfo] -> m [Text]
+showStatistics dataLayer tickets = do
     let ticketCatCountIO = showTicketCategoryCount tickets
-    ticketWithAttachIO <- showTicketWithAttachments tickets
+    ticketWithAttachIO <- showTicketWithAttachments dataLayer tickets
     return $ ticketCatCountIO <> ticketWithAttachIO
 
 -- | Show all Tickets with Attachments
-showTicketWithAttachments :: [TicketInfo] -> App [Text]
-showTicketWithAttachments tickets = do
-    ticketsWithAttachments <- filterTicketsWithAttachments tickets
-    let ticketsCountIO = "Tickets with Attachments: " <> show (length ticketsWithAttachments) :: Text
-    ticketsWithAttachIO <- concatMapM showTicketAttachments ticketsWithAttachments
+showTicketWithAttachments :: forall m. (Monad m) => DataLayer m -> [TicketInfo] -> m [Text]
+showTicketWithAttachments dataLayer tickets = do
+    ticketsWithAttachments <- filterTicketsWithAttachments dataLayer tickets
+    let ticketsCountIO  = "Tickets with Attachments: " <> show (length ticketsWithAttachments) :: Text
+    ticketsWithAttachIO <- concatMapM (showTicketAttachments dataLayer) ticketsWithAttachments
     return $ ticketsCountIO : ticketsWithAttachIO
 
 -- | Display total, open, and closed tickets
 showTicketCategoryCount :: [TicketInfo] -> [Text]
 showTicketCategoryCount tickets = do
-    let headerIO  =  "--Tickets--" :: Text
-    let totalIO   = "Total: " <> show (length tickets) :: Text
-    let openTickets = filterTicketsByStatus tickets "open"
-    let openIO    =  "Open: " <> show (length openTickets) :: Text
-    let closedTickets = filterTicketsByStatus tickets "closed"
-    let closedIO  =  "Closed: " <> show (length closedTickets) :: Text
+    let headerIO        =  "--Tickets--" :: Text
+    let totalIO         = "Total: " <> show @Text (length tickets)
+    let openTickets     = filterTicketsByStatus tickets "open"
+    let openIO          =  "Open: " <> show @Text (length openTickets)
+    let closedTickets   = filterTicketsByStatus tickets "closed"
+    let closedIO        =  "Closed: " <> show @Text (length closedTickets)
     headerIO : totalIO : openIO : [closedIO]
 
 -- | Show attachment info (Size - URL)
@@ -53,9 +53,9 @@ showCommentAttachments :: Comment -> [Text]
 showCommentAttachments comment = showAttachmentInfo <$> cAttachments comment
 
 -- | Show attachments of a ticket
-showTicketAttachments :: TicketInfo -> App [Text]
-showTicketAttachments ticket = do
-    getTicketComments <- asksDataLayer zlGetTicketComments
+showTicketAttachments :: forall m. (Monad m) => DataLayer m -> TicketInfo -> m [Text]
+showTicketAttachments dataLayer ticket = do
+    let getTicketComments = zlGetTicketComments dataLayer
     getTicketComments (tiId ticket) >>= \comments -> return $ ticketNumIO : concatMap showCommentAttachments comments
     where
         ticketNumIO = " Ticket #" <> (show $ tiId ticket) <> " : " :: Text
@@ -70,16 +70,13 @@ filterTicketsByStatus tickets status =
         ((== TicketStatus statusText) . tiStatus) ticket
 
 -- | Remove tickets without Attachments
-filterTicketsWithAttachments :: [TicketInfo] -> App [TicketInfo]
-filterTicketsWithAttachments = filterM ticketsFilter
+filterTicketsWithAttachments :: forall m. (Monad m) => DataLayer m -> [TicketInfo] -> m [TicketInfo]
+filterTicketsWithAttachments dataLayer = filterM ticketsFilter
   where
-    ticketsFilter :: TicketInfo -> App Bool
-    ticketsFilter = doesTicketHaveAttachments
-
-    commentHasAttachment :: Comment -> Bool
-    commentHasAttachment comment = not $ null (cAttachments comment)
-
-    doesTicketHaveAttachments :: TicketInfo -> App Bool
-    doesTicketHaveAttachments ticket = do
-        getTicketComments <- asksDataLayer zlGetTicketComments
+    ticketsFilter :: TicketInfo -> m Bool
+    ticketsFilter ticket = do
+        let getTicketComments = zlGetTicketComments dataLayer
         any commentHasAttachment <$> getTicketComments (tiId ticket)
+      where
+        commentHasAttachment :: Comment -> Bool
+        commentHasAttachment comment = not $ null (cAttachments comment)

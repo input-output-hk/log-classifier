@@ -70,3 +70,4 @@ parseKnowledge = do
 -- | Parse CSV file and create knowledgebase
 parseKnowLedgeBase :: Parser [ Knowledge ]
 parseKnowLedgeBase = many $ parseKnowledge <* endOfLine
+

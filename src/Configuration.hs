@@ -1,18 +1,18 @@
 -- Here we need to export just the public info.
 module Configuration
-    ( defaultConfig
+    ( emptyConfig
+    , defaultConfig
     , basicIOLayer
+    , emptyIOLayer
     ) where
 
 import           Universum
 
 import           DataSource.DB
-import           DataSource.Http
 import           DataSource.Types
-import           HttpLayer (basicHTTPNetworkLayer)
-
 
 -- | The default configuration.
+-- TODO(ks): Abstract this away!
 defaultConfig :: Config
 defaultConfig = Config
     { cfgAgentId                = 0
@@ -23,10 +23,26 @@ defaultConfig = Config
     , cfgKnowledgebase          = []
     , cfgNumOfLogsToAnalyze     = 5
     , cfgIsCommentPublic        = False -- TODO(ks): For now, we need this in CLI.
-    , cfgDataLayer              = basicDataLayer
-    , cfgHTTPNetworkLayer       = basicHTTPNetworkLayer
+    -- * Layers
     , cfgIOLayer                = basicIOLayer
+    -- TODO(ks): Remove this.
     , cfgDBLayer                = connDBLayer
+    }
+
+-- | The empty configuration. Used in tests.
+emptyConfig :: Config
+emptyConfig = Config
+    { cfgAgentId                = 0
+    , cfgZendesk                = mempty
+    , cfgToken                  = mempty
+    , cfgEmail                  = mempty
+    , cfgAssignTo               = 0
+    , cfgKnowledgebase          = mempty
+    , cfgNumOfLogsToAnalyze     = 5
+    , cfgIsCommentPublic        = True
+    -- * Layers
+    , cfgIOLayer                = emptyIOLayer
+    , cfgDBLayer                = emptyDBLayer
     }
 
 -- | The @IO@ layer.
@@ -37,5 +53,15 @@ basicIOLayer = IOLayer
     , iolReadFile               = readFile
     , iolLogDebug               = putTextLn
     , iolLogInfo                = putTextLn
+    }
+
+-- | The empty @IO@ layer.
+emptyIOLayer :: IOLayer App
+emptyIOLayer = IOLayer
+    { iolAppendFile             = \_ _   -> pure ()
+    , iolPrintText              = \_     -> pure ()
+    , iolReadFile               = \_     -> pure mempty
+    , iolLogDebug               = \_     -> pure ()
+    , iolLogInfo                = \_     -> pure ()
     }
 

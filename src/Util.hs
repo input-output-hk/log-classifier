@@ -34,3 +34,4 @@ readZip rawzip = case Zip.toArchiveOrFail rawzip of
     finishProcessing = Map.fromList . map handleEntry . Zip.zEntries
     handleEntry :: Zip.Entry -> (FilePath, LByteString)
     handleEntry entry = (Zip.eRelativePath entry, Zip.fromEntry entry)
+
