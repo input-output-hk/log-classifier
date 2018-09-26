@@ -14,6 +14,8 @@ module LogAnalysis.Types
        , setupAnalysis
        , renderErrorCode
        , toComment
+       , isJSONFormat
+       , isTxtFormat
        ) where
 
 import           Prelude (Show (..))
@@ -70,6 +72,20 @@ getLogFileContent :: LogFile -> ByteString
 getLogFileContent = \case
     TxtFormat  content      -> content
     JSONFormat content      -> content
+
+-- | Determine whether given 'LogFile' is an 'TxtFormat'
+isJSONFormat :: LogFile -> Bool
+isJSONFormat = \case
+   JSONFormat _ -> True
+   _            -> False
+
+-- | Determine whether given 'LogFile' is an 'TxtFormat'
+-- Right now, this is equivalent to  @not . isJSONFormat@ but we might be supporting
+-- other formats as well so I've implemented like below.
+isTxtFormat :: LogFile -> Bool
+isTxtFormat = \case
+   TxtFormat _ -> True
+   _           -> False
 
 instance Show Knowledge where
     show Knowledge{..} =

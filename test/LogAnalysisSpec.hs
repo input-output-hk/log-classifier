@@ -18,7 +18,8 @@ import           Test.QuickCheck.Monadic (PropertyM, assert, monadicIO, run)
 import           LogAnalysis.Classifier (extractIssuesFromLogs, extractMessages)
 import           LogAnalysis.Exceptions (LogAnalysisException (..))
 import           LogAnalysis.Types (Analysis, CardanoLog, CoordinatedUniversalTime (..),
-                                    Knowledge (..), LogFile, setupAnalysis, toLogFile)
+                                    Knowledge (..), LogFile, isJSONFormat, isTxtFormat,
+                                    setupAnalysis, toLogFile)
 
 -- | Classifier tests
 classifierSpec :: Spec
@@ -32,6 +33,16 @@ classifierSpec = do
        prop "should be able to perform JSON serialization roundtrip" $
            \(cardanoLog :: CardanoLog) ->
                 (decode . encode) cardanoLog `shouldBe` Just cardanoLog
+
+    describe "toLogfile" $ modifyMaxSuccess (const 1000) $ do
+        it "should distinguish json file as JSONFormat" $
+            forAll genLogJSONFilePath $ \path ->
+                let logFile = toLogFile path mempty
+                in isJSONFormat logFile `shouldBe` True
+        it "should distinguish text file as TxtFormat" $
+            forAll genLogFilePath $ \path ->
+                let logFile = toLogFile path mempty
+                in isTxtFormat logFile `shouldBe` True
 
     describe "extractMessages" $ modifyMaxSuccess (const 100) $ do
         it "should be able to extract log messages from JSON file" $
