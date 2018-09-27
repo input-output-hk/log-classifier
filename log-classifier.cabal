@@ -31,6 +31,7 @@ library
                        Http.Layer
                        Http.Queue
                        Http.Exceptions
+                       Web.Server
   other-modules:       Paths_log_classifier
                        DataSource.DB
                        DataSource.Types
@@ -63,6 +64,11 @@ library
                      -- Database backend
                      , sqlite-simple 
                      , resource-pool
+                     -- servant
+                     , servant
+                     , servant-server
+                     , warp
+                     , wai-extra
 
   default-language:    Haskell2010
   default-extensions: TypeOperators

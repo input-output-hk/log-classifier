@@ -2,7 +2,9 @@ module Main where
 
 import           Universum
 
-import           Lib (runZendeskMain)
+--import           Lib (runZendeskMain)
+import           Web.Server (mainFn)
 
 main :: IO ()
-main = runZendeskMain
+main = mainFn
+--main = runZendeskMain
