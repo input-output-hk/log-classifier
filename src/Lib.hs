@@ -3,7 +3,6 @@
 
 module Lib
     ( runZendeskMain
-    , collectEmails
     , getZendeskResponses
     , getAttachmentsFromComment
     , processTicket
@@ -26,7 +25,7 @@ import           UnliftIO.Async (mapConcurrently)
 import           Data.Attoparsec.Text.Lazy (eitherResult, parse)
 import qualified Data.ByteString.Lazy as BS
 import           Data.List (nub)
-import           Data.Text (isInfixOf, stripEnd)
+import           Data.Text (stripEnd)
 
 import           System.Directory (createDirectoryIfMissing)
 import           System.IO (BufferMode (..), hSetBuffering)
@@ -34,7 +33,7 @@ import           System.IO (BufferMode (..), hSetBuffering)
 import           CLI (CLI (..), getCliArgs)
 import           Configuration (defaultConfig)
 import           DataSource (App, Attachment (..), AttachmentContent (..), Comment (..),
-                             CommentBody (..), Config (..), DBLayer (..), DataLayer (..),
+                             Config (..), DBLayer (..), DataLayer (..),
                              DeletedTicket (..), ExportFromTime (..), IOLayer (..), TicketId (..),
                              TicketInfo (..), TicketStatus (..), TicketTag (..), TicketTags (..),
                              User (..), UserId (..), ZendeskResponse (..), asksDBLayer, asksIOLayer,
@@ -91,7 +90,6 @@ runZendeskMain = do
 
     -- At this point, the configuration is set up and there is no point in using a pure IO.
     case args of
-        CollectEmails                   -> runApp (collectEmails dataLayer) cfg
         FetchAgents                     -> void $ runApp (fetchAgents dataLayer) cfg
         FetchTickets                    -> runApp (fetchAndShowTickets dataLayer) cfg
         FetchTicketsFromTime fromTime   -> runApp (fetchAndShowTicketsFrom dataLayer fromTime) cfg
@@ -209,22 +207,6 @@ saveTicketDataToLocalDB (ticket, ticketComments) = do
             insertCommentAttachments ticketComment ticketAttachment
 
     pure ()
-
--- | TODO(hs): Remove this function since it's not used
-collectEmails :: DataLayer App -> App ()
-collectEmails dataLayer = do
-    cfg <- ask
-
-    let email   = cfgEmail cfg
-    let userId  = UserId . fromIntegral $ cfgAgentId cfg
-
-    -- We first fetch the function from the configuration
-    let listTickets = zlListAssignedTickets dataLayer
-    putTextLn $ "Classifier is going to extract emails requested by: " <> email
-    tickets     <- listTickets userId
-    putTextLn $ "There are " <> show (length tickets) <> " tickets requested by this user."
-    let ticketIds = foldr (\TicketInfo{..} acc -> tiId : acc) [] tickets
-    mapM_ (extractEmailAddress dataLayer) ticketIds
 
 fetchAgents :: DataLayer App -> App [User]
 fetchAgents dataLayer = do
@@ -412,19 +394,6 @@ listAndSortUnassignedTickets dataLayer = do
 
     pure sortedTicketIds
 
--- TODO (hs): Remove this function since it's not used anymore
-extractEmailAddress :: DataLayer App -> TicketId -> App ()
-extractEmailAddress dataLayer ticketId = do
-    -- Fetch the function from the configuration.
-    let getTicketComments = zlGetTicketComments dataLayer
-
-    comments <- getTicketComments ticketId
-    let (CommentBody commentWithEmail) = cBody $ fromMaybe (error "No comment") (safeHead comments)
-    let emailAddress = fromMaybe (error "No email") (safeHead $ lines commentWithEmail)
-    liftIO $ guard ("@" `isInfixOf` emailAddress)
-    liftIO $ appendFile "emailAddress.txt" (emailAddress <> "\n")
-    liftIO $ putTextLn emailAddress
-
 -- | A pure function for fetching @Attachment@ from @Comment@.
 getAttachmentsFromComment :: [Comment] -> [Attachment]
 getAttachmentsFromComment comments = do
@@ -589,7 +558,7 @@ filterAnalyzedTickets ticketsInfo =
 
     -- | If we have a ticket we are having issues with...
     isTicketBlacklisted :: TicketInfo -> Bool
-    isTicketBlacklisted TicketInfo{..} = tiId `notElem` [TicketId 9377,TicketId 10815, TicketId 15066, TicketId 30849]
+    isTicketBlacklisted TicketInfo{..} = tiId `notElem` [TicketId 9377, TicketId 10815, TicketId 15066, TicketId 30849]
 
     isTicketInGoguenTestnet :: TicketInfo -> Bool
     isTicketInGoguenTestnet TicketInfo{..} = "goguen_testnets" `notElem` getTicketTags tiTags
