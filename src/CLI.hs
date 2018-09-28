@@ -91,19 +91,17 @@ cli = hsubparser $ mconcat
         ProcessTicketsFromTime <$> option exportFromTimeReader (long "time"
             <> metavar "TIME"
             <> help "The time (dd.mm.YYYY) from which we process the changed tickets.")
+    exportFromTimeReader :: ReadM ExportFromTime
+    exportFromTimeReader = eitherReader $ \arg -> do
 
+        day <- case parseTimeM True defaultTimeLocale "%d.%m.%Y" arg of
+            Nothing  -> Left ("Cannot parse date: " ++ arg)
+            Just day -> Right day
 
-exportFromTimeReader :: ReadM ExportFromTime
-exportFromTimeReader = eitherReader $ \arg -> do
+        let utctime     = UTCTime day 0
+        let posixTime   = utcTimeToPOSIXSeconds utctime
 
-    day <- case parseTimeM True defaultTimeLocale "%d.%m.%Y" arg of
-        Nothing  -> Left ("Cannot parse date: " ++ arg)
-        Just day -> Right day
-
-    let utctime     = UTCTime day 0
-    let posixTime   = utcTimeToPOSIXSeconds utctime
-
-    pure $ ExportFromTime posixTime
+        pure $ ExportFromTime posixTime
 
 -- | Get CLI arguments from command line
 getCliArgs :: IO CLI
