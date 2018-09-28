@@ -15,7 +15,7 @@ import           DataSource.Types
 -- TODO(ks): Abstract this away!
 defaultConfig :: Config
 defaultConfig = Config
-    { cfgAgentId                = 0
+    { cfgAgentId                = UserId 0
     , cfgZendesk                = "https://iohk.zendesk.com"
     , cfgToken                  = ""
     , cfgEmail                  = "daedalus-bug-reports@iohk.io"
@@ -32,7 +32,7 @@ defaultConfig = Config
 -- | The empty configuration. Used in tests.
 emptyConfig :: Config
 emptyConfig = Config
-    { cfgAgentId                = 0
+    { cfgAgentId                = UserId 0
     , cfgZendesk                = mempty
     , cfgToken                  = mempty
     , cfgEmail                  = mempty

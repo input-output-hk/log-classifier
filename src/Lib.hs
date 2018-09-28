@@ -79,7 +79,7 @@ runZendeskMain = do
     let cfg     = defaultConfig
                     { cfgToken         = stripEnd token
                     , cfgAssignTo      = assignTo
-                    , cfgAgentId       = assignTo
+                    , cfgAgentId       = UserId (fromIntegral assignTo)
                     , cfgKnowledgebase = knowledges
                     , cfgDBLayer       = connPoolDBLayer connPool
                     }

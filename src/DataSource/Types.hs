@@ -98,7 +98,7 @@ runApp (App a) = runReaderT a
 
 -- | The basic configuration.
 data Config = Config
-    { cfgAgentId            :: !Integer
+    { cfgAgentId            :: !UserId
     -- ^ Zendesk agent id
     , cfgZendesk            :: !Text
     -- ^ URL to Zendesk
@@ -115,9 +115,9 @@ data Config = Config
     , cfgIsCommentPublic    :: !Bool
     -- ^ If the comment is public or not, for a test run we use an internal comment.
     , cfgIOLayer            :: !(IOLayer App)
-    -- ^ The _IO@ layer. This is containing all the functions we have for IO.
+    -- ^ The __IO__ layer. This is containing all the functions we have for IO.
     , cfgDBLayer            :: !(DBLayer App)
-    -- ^ The _DB_ layer. This is containing all the modification functions.
+    -- ^ The __DB__ layer. This is containing all the modification functions.
     -- TODO(ks): @Maybe@ db layer. It's not really required.
     }
 
@@ -320,7 +320,7 @@ data Comment = Comment
     -- ^ Attachment
     , cPublic      :: !Bool
     -- ^ Flag of whether comment should be public
-    , cAuthor      :: !Integer
+    , cAuthor      :: !UserId
     -- ^ Author of comment
     } deriving (Eq, Show)
 
@@ -854,7 +854,7 @@ instance ToJSON Comment where
         object  [ "body"            .= b
                 , "attachments"     .= as
                 , "public"          .= public
-                , "author_id"       .= author
+                , "author_id"       .= getUserId author
                 ]
 
 -- TODO (hs): Erase ths since it's not used
