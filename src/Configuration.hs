@@ -8,8 +8,8 @@ module Configuration
 
 import           Universum
 
-import           DataSource.DB
-import           DataSource.Types
+import           DataSource.DB (connDBLayer, emptyDBLayer)
+import           DataSource.Types (App, Config (..), IOLayer (..), UserId (..))
 
 -- | The default configuration.
 -- TODO(ks): Abstract this away!
@@ -64,4 +64,3 @@ emptyIOLayer = IOLayer
     , iolLogDebug               = \_     -> pure ()
     , iolLogInfo                = \_     -> pure ()
     }
-
