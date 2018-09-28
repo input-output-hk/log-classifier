@@ -113,11 +113,11 @@ runDispatch sc@(SchedulerConfig numberOfRequests qsem delay) action = do
     caughtAction :: m a
     caughtAction = action `catch` \(e :: HttpNetworkLayerException) ->
         case e of
-            -- | Replay.
+            -- Replay.
             HttpTooManyRequests _   ->
                 delay >> runDispatch sc action
 
-            -- | Rethrow.
+            -- Rethrow.
             otherExceptions         ->
                 throwM otherExceptions
 

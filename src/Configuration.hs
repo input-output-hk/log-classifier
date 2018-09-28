@@ -23,7 +23,7 @@ defaultConfig = Config
     , cfgKnowledgebase          = []
     , cfgNumOfLogsToAnalyze     = 5
     , cfgIsCommentPublic        = False -- TODO(ks): For now, we need this in CLI.
-    -- * Layers
+    -- Layers
     , cfgIOLayer                = basicIOLayer
     -- TODO(ks): Remove this.
     , cfgDBLayer                = connDBLayer
@@ -40,7 +40,7 @@ emptyConfig = Config
     , cfgKnowledgebase          = mempty
     , cfgNumOfLogsToAnalyze     = 5
     , cfgIsCommentPublic        = True
-    -- * Layers
+    -- Layers
     , cfgIOLayer                = emptyIOLayer
     , cfgDBLayer                = emptyDBLayer
     }
