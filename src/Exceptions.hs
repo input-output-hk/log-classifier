@@ -13,11 +13,11 @@ import           Prelude (Show (..))
 -- | Exceptions that can occur during ticket processing
 data ProcessTicketExceptions
     = AttachmentNotFound TicketId
-    -- ^ Could not fetch the attachment even though ticket info has the url of the attachment
+    -- ^ Could not fetch the attachment even though ticket info has download URL for its 'Attachment'
     | CommentAndAttachmentNotFound TicketId
-    -- ^ Both attachment and comment were not found
+    -- ^ Both 'Attachment' and 'Comment' were not found
     | TicketInfoNotFound TicketId
-    -- ^ TicketInfo could not be fetched
+    -- ^ 'TicketInfo' could not be fetched
     deriving (Eq)
 
 -- | Exception for reading zip files
@@ -43,5 +43,6 @@ instance Show ProcessTicketExceptions where
     show (CommentAndAttachmentNotFound tid) = "Both comment and attachment were not found on ticket ID: " <> showTicketId tid
     show (TicketInfoNotFound tid)           = "Ticket information was not found on ticket ID: " <> showTicketId tid
 
+-- | Convert 'TicketId' into 'String'
 showTicketId :: TicketId -> String
 showTicketId tid = Universum.show (getTicketId tid)

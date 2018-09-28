@@ -21,7 +21,7 @@ import           LogAnalysis.Types (Analysis, CardanoLog, CoordinatedUniversalTi
                                     Knowledge (..), LogFile, isJSONFormat, isTxtFormat,
                                     setupAnalysis, toLogFile)
 
--- | Classifier tests
+-- | Tests for classifier module
 classifierSpec :: Spec
 classifierSpec = do
     describe "CardanoLog JSON" $ modifyMaxSuccess (const 1000) $ do

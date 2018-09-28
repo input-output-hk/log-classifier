@@ -42,6 +42,7 @@ data HTTPNetworkLayer m = HTTPNetworkLayer
     , hnlApiCallBare    :: Request -> m BL.ByteString
     }
 
+-- | Basic Http network layer
 basicHTTPNetworkLayer
     :: forall m. (MonadIO m, MonadCatch m, MonadMask m, MonadConc m)
     => SchedulerConfig m

@@ -10,7 +10,6 @@ module DataSource.Types
     , Comment (..)
     , CommentId (..)
     , CommentBody (..)
-    , CommentOuter (..)
     , PageResultList (..)
     , RequestType (..)
     , DeletedTicket (..)
@@ -74,6 +73,7 @@ import           Test.QuickCheck (Arbitrary (..), elements, listOf1, sublistOf)
 -- Configuration
 ------------------------------------------------------------
 
+-- | Monad stack used within classifier
 newtype App a = App { runAppBase :: ReaderT Config IO a }
     deriving ( Applicative
              , Functor
@@ -99,13 +99,13 @@ runApp (App a) = runReaderT a
 -- | The basic configuration.
 data Config = Config
     { cfgAgentId            :: !UserId
-    -- ^ Zendesk agent id
+    -- ^ Zendesk agent Id. This will be used to post response on the ticket
     , cfgZendesk            :: !Text
     -- ^ URL to Zendesk
     , cfgToken              :: !Text
     -- ^ Zendesk token
     , cfgEmail              :: !Text
-    -- ^ Email address of the user the classifier will process on
+    -- ^ Email address of the agent the classifier will process on
     , cfgAssignTo           :: !Integer
     -- ^ User that will be assigned to after the classifier has done the analysis
     , cfgKnowledgebase      :: ![Knowledge]
@@ -115,9 +115,9 @@ data Config = Config
     , cfgIsCommentPublic    :: !Bool
     -- ^ If the comment is public or not, for a test run we use an internal comment.
     , cfgIOLayer            :: !(IOLayer App)
-    -- ^ The __IO__ layer. This is containing all the functions we have for IO.
+    -- ^ The @IO@ layer. This is containing all the functions we have for @IO@.
     , cfgDBLayer            :: !(DBLayer App)
-    -- ^ The __DB__ layer. This is containing all the modification functions.
+    -- ^ The @DB@ layer. This is containing all the modification functions.
     -- TODO(ks): @Maybe@ db layer. It's not really required.
     }
 
@@ -197,6 +197,7 @@ instance ToURL TicketId where
 instance ToURL ExportFromTime where
     toURL (ExportFromTime time) = show @_ @Integer . floor . toRational $ time
 
+-- | List of Zendesk Res APIs used within classifier
 data ZendeskAPIUrl
     = AgentGroupURL
     | DeletedTicketsURL
@@ -210,6 +211,7 @@ data ZendeskAPIUrl
     | ExportDataByTimestamp ExportFromTime
     deriving (Eq, Generic)
 
+-- | Render given 'ZendeskAPIUrl' into 'Text'
 showURL :: ZendeskAPIUrl -> Text
 showURL AgentGroupURL                       = "/users.json?role%5B%5D=admin&role%5B%5D=agent"
 showURL DeletedTicketsURL                   = "/deleted_tickets.json"
@@ -294,12 +296,16 @@ data RequestType
     = Requested
     | Assigned
 
--- | The response for ZenDesk.
+-- | The response for Zendesk.
 data ZendeskResponse = ZendeskResponse
     { zrTicketId :: !TicketId
+    -- ^ 'TicketId' to respond to
     , zrComment  :: !Text
+    -- ^ Comment body of response
     , zrTags     :: !TicketTags
+    -- ^ 'TicketTags' attached to the response
     , zrIsPublic :: !Bool
+    -- ^ Flag of weather the response should be public/private
     } deriving (Eq, Show)
 
 newtype CommentId = CommentId
@@ -313,7 +319,7 @@ newtype CommentBody = CommentBody
 -- | Comments
 data Comment = Comment
     { cId          :: !CommentId
-    -- ^ The ID of the comment
+    -- ^ The Id of the comment
     , cBody        :: !CommentBody
     -- ^ Body of comment
     , cAttachments :: ![Attachment]
@@ -324,19 +330,16 @@ data Comment = Comment
     -- ^ Author of comment
     } deriving (Eq, Show)
 
--- | Outer comment ??
-newtype CommentOuter = CommentOuter {
-      coComment :: Comment
-    }
-
 -- | Zendesk ticket
 data Ticket = Ticket
     { tComment     :: !Comment
     -- ^ Ticket comment
     , tTag         :: !TicketTags
+    -- ^ Tags attached to the ticket
     , tField       :: ![TicketField]
+    -- ^ List of 'TicketField' associated with ticket
     , tCustomField :: ![TicketField]
-    -- ^ Tags attached to ticket
+    -- ^ List of custom 'TicketField' associated with ticket
     }
 
 newtype TicketFieldId = TicketFieldId
@@ -357,10 +360,12 @@ instance ToJSON TicketFieldValue where
     toJSON (TicketFieldValueText value) = toJSON value
     toJSON (TicketFieldValueBool value) = toJSON value
 
-
+-- | Custom field
 data TicketField = TicketField
     { tfId    :: TicketFieldId
+    -- ^ Id of an field
     , tfValue :: Maybe TicketFieldValue
+    -- ^ Value of given field
     } deriving (Eq, Show, Ord)
 
 -- TODO(ks): We need to verify this still works, we don't have any
@@ -442,10 +447,14 @@ data DeletedTicket = DeletedTicket
     { dtId      :: !TicketId
     } deriving (Eq, Show, Generic)
 
+-- | Representation of how Zendesk returns various informations via API
 data PageResultList a = PageResultList
     { prlResults  :: ![a]
+    -- ^ List of informations
     , prlNextPage :: !(Maybe Text)
+    -- ^ URL to the next page
     , prlCount    :: !(Maybe Int)
+    -- ^ Number of results
     }
 
 newtype ExportFromTime = ExportFromTime
@@ -857,12 +866,6 @@ instance ToJSON Comment where
                 , "author_id"       .= getUserId author
                 ]
 
--- TODO (hs): Erase ths since it's not used
-instance ToJSON CommentOuter where
-    toJSON (CommentOuter c) =
-        object  [ "comment"         .= c
-                ]
-
 instance ToJSON TicketField where
     toJSON (TicketField fid fvalue) =
         object [ "id"               .= fid
@@ -896,6 +899,7 @@ instance Ord TicketInfo where
 -- JSON parsers
 ------------------------------------------------------------
 
+-- | Parse given value into 'TicketInfo'
 parseTicket :: Value -> Parser TicketInfo
 parseTicket = withObject "ticket" $ \o -> o .: "ticket"
 

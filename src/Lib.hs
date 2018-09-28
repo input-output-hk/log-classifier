@@ -13,7 +13,7 @@ module Lib
     , listAndSortTickets
     , filterAnalyzedTickets
     , exportZendeskDataToLocalDB
-    -- * optional
+    -- * Optional
     , fetchTicket
     , fetchTicketComments
     ) where
@@ -59,6 +59,7 @@ import           Util (extractLogsFromZip)
 -- Functions
 ------------------------------------------------------------
 
+-- | Main function for the log-classifier
 runZendeskMain :: IO ()
 runZendeskMain = do
     createDirectoryIfMissing True "logs"
@@ -310,7 +311,7 @@ processTickets dataLayer = do
 
     putTextLn "All the tickets has been processed."
 
--- | Fetch all tickets.
+-- | Fetch all tickets that needs to be analyzed
 fetchTickets :: DataLayer App -> App [TicketInfo]
 fetchTickets dataLayer = do
     sortedTicketIds             <- listAndSortTickets dataLayer
@@ -321,20 +322,21 @@ fetchTickets dataLayer = do
     -- Anything that has a "to_be_analysed" tag
     pure $ filter (elem (renderTicketStatus ToBeAnalyzed) . getTicketTags . tiTags) allTickets
 
--- | Fetch a single ticket if found.
+-- | Fetch a single ticket with given 'TicketId'
 fetchTicket :: DataLayer App -> TicketId -> App (Maybe TicketInfo)
 fetchTicket dataLayer ticketId = do
     let getTicketInfo       = zlGetTicketInfo dataLayer
     getTicketInfo ticketId
 
 
--- | Fetch comments from a ticket, if the ticket is found.
+-- | Fetch comments with given 'TicketId'
 fetchTicketComments :: DataLayer App -> TicketId -> App [Comment]
 fetchTicketComments dataLayer ticketId = do
     let getTicketComments   = zlGetTicketComments dataLayer
     getTicketComments ticketId
 
 
+-- | Fetch tickets that need to be analyzed and print them on console
 fetchAndShowTickets :: DataLayer App -> App ()
 fetchAndShowTickets dataLayer = do
     allTickets  <- fetchTickets dataLayer
@@ -360,6 +362,7 @@ fetchAndShowTicketsFrom dataLayer exportFromTime = do
 
     putTextLn "All the tickets has been processed."
 
+-- | List and sort tickets
 -- TODO(ks): Extract repeating code, generalize.
 listAndSortTickets :: HasCallStack => DataLayer App -> App [TicketInfo]
 listAndSortTickets dataLayer = do
@@ -381,6 +384,7 @@ listAndSortTickets dataLayer = do
 
     pure sortedTicketIds
 
+-- | Fetch tickets that are unassigned to Zendesk agents
 listAndSortUnassignedTickets :: HasCallStack => DataLayer App -> App [TicketInfo]
 listAndSortUnassignedTickets dataLayer = do
 
@@ -394,7 +398,7 @@ listAndSortUnassignedTickets dataLayer = do
 
     pure sortedTicketIds
 
--- | A pure function for fetching @Attachment@ from @Comment@.
+-- | A pure function for fetching 'Attachment' from 'Comment'
 getAttachmentsFromComment :: [Comment] -> [Attachment]
 getAttachmentsFromComment comments = do
     -- Filter tickets without logs
@@ -412,7 +416,7 @@ getAttachmentsFromComment comments = do
     commentHasAttachment :: Comment -> Bool
     commentHasAttachment comment = length (cAttachments comment) > 0
 
-    -- Readability
+    -- For readability
     isAttachmentZip :: Attachment -> Bool
     isAttachmentZip attachment = aContentType attachment `elem`
         ["application/zip", "application/x-zip-compressed"]

@@ -13,6 +13,7 @@ import           Test.QuickCheck (Arbitrary (..), oneof)
 -- Exceptions
 ------------------------------------------------------------
 
+-- | Exceptions on Http network layer
 data HttpNetworkLayerException
     = HttpDecodingJSON Request String
     -- 4XX

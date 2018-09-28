@@ -64,7 +64,9 @@ data Knowledge = Knowledge
 -- | File format
 data LogFile
     = TxtFormat     !ByteString
+    -- ^ Text file
     | JSONFormat    !ByteString
+    -- ^ JSON file
     deriving (Eq, Show)
 
 -- | Get content from either.
