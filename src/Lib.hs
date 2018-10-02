@@ -5,7 +5,6 @@ module Lib
     ( createBasicDataLayerIO
     , createConfig
     -- * library functions
-    , collectEmails
     , getZendeskResponses
     , getAttachmentsFromComment
     , processTicket
@@ -16,12 +15,7 @@ module Lib
     , listAndSortTickets
     , filterAnalyzedTickets
     , exportZendeskDataToLocalDB
-    , fetchAgents
-    , processTicketsFromTime
-    , fetchAndShowTickets
-    , fetchAndShowTicketsFrom
-    , inspectLocalZipAttachment
-    -- * optional
+    -- * Optional
     , fetchTicket
     , fetchTicketComments
     ) where
@@ -31,25 +25,23 @@ import           Universum
 import           UnliftIO.Async (mapConcurrently)
 
 import           Data.Attoparsec.Text.Lazy (eitherResult, parse)
-import qualified Data.ByteString.Lazy as BS
 import           Data.List (nub)
-import           Data.Text (isInfixOf, stripEnd)
+import           Data.Text (stripEnd)
 
 import           System.Directory (createDirectoryIfMissing)
 import           System.IO (BufferMode (..), hSetBuffering)
 
 import           Configuration (defaultConfig)
 import           DataSource (App, Attachment (..), AttachmentContent (..), Comment (..),
-                             CommentBody (..), Config (..), DBLayer (..), DataLayer (..),
-                             DeletedTicket (..), ExportFromTime (..), IOLayer (..), TicketId (..),
-                             TicketInfo (..), TicketStatus (..), TicketTag (..), TicketTags (..),
-                             User (..), UserId (..), ZendeskResponse (..), asksDBLayer, asksIOLayer,
+                             Config (..), DBLayer (..), DataLayer (..), DeletedTicket (..),
+                             ExportFromTime (..), IOLayer (..), TicketId (..), TicketInfo (..),
+                             TicketStatus (..), TicketTag (..), TicketTags (..), User (..),
+                             UserId (..), ZendeskResponse (..), asksDBLayer, asksIOLayer,
                              assignToPath, basicDataLayer, connPoolDBLayer,
                              createProdConnectionPool, knowledgebasePath, renderTicketStatus,
                              runApp, tokenPath)
 
-import           Exceptions (ClassifierExceptions (..), ProcessTicketExceptions (..),
-                             ZipFileExceptions (..))
+import           Exceptions (ClassifierExceptions (..), ProcessTicketExceptions (..))
 import           Http.Layer (basicHTTPNetworkLayer)
 import           Http.Queue (createSchedulerConfig, runScheduler)
 
@@ -85,7 +77,7 @@ createConfig = do
     pure defaultConfig
         { cfgToken         = stripEnd token
         , cfgAssignTo      = assignTo
-        , cfgAgentId       = assignTo
+        , cfgAgentId       = UserId (fromIntegral assignTo)
         , cfgKnowledgebase = knowledges
         , cfgDBLayer       = connPoolDBLayer connPool
         }
@@ -201,36 +193,6 @@ saveTicketDataToLocalDB (ticket, ticketComments) = do
 
     pure ()
 
--- | TODO(hs): Remove this function since it's not used
-collectEmails :: DataLayer App -> App ()
-collectEmails dataLayer = do
-    cfg <- ask
-
-    let email   = cfgEmail cfg
-    let userId  = UserId . fromIntegral $ cfgAgentId cfg
-
-    -- We first fetch the function from the configuration
-    let listTickets = zlListAssignedTickets dataLayer
-    putTextLn $ "Classifier is going to extract emails requested by: " <> email
-    tickets     <- listTickets userId
-    putTextLn $ "There are " <> show (length tickets) <> " tickets requested by this user."
-    let ticketIds = foldr (\TicketInfo{..} acc -> tiId : acc) [] tickets
-    mapM_ (extractEmailAddress dataLayer) ticketIds
-
-fetchAgents :: DataLayer App -> App [User]
-fetchAgents dataLayer = do
-    Config{..}          <- ask
-
-    let listAdminAgents = zlListAdminAgents dataLayer
-    printText           <- asksIOLayer iolPrintText
-
-    printText "Fetching Zendesk agents"
-
-    agents              <- listAdminAgents
-
-    mapM_ print agents
-    pure agents
-
 -- | 'processTicket' with exception handling
 processTicketSafe :: DataLayer App ->TicketId -> App ()
 processTicketSafe dataLayer tId = catch (void $ processTicket dataLayer tId)
@@ -267,43 +229,6 @@ processTicket dataLayer tId = do
 
             pure zendeskResponse
 
--- | When we want to process all tickets from a specific time onwards.
--- Run in parallel.
-processTicketsFromTime :: DataLayer App -> ExportFromTime -> App ()
-processTicketsFromTime dataLayer exportFromTime = do
-
-    allTickets          <- fetchTicketsExportedFromTime dataLayer exportFromTime
-
-    putTextLn $ "There are " <> show (length allTickets) <> " tickets."
-
-    mZendeskResponses   <- mapConcurrently (processTicket dataLayer . tiId) allTickets
-
-    -- This is single-threaded.
-    mapM_ processSingleTicket mZendeskResponses
-
-    putTextLn "All the tickets has been processed."
-  where
-    -- | Process a single ticket after they were analyzed.
-    processSingleTicket :: ZendeskResponse -> App ()
-    processSingleTicket zendeskResponse = do
-
-        -- We first fetch the function from the configuration
-        printText           <- asksIOLayer iolPrintText
-        appendF             <- asksIOLayer iolAppendFile -- We need to remove this.
-
-        let ticketId = getTicketId $ zrTicketId zendeskResponse
-
-        -- Printing id before inspecting the ticket so that when the process stops by the
-        -- corrupted log file, we know which id to blacklist.
-        printText $ "Analyzing ticket id: " <> show ticketId
-
-        let tags = getTicketTags $ zrTags zendeskResponse
-        forM_ tags $ \tag -> do
-            let formattedTicketIdAndTag = show ticketId <> " " <> tag
-            printText formattedTicketIdAndTag
-            appendF "logs/analysis-result.log" (formattedTicketIdAndTag <> "\n")
-
-
 -- | When we want to process all possible tickets.
 processTickets :: HasCallStack => DataLayer App -> App ()
 processTickets dataLayer = do
@@ -320,7 +245,7 @@ processTickets dataLayer = do
 
     putTextLn "All the tickets has been processed."
 
--- | Fetch all tickets.
+-- | Fetch all tickets that needs to be analyzed
 fetchTickets :: DataLayer App -> App [TicketInfo]
 fetchTickets dataLayer = do
     sortedTicketIds             <- listAndSortTickets dataLayer
@@ -331,45 +256,21 @@ fetchTickets dataLayer = do
     -- Anything that has a "to_be_analysed" tag
     pure $ filter (elem (renderTicketStatus ToBeAnalyzed) . getTicketTags . tiTags) allTickets
 
--- | Fetch a single ticket if found.
+-- | Fetch a single ticket with given 'TicketId'
 fetchTicket :: DataLayer App -> TicketId -> App (Maybe TicketInfo)
 fetchTicket dataLayer ticketId = do
     let getTicketInfo       = zlGetTicketInfo dataLayer
     getTicketInfo ticketId
 
 
--- | Fetch comments from a ticket, if the ticket is found.
+-- | Fetch comments with given 'TicketId'
 fetchTicketComments :: DataLayer App -> TicketId -> App [Comment]
 fetchTicketComments dataLayer ticketId = do
     let getTicketComments   = zlGetTicketComments dataLayer
     getTicketComments ticketId
 
 
-fetchAndShowTickets :: DataLayer App -> App ()
-fetchAndShowTickets dataLayer = do
-    allTickets  <- fetchTickets dataLayer
-
-    putTextLn $ "There are " <> show (length allTickets) <> " tickets."
-
-    output      <- mapConcurrently (pure . show @Text) allTickets
-
-    mapM_ putTextLn output
-
-    putTextLn "All the tickets has been processed."
-
--- | Fetch and show tickets from a specific time.
-fetchAndShowTicketsFrom :: DataLayer App -> ExportFromTime -> App ()
-fetchAndShowTicketsFrom dataLayer exportFromTime = do
-    allTickets <- fetchTicketsExportedFromTime dataLayer exportFromTime
-
-    putTextLn $ "There are " <> show (length allTickets) <> " tickets."
-
-    output      <- mapConcurrently (pure . show @Text) allTickets
-
-    mapM_ putTextLn output
-
-    putTextLn "All the tickets has been processed."
-
+-- | List and sort tickets
 -- TODO(ks): Extract repeating code, generalize.
 listAndSortTickets :: HasCallStack => DataLayer App -> App [TicketInfo]
 listAndSortTickets dataLayer = do
@@ -391,6 +292,7 @@ listAndSortTickets dataLayer = do
 
     pure sortedTicketIds
 
+-- | Fetch tickets that are unassigned to Zendesk agents
 listAndSortUnassignedTickets :: HasCallStack => DataLayer App -> App [TicketInfo]
 listAndSortUnassignedTickets dataLayer = do
 
@@ -404,20 +306,7 @@ listAndSortUnassignedTickets dataLayer = do
 
     pure sortedTicketIds
 
--- TODO (hs): Remove this function since it's not used anymore
-extractEmailAddress :: DataLayer App -> TicketId -> App ()
-extractEmailAddress dataLayer ticketId = do
-    -- Fetch the function from the configuration.
-    let getTicketComments = zlGetTicketComments dataLayer
-
-    comments <- getTicketComments ticketId
-    let (CommentBody commentWithEmail) = cBody $ fromMaybe (error "No comment") (safeHead comments)
-    let emailAddress = fromMaybe (error "No email") (safeHead $ lines commentWithEmail)
-    liftIO $ guard ("@" `isInfixOf` emailAddress)
-    liftIO $ appendFile "emailAddress.txt" (emailAddress <> "\n")
-    liftIO $ putTextLn emailAddress
-
--- | A pure function for fetching @Attachment@ from @Comment@.
+-- | A pure function for fetching 'Attachment' from 'Comment'
 getAttachmentsFromComment :: [Comment] -> [Attachment]
 getAttachmentsFromComment comments = do
     -- Filter tickets without logs
@@ -435,7 +324,7 @@ getAttachmentsFromComment comments = do
     commentHasAttachment :: Comment -> Bool
     commentHasAttachment comment = length (cAttachments comment) > 0
 
-    -- Readability
+    -- For readability
     isAttachmentZip :: Attachment -> Bool
     isAttachmentZip attachment = aContentType attachment `elem`
         ["application/zip", "application/x-zip-compressed"]
@@ -473,38 +362,6 @@ inspectAttachments dataLayer ticketInfo attachments = do
     handleMaybe :: Maybe a -> App a
     handleMaybe Nothing  = throwM $ AttachmentNotFound (tiId ticketInfo)
     handleMaybe (Just a) = return a
-
--- | Inspection of the local zip.
--- This function prints out the analysis result on the console.
-inspectLocalZipAttachment :: FilePath -> App ()
-inspectLocalZipAttachment filePath = do
-
-    config          <- ask
-    printText       <- asksIOLayer iolPrintText
-
-    -- Read the zip file
-    fileContent     <- liftIO $ BS.readFile filePath
-    let eResults = extractLogsFromZip 100 fileContent
-
-    case eResults of
-        Left (err :: ZipFileExceptions) ->
-            printText $ show err
-        Right result -> do
-            let analysisEnv = setupAnalysis $ cfgKnowledgebase config
-            eitherAnalysisResult    <- try $ extractIssuesFromLogs result analysisEnv
-
-            case eitherAnalysisResult of
-                Right analysisResult -> do
-                    let errorCodes = extractErrorCodes analysisResult
-
-                    printText "Analysis result:"
-                    void $ mapM (printText . show) analysisResult
-
-                    printText "Error codes:"
-                    void $ mapM printText errorCodes
-
-                Left (e :: LogAnalysisException) ->
-                    printText $ show e
 
 -- | Given number of file of inspect, knowledgebase and attachment,
 -- analyze the logs and return the results.
@@ -560,6 +417,7 @@ inspectAttachment Config{..} ticketInfo@TicketInfo{..} attachment = do
                                 , zrIsPublic    = cfgIsCommentPublic
                                 }
                         JSONDecodeFailure errorText ->
+                            -- Need to respond to an ticket instead of throwing exception
                             throwM $ JSONDecodeFailure errorText
 
 -- | Filter tickets
@@ -581,7 +439,7 @@ filterAnalyzedTickets ticketsInfo =
 
     -- | If we have a ticket we are having issues with...
     isTicketBlacklisted :: TicketInfo -> Bool
-    isTicketBlacklisted TicketInfo{..} = tiId `notElem` [TicketId 9377,TicketId 10815, TicketId 15066, TicketId 30849]
+    isTicketBlacklisted TicketInfo{..} = tiId `notElem` [TicketId 9377, TicketId 10815, TicketId 15066, TicketId 30849]
 
     isTicketInGoguenTestnet :: TicketInfo -> Bool
     isTicketInGoguenTestnet TicketInfo{..} = "goguen_testnets" `notElem` getTicketTags tiTags

@@ -10,7 +10,6 @@ module DataSource.Types
     , Comment (..)
     , CommentId (..)
     , CommentBody (..)
-    , CommentOuter (..)
     , PageResultList (..)
     , RequestType (..)
     , DeletedTicket (..)
@@ -74,6 +73,7 @@ import           Test.QuickCheck (Arbitrary (..), elements, listOf1, sublistOf)
 -- Configuration
 ------------------------------------------------------------
 
+-- | Monad stack used within classifier
 newtype App a = App { runAppBase :: ReaderT Config IO a }
     deriving ( Applicative
              , Functor
@@ -93,19 +93,20 @@ instance MonadBaseControl IO App where
     liftBaseWith f = App $ liftBaseWith $ \q -> f (q . runAppBase)
     restoreM = App . restoreM
 
+-- | Run monad stack application
 runApp :: App a -> Config -> IO a
 runApp (App a) = runReaderT a
 
 -- | The basic configuration.
 data Config = Config
-    { cfgAgentId            :: !Integer
-    -- ^ Zendesk agent id
+    { cfgAgentId            :: !UserId
+    -- ^ Zendesk agent Id. This will be used to post response on the ticket
     , cfgZendesk            :: !Text
     -- ^ URL to Zendesk
     , cfgToken              :: !Text
     -- ^ Zendesk token
     , cfgEmail              :: !Text
-    -- ^ Email address of the user the classifier will process on
+    -- ^ Email address of the agent the classifier will process on
     , cfgAssignTo           :: !Integer
     -- ^ User that will be assigned to after the classifier has done the analysis
     , cfgKnowledgebase      :: ![Knowledge]
@@ -115,9 +116,9 @@ data Config = Config
     , cfgIsCommentPublic    :: !Bool
     -- ^ If the comment is public or not, for a test run we use an internal comment.
     , cfgIOLayer            :: !(IOLayer App)
-    -- ^ The _IO@ layer. This is containing all the functions we have for IO.
+    -- ^ The @IO@ layer. This is containing all the functions we have for @IO@.
     , cfgDBLayer            :: !(DBLayer App)
-    -- ^ The _DB_ layer. This is containing all the modification functions.
+    -- ^ The @DB@ layer. This is containing all the modification functions.
     -- TODO(ks): @Maybe@ db layer. It's not really required.
     }
 
@@ -197,6 +198,7 @@ instance ToURL TicketId where
 instance ToURL ExportFromTime where
     toURL (ExportFromTime time) = show @_ @Integer . floor . toRational $ time
 
+-- | List of Zendesk Res APIs used within classifier
 data ZendeskAPIUrl
     = AgentGroupURL
     | DeletedTicketsURL
@@ -210,6 +212,7 @@ data ZendeskAPIUrl
     | ExportDataByTimestamp ExportFromTime
     deriving (Eq, Generic)
 
+-- | Render given 'ZendeskAPIUrl' into 'Text'
 showURL :: ZendeskAPIUrl -> Text
 showURL AgentGroupURL                       = "/users.json?role%5B%5D=admin&role%5B%5D=agent"
 showURL DeletedTicketsURL                   = "/deleted_tickets.json"
@@ -268,11 +271,13 @@ urlEncode url = T.concatMap encodeChar url
 -- Types
 ------------------------------------------------------------
 
+-- | Attachment Id
 newtype AttachmentId = AttachmentId
     { getAttachmentId :: Int
     } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
 
 -- TODO(ks): Arbitrary log contents?
+-- | Attachment content
 newtype AttachmentContent = AttachmentContent
     { getAttachmentContent :: LByteString
     } deriving (Eq, Show, Ord, Generic, Monoid, Semigroup)
@@ -294,55 +299,60 @@ data RequestType
     = Requested
     | Assigned
 
--- | The response for ZenDesk.
+-- | The response for Zendesk.
 data ZendeskResponse = ZendeskResponse
     { zrTicketId :: !TicketId
+    -- ^ 'TicketId' to respond to
     , zrComment  :: !Text
+    -- ^ Comment body of response
     , zrTags     :: !TicketTags
+    -- ^ 'TicketTags' attached to the response
     , zrIsPublic :: !Bool
+    -- ^ Flag of weather the response should be public/private
     } deriving (Eq, Show)
 
+-- | Id of a comment
 newtype CommentId = CommentId
     { getCommentId :: Int
     } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
 
+-- | Body of a comment
 newtype CommentBody = CommentBody
     { getCommentBody :: Text
     } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
 
--- | Comments
+-- | Comment datatype
 data Comment = Comment
     { cId          :: !CommentId
-    -- ^ The ID of the comment
+    -- ^ The Id of the comment
     , cBody        :: !CommentBody
     -- ^ Body of comment
     , cAttachments :: ![Attachment]
     -- ^ Attachment
     , cPublic      :: !Bool
     -- ^ Flag of whether comment should be public
-    , cAuthor      :: !Integer
+    , cAuthor      :: !UserId
     -- ^ Author of comment
     } deriving (Eq, Show)
-
--- | Outer comment ??
-newtype CommentOuter = CommentOuter {
-      coComment :: Comment
-    }
 
 -- | Zendesk ticket
 data Ticket = Ticket
     { tComment     :: !Comment
     -- ^ Ticket comment
     , tTag         :: !TicketTags
+    -- ^ Tags attached to the ticket
     , tField       :: ![TicketField]
+    -- ^ List of 'TicketField' associated with ticket
     , tCustomField :: ![TicketField]
-    -- ^ Tags attached to ticket
+    -- ^ List of custom 'TicketField' associated with ticket
     }
 
+-- | Ticket field Id
 newtype TicketFieldId = TicketFieldId
     { getTicketFieldId :: Integer
     } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
 
+-- | Ticket field value
 data TicketFieldValue
     = TicketFieldValueText { getTicketFieldValueText :: Text }
     | TicketFieldValueBool { getTicketFieldValueBool :: Bool }
@@ -357,30 +367,37 @@ instance ToJSON TicketFieldValue where
     toJSON (TicketFieldValueText value) = toJSON value
     toJSON (TicketFieldValueBool value) = toJSON value
 
-
+-- | Custom field
 data TicketField = TicketField
     { tfId    :: TicketFieldId
+    -- ^ Id of an field
     , tfValue :: Maybe TicketFieldValue
+    -- ^ Value of given field
     } deriving (Eq, Show, Ord)
 
 -- TODO(ks): We need to verify this still works, we don't have any
 -- regression tests...
+-- | Ticket Id
 newtype TicketId = TicketId
     { getTicketId :: Int
     } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
 
+-- | URL to the ticket
 newtype TicketURL = TicketURL
     { getTicketURL :: Text
     } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
 
+-- | List of ticket tags
 newtype TicketTags = TicketTags
     { getTicketTags :: [Text] -- TODO(ks): We need to fix the @TicketTag@ / @TicketTags@ story.
     } deriving (Eq, Show, Ord, Generic, Semigroup, FromJSON, ToJSON)
 
+-- | Ticket status
 newtype TicketStatus = TicketStatus
     { getTicketStatus :: Text
     } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
 
+-- | Data type representing ticket information
 data TicketInfo = TicketInfo
     { tiId          :: !TicketId        -- ^ Id of an ticket
     , tiRequesterId :: !UserId          -- ^ Id of the requester
@@ -409,26 +426,32 @@ data TicketTag
     | AnalyzedByScriptV1_4_5  -- ^ Ticket has been analyzed by the version 1.4.5
     | AnalyzedByScriptV1_5_0  -- ^ Ticket has been analyzed by the version 1.5.0
     | AnalyzedByScriptV1_5_1  -- ^ Ticket has been analyzed by the version 1.5.1
+    | AnalyzedByScriptV1_5_2  -- ^ Ticket has been analyzed by the version 1.5.1
     | ToBeAnalyzed            -- ^ Ticket needs to be analyzed
     | NoKnownIssue            -- ^ Ticket had no known issue
     | NoLogAttached           -- ^ Log file not attached
 
+-- | User Id
 newtype UserId = UserId
     { getUserId :: Int
     } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
 
+-- | URL of an User
 newtype UserURL = UserURL
     { getUserURL :: Text
     } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
 
+-- | Username
 newtype UserName = UserName
     { getUserName :: Text
     } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
 
+-- | Email of an user
 newtype UserEmail = UserEmail
     { getUserEmail :: Text
     } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
 
+-- | Datatype representing Zendesk User
 data User = User
     { uId    :: !UserId      -- ^ Id of the user
     , uURL   :: !UserURL     -- ^ URL of the user
@@ -437,16 +460,22 @@ data User = User
     } deriving (Eq, Show, Generic)
 
 -- Ideally, we might add more fields here, for now it's good enough.
+-- | 'TicketId' of an ticket that's been deleted
 data DeletedTicket = DeletedTicket
     { dtId      :: !TicketId
     } deriving (Eq, Show, Generic)
 
+-- | Representation of how Zendesk returns various informations via API
 data PageResultList a = PageResultList
     { prlResults  :: ![a]
+    -- ^ List of informations
     , prlNextPage :: !(Maybe Text)
+    -- ^ URL to the next page
     , prlCount    :: !(Maybe Int)
+    -- ^ Number of results
     }
 
+-- | Export from time
 newtype ExportFromTime = ExportFromTime
     { getExportFromTime :: POSIXTime
     } deriving (Eq, Show, Ord, Generic)
@@ -853,13 +882,7 @@ instance ToJSON Comment where
         object  [ "body"            .= b
                 , "attachments"     .= as
                 , "public"          .= public
-                , "author_id"       .= author
-                ]
-
--- TODO (hs): Erase ths since it's not used
-instance ToJSON CommentOuter where
-    toJSON (CommentOuter c) =
-        object  [ "comment"         .= c
+                , "author_id"       .= getUserId author
                 ]
 
 instance ToJSON TicketField where
@@ -921,6 +944,7 @@ instance Ord TicketInfo where
 -- JSON parsers
 ------------------------------------------------------------
 
+-- | Parse given value into 'TicketInfo'
 parseTicket :: Value -> Parser TicketInfo
 parseTicket = withObject "ticket" $ \o -> o .: "ticket"
 
@@ -948,6 +972,7 @@ renderTicketStatus AnalyzedByScriptV1_4_4 = "analyzed-by-script-v1.4.4"
 renderTicketStatus AnalyzedByScriptV1_4_5 = "analyzed-by-script-v1.4.5"
 renderTicketStatus AnalyzedByScriptV1_5_0 = "analyzed-by-script-v1.5.0"
 renderTicketStatus AnalyzedByScriptV1_5_1 = "analyzed-by-script-v1.5.1"
+renderTicketStatus AnalyzedByScriptV1_5_2 = "analyzed-by-script-v1.5.2"
 renderTicketStatus ToBeAnalyzed           = "to_be_analysed" -- https://iohk.zendesk.com/agent/admin/tags
 renderTicketStatus NoKnownIssue           = "no-known-issues"
 renderTicketStatus NoLogAttached          = "no-log-files"

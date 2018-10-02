@@ -120,11 +120,6 @@ directory-not-found: **
 .... and so on
 ```
 
-### Collect email addresses of the tickets in which both requester and assignee is report server
-
-[Report server](https://github.com/input-output-hk/cardano-report-server) had a bug where it assigned both requester and assignees as report server and write down user's address in the comment section. This made it so that help desk agent where unable to reply back to the user unless agents create new tickets manually which takes some time to reply back. Note that this issue is already fixed.
-The classifier can collect email addresses of tickets with this issue.
-
 ## Simple use-case scenario
 
 ### IOHK agent wants to find out which tickets were changed after 12.07.2018
@@ -163,19 +158,6 @@ In this case, one can run the command below.
 ```
 
 This will collect all the tags that are attached to the ticket then group them so that the agent can report the dev team. The team will then categorize/prioritize the issue.
-
-### Some of the tickets has a issue where requester and assignee is report server itself therefore agent must create a new ticket to contact with end user which takes a decent amount of time. Agent wants facilitate this by collecting email addresses of these tickets so he/she can send batch emails to these users
-
-In this case, one can run the command below.
-
-```terminal
-./log-classifier-exe collect-emails
-```
-
-This will collect all the email addresses with the ticket where the assignee and the requester is report server and write them on a file `emailAddress.txt`. Agent then can later use the text file to send batch emails to the end user.
-
-*Note that this issue has been fixed (meaning all the ticket has appropriate requester assigned to it therefore the agent does not need to create a new ticket to contact with the end user.) so this command is deprecated.
-
 
 ### Run the application locally
 

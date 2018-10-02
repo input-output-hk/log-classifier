@@ -351,7 +351,7 @@ getTicketComments conn ticketId = do
             , cAuthor      = commentAuthorId
             }
   where
-    getTicketIdComments :: TicketId -> m [(CommentId, CommentBody, Bool, Integer)]
+    getTicketIdComments :: TicketId -> m [(CommentId, CommentBody, Bool, UserId)]
     getTicketIdComments ticketId' =
         liftIO $ queryNamed conn "SELECT tc.id, tc.body, tc.is_public, tc.author_id \
             \FROM ticket_comment tc \

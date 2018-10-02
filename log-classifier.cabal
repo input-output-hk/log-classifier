@@ -1,5 +1,5 @@
 name:                log-classifier
-version:             1.5.1.0
+version:             1.5.2.0
 synopsis:            Log classifier for a Cardano node
 description:         Please see the README
 homepage:            https://github.com/input-output-hk/log-classifier#readme
@@ -15,14 +15,12 @@ cabal-version:       >= 1.10
 
 library
   hs-source-dirs:      src
-  exposed-modules:     Classify
+  exposed-modules:     Lib
                        Exceptions
-                       Lib
                        LogAnalysis.Classifier
                        LogAnalysis.Exceptions
                        LogAnalysis.KnowledgeCSVParser
                        LogAnalysis.Types
-                       Regex
                        Statistics
                        DataSource
                        Configuration
@@ -37,7 +35,6 @@ library
                        DataSource.Http
   ghc-options:         -Wall
   build-depends:       aeson
-                     , array
                      , attoparsec
                      , base >=4.7 && <5
                      , bytestring
@@ -51,7 +48,7 @@ library
                      , unliftio
                      -- 
                      , time
-                     , regex-tdfa
+                     , optparse-applicative
                      , safe-exceptions
                      , text
                      , universum
