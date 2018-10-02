@@ -94,7 +94,7 @@ basicHTTPNetworkLayer shedulerConfig = HTTPNetworkLayer
         pure $ getResponseBody response
 
 
-
+-- | 'HTTPNetworkLayer' with no functionality being implemented
 emptyHTTPNetworkLayer :: HTTPNetworkLayer m
 emptyHTTPNetworkLayer = HTTPNetworkLayer
     { hnlAddJsonBody    = \_ _  -> error "hnlAddJsonBody not implemented!"

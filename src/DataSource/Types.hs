@@ -93,6 +93,7 @@ instance MonadBaseControl IO App where
     liftBaseWith f = App $ liftBaseWith $ \q -> f (q . runAppBase)
     restoreM = App . restoreM
 
+-- | Run monad stack application
 runApp :: App a -> Config -> IO a
 runApp (App a) = runReaderT a
 
@@ -270,11 +271,13 @@ urlEncode url = T.concatMap encodeChar url
 -- Types
 ------------------------------------------------------------
 
+-- | Attachment Id
 newtype AttachmentId = AttachmentId
     { getAttachmentId :: Int
     } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
 
 -- TODO(ks): Arbitrary log contents?
+-- | Attachment content
 newtype AttachmentContent = AttachmentContent
     { getAttachmentContent :: LByteString
     } deriving (Eq, Show, Ord, Generic, Monoid, Semigroup)
@@ -308,15 +311,17 @@ data ZendeskResponse = ZendeskResponse
     -- ^ Flag of weather the response should be public/private
     } deriving (Eq, Show)
 
+-- | Id of a comment
 newtype CommentId = CommentId
     { getCommentId :: Int
     } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
 
+-- | Body of a comment
 newtype CommentBody = CommentBody
     { getCommentBody :: Text
     } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
 
--- | Comments
+-- | Comment datatype
 data Comment = Comment
     { cId          :: !CommentId
     -- ^ The Id of the comment
@@ -342,10 +347,12 @@ data Ticket = Ticket
     -- ^ List of custom 'TicketField' associated with ticket
     }
 
+-- | Ticket field Id
 newtype TicketFieldId = TicketFieldId
     { getTicketFieldId :: Integer
     } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
 
+-- | Ticket field value
 data TicketFieldValue
     = TicketFieldValueText { getTicketFieldValueText :: Text }
     | TicketFieldValueBool { getTicketFieldValueBool :: Bool }
@@ -370,22 +377,27 @@ data TicketField = TicketField
 
 -- TODO(ks): We need to verify this still works, we don't have any
 -- regression tests...
+-- | Ticket Id
 newtype TicketId = TicketId
     { getTicketId :: Int
     } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
 
+-- | URL to the ticket
 newtype TicketURL = TicketURL
     { getTicketURL :: Text
     } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
 
+-- | List of ticket tags
 newtype TicketTags = TicketTags
     { getTicketTags :: [Text] -- TODO(ks): We need to fix the @TicketTag@ / @TicketTags@ story.
     } deriving (Eq, Show, Ord, Generic, Semigroup, FromJSON, ToJSON)
 
+-- | Ticket status
 newtype TicketStatus = TicketStatus
     { getTicketStatus :: Text
     } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
 
+-- | Data type representing ticket information
 data TicketInfo = TicketInfo
     { tiId          :: !TicketId        -- ^ Id of an ticket
     , tiRequesterId :: !UserId          -- ^ Id of the requester
@@ -419,22 +431,27 @@ data TicketTag
     | NoKnownIssue            -- ^ Ticket had no known issue
     | NoLogAttached           -- ^ Log file not attached
 
+-- | User Id
 newtype UserId = UserId
     { getUserId :: Int
     } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
 
+-- | URL of an User
 newtype UserURL = UserURL
     { getUserURL :: Text
     } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
 
+-- | Username
 newtype UserName = UserName
     { getUserName :: Text
     } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
 
+-- | Email of an user
 newtype UserEmail = UserEmail
     { getUserEmail :: Text
     } deriving (Eq, Show, Ord, Generic, FromJSON, ToJSON)
 
+-- | Datatype representing Zendesk User
 data User = User
     { uId    :: !UserId      -- ^ Id of the user
     , uURL   :: !UserURL     -- ^ URL of the user
@@ -443,6 +460,7 @@ data User = User
     } deriving (Eq, Show, Generic)
 
 -- Ideally, we might add more fields here, for now it's good enough.
+-- | 'TicketId' of an ticket that's been deleted
 data DeletedTicket = DeletedTicket
     { dtId      :: !TicketId
     } deriving (Eq, Show, Generic)
@@ -457,6 +475,7 @@ data PageResultList a = PageResultList
     -- ^ Number of results
     }
 
+-- | Export from time
 newtype ExportFromTime = ExportFromTime
     { getExportFromTime :: POSIXTime
     } deriving (Eq, Show, Ord, Generic)

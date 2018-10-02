@@ -93,6 +93,7 @@ filterAnalysis as = do
     then throwM NoKnownIssueFound
     else pure $ Map.map (take numberOfErrorText) filteredAnalysis
 
+-- | Extract error texts that's been found from the logs
 extractErrorCodes :: Analysis -> [Text]
 extractErrorCodes as = map (\(Knowledge{..}, _) -> renderErrorCode kErrorCode) $ Map.toList as
 

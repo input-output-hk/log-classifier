@@ -541,6 +541,7 @@ inspectAttachment Config{..} ticketInfo@TicketInfo{..} attachment = do
                                 , zrIsPublic    = cfgIsCommentPublic
                                 }
                         JSONDecodeFailure errorText ->
+                            -- Need to respond to an ticket instead of throwing exception
                             throwM $ JSONDecodeFailure errorText
 
 -- | Filter tickets

@@ -1,5 +1,7 @@
 module Http.Queue
     ( SchedulerConfig
+    , NumberOfRequests
+    , Microseconds
     , createSchedulerConfig
     , createSchedulerConfigTime
     , runScheduler
@@ -30,7 +32,10 @@ import           Http.Exceptions (HttpNetworkLayerException (..))
 -- available @Request@ back to the original number (750 in this scenario).
 -- That allows for all waiting blocks to awake and execute in FIFO order.
 
+-- | Number of requests
 type NumberOfRequests = Int
+
+-- | Microseconds
 type Microseconds = Int
 
 
