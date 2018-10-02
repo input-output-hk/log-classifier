@@ -93,6 +93,7 @@ server config dataLayer =
     :<|>    handlerGetTicketComments
     :<|>    handlerPostTicketAnalysis
   where
+    -- | A handler for fetching the ticket information.
     handlerGetTicket :: TicketId -> Handler TicketInfo
     handlerGetTicket ticketId = convert $ runApp fetchTicketEither config
       where
@@ -104,12 +105,14 @@ server config dataLayer =
                 Nothing         -> throwM err404
                 Just ticketId'  -> pure ticketId'
 
+    -- | A handler for getting ticket comments.
     handlerGetTicketComments :: TicketId -> Handler [Comment]
     handlerGetTicketComments ticketId = convert getTicketComments
       where
         getTicketComments :: IO [Comment]
         getTicketComments = runApp (fetchTicketComments dataLayer ticketId) config
 
+    -- | A handler for the actual ticket analysis.
     handlerPostTicketAnalysis :: CTicketId -> Handler ZendeskResponse
     handlerPostTicketAnalysis (V1 ticketId) = convert $ runApp (processTicket dataLayer ticketId) config
 
