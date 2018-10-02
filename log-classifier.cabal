@@ -48,7 +48,6 @@ library
                      , unliftio
                      -- 
                      , time
-                     , optparse-applicative
                      , safe-exceptions
                      , text
                      , universum
