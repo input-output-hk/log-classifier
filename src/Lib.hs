@@ -18,12 +18,18 @@ module Lib
     -- * Optional
     , fetchTicket
     , fetchTicketComments
+    , fetchAgents
+    , fetchAndShowTickets
+    , fetchAndShowTicketsFrom
+    , inspectLocalZipAttachment
+    , processTicketsFromTime
     ) where
 
 import           Universum
 
 import           UnliftIO.Async (mapConcurrently)
 
+import qualified Data.ByteString.Lazy as BS
 import           Data.Attoparsec.Text.Lazy (eitherResult, parse)
 import           Data.List (nub)
 import           Data.Text (stripEnd)
@@ -41,7 +47,7 @@ import           DataSource (App, Attachment (..), AttachmentContent (..), Comme
                              createProdConnectionPool, knowledgebasePath, renderTicketStatus,
                              runApp, tokenPath)
 
-import           Exceptions (ClassifierExceptions (..), ProcessTicketExceptions (..))
+import           Exceptions (ClassifierExceptions (..), ProcessTicketExceptions (..), ZipFileExceptions (..))
 import           Http.Layer (basicHTTPNetworkLayer)
 import           Http.Queue (createSchedulerConfig, runScheduler)
 
@@ -443,3 +449,117 @@ filterAnalyzedTickets ticketsInfo =
 
     isTicketInGoguenTestnet :: TicketInfo -> Bool
     isTicketInGoguenTestnet TicketInfo{..} = "goguen_testnets" `notElem` getTicketTags tiTags
+
+------------------------------------------------------------
+-- Utility functions
+------------------------------------------------------------
+
+fetchAgents :: DataLayer App -> App [User]
+fetchAgents dataLayer = do
+    Config{..}          <- ask
+
+    let listAdminAgents = zlListAdminAgents dataLayer
+    printText           <- asksIOLayer iolPrintText
+
+    printText "Fetching Zendesk agents"
+
+    agents              <- listAdminAgents
+
+    mapM_ print agents
+    pure agents
+
+-- | Fetch tickets that need to be analyzed and print them on console
+fetchAndShowTickets :: DataLayer App -> App ()
+fetchAndShowTickets dataLayer = do
+    allTickets  <- fetchTickets dataLayer
+
+    putTextLn $ "There are " <> show (length allTickets) <> " tickets."
+
+    output      <- mapConcurrently (pure . show @Text) allTickets
+
+    mapM_ putTextLn output
+
+    putTextLn "All the tickets has been processed."
+
+-- | Fetch and show tickets from a specific time.
+fetchAndShowTicketsFrom :: DataLayer App -> ExportFromTime -> App ()
+fetchAndShowTicketsFrom dataLayer exportFromTime = do
+    allTickets <- fetchTicketsExportedFromTime dataLayer exportFromTime
+
+    putTextLn $ "There are " <> show (length allTickets) <> " tickets."
+
+    output      <- mapConcurrently (pure . show @Text) allTickets
+
+    mapM_ putTextLn output
+
+    putTextLn "All the tickets has been processed."
+
+-- | Inspection of the local zip.
+-- This function prints out the analysis result on the console.
+inspectLocalZipAttachment :: FilePath -> App ()
+inspectLocalZipAttachment filePath = do
+
+    config          <- ask
+    printText       <- asksIOLayer iolPrintText
+
+    -- Read the zip file
+    fileContent     <- liftIO $ BS.readFile filePath
+    let eResults = extractLogsFromZip 100 fileContent
+
+    case eResults of
+        Left (err :: ZipFileExceptions) ->
+            printText $ show err
+        Right result -> do
+            let analysisEnv = setupAnalysis $ cfgKnowledgebase config
+            eitherAnalysisResult    <- try $ extractIssuesFromLogs result analysisEnv
+
+            case eitherAnalysisResult of
+                Right analysisResult -> do
+                    let errorCodes = extractErrorCodes analysisResult
+
+                    printText "Analysis result:"
+                    void $ mapM (printText . show) analysisResult
+
+                    printText "Error codes:"
+                    void $ mapM printText errorCodes
+
+                Left (e :: LogAnalysisException) ->
+                    printText $ show e
+
+-- | When we want to process all tickets from a specific time onwards.
+-- Run in parallel.
+processTicketsFromTime :: DataLayer App -> ExportFromTime -> App ()
+processTicketsFromTime dataLayer exportFromTime = do
+
+    allTickets          <- fetchTicketsExportedFromTime dataLayer exportFromTime
+
+    putTextLn $ "There are " <> show (length allTickets) <> " tickets."
+
+    mZendeskResponses   <- mapConcurrently (processTicket dataLayer . tiId) allTickets
+
+    -- This is single-threaded.
+    mapM_ processSingleTicket mZendeskResponses
+
+    putTextLn "All the tickets has been processed."
+  where
+    -- | Process a single ticket after they were analyzed.
+    processSingleTicket :: ZendeskResponse -> App ()
+    processSingleTicket zendeskResponse = do
+
+        -- We first fetch the function from the configuration
+        printText           <- asksIOLayer iolPrintText
+        appendF             <- asksIOLayer iolAppendFile -- We need to remove this.
+
+        let ticketId = getTicketId $ zrTicketId zendeskResponse
+
+        -- Printing id before inspecting the ticket so that when the process stops by the
+        -- corrupted log file, we know which id to blacklist.
+        printText $ "Analyzing ticket id: " <> show ticketId
+
+        let tags = getTicketTags $ zrTags zendeskResponse
+        forM_ tags $ \tag -> do
+            let formattedTicketIdAndTag = show ticketId <> " " <> tag
+            printText formattedTicketIdAndTag
+            appendF "logs/analysis-result.log" (formattedTicketIdAndTag <> "\n")
+
+
