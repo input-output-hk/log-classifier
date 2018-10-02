@@ -14,6 +14,7 @@ import           Web.Server (mainServer)
 main :: IO ()
 main = mainServer
 
+mainCLI :: IO ()
 mainCLI = do
 
     args        <- getCliArgs
