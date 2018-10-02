@@ -671,7 +671,7 @@ getAttachmentsFromCommentSpec =
 -- Currently, this is how datas are stored in the DB, this can be changed in the future.
 -- TODO(hs): Wrap primitive type with newtype
 type DBTicketInfo = (TicketId, UserId, Maybe UserId, TicketURL, TicketTags, TicketStatus)
-type DBTicketComment = (CommentId, TicketId, CommentBody, Bool, Integer)
+type DBTicketComment = (CommentId, TicketId, CommentBody, Bool, UserId)
 type DBCommentAttachment = (AttachmentId, CommentId, Text, Text, Int)
 type DBAttachmentContent = (Integer, ByteString)
 
