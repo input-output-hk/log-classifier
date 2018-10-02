@@ -19,9 +19,7 @@ import           Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 -- | TODO(ks): Ideally we should drop this and
 -- use direct function calls. Move to exe.
 data CLI
-    = CollectEmails
-    -- ^ Collect email addresses
-    | FetchAgents
+    = FetchAgents
     -- ^ List agents
     | FetchTickets
     -- ^ Fetch all the tickets in Zendesk
@@ -50,9 +48,7 @@ cmdProcessTicket = ProcessTicket <$> argument auto
 -- | Parser for CLI commands
 cli :: Parser CLI
 cli = hsubparser $ mconcat
-    [ command "collect-emails" (info (pure CollectEmails)
-        (progDesc "Collect emails requested by single user"))
-    , command "fetch-agents" (info (pure FetchAgents)
+    [ command "fetch-agents" (info (pure FetchAgents)
         (progDesc "Fetch Zendesk agents"))
     , command "fetch-tickets" (info (pure FetchTickets)
         (progDesc "Fetch all the tickets from specific time."))
@@ -95,19 +91,17 @@ cli = hsubparser $ mconcat
         ProcessTicketsFromTime <$> option exportFromTimeReader (long "time"
             <> metavar "TIME"
             <> help "The time (dd.mm.YYYY) from which we process the changed tickets.")
+    exportFromTimeReader :: ReadM ExportFromTime
+    exportFromTimeReader = eitherReader $ \arg -> do
 
+        day <- case parseTimeM True defaultTimeLocale "%d.%m.%Y" arg of
+            Nothing  -> Left ("Cannot parse date: " ++ arg)
+            Just day -> Right day
 
-exportFromTimeReader :: ReadM ExportFromTime
-exportFromTimeReader = eitherReader $ \arg -> do
+        let utctime     = UTCTime day 0
+        let posixTime   = utcTimeToPOSIXSeconds utctime
 
-    day <- case parseTimeM True defaultTimeLocale "%d.%m.%Y" arg of
-        Nothing  -> Left ("Cannot parse date: " ++ arg)
-        Just day -> Right day
-
-    let utctime     = UTCTime day 0
-    let posixTime   = utcTimeToPOSIXSeconds utctime
-
-    pure $ ExportFromTime posixTime
+        pure $ ExportFromTime posixTime
 
 -- | Get CLI arguments from command line
 getCliArgs :: IO CLI

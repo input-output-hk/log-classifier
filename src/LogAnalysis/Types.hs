@@ -13,7 +13,6 @@ module LogAnalysis.Types
        , toLogFile
        , setupAnalysis
        , renderErrorCode
-       , toComment
        , isJSONFormat
        , isTxtFormat
        ) where
@@ -64,7 +63,9 @@ data Knowledge = Knowledge
 -- | File format
 data LogFile
     = TxtFormat     !ByteString
+    -- ^ Text file
     | JSONFormat    !ByteString
+    -- ^ JSON file
     deriving (Eq, Show)
 
 -- | Get content from either.
@@ -116,10 +117,6 @@ renderErrorCode CannotGetDBSize      = "cannot-get-db-size"
 renderErrorCode DecompressionFailure = "decompression-failure"
 renderErrorCode Unknown              = "unknown"
 renderErrorCode Error                = "error"
-
-toComment :: ErrorCode -> Text
-toComment SentLogCorrupted = "Log file is corrupted"
-toComment _                = "Error"
 
 -- | Make LogFile with given Filepath and ByteString
 toLogFile :: FilePath -> ByteString -> LogFile

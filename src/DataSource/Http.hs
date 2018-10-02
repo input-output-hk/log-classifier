@@ -274,7 +274,7 @@ postTicketComment httpNetworkLayer ticketInfo zendeskResponse = do
     void $ apiCall (pure . encodeToLazyText) req
 
 -- | Create response ticket
-createResponseTicket :: Integer -> TicketInfo -> ZendeskResponse -> Ticket
+createResponseTicket :: UserId -> TicketInfo -> ZendeskResponse -> Ticket
 createResponseTicket agentId TicketInfo{..} ZendeskResponse{..} =
     let analyzedTag = renderTicketStatus AnalyzedByScriptV1_5_2
         -- Nub so it won't post duplicate tags

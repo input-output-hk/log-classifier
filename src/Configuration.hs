@@ -8,14 +8,14 @@ module Configuration
 
 import           Universum
 
-import           DataSource.DB
-import           DataSource.Types
+import           DataSource.DB (connDBLayer, emptyDBLayer)
+import           DataSource.Types (App, Config (..), IOLayer (..), UserId (..))
 
 -- | The default configuration.
 -- TODO(ks): Abstract this away!
 defaultConfig :: Config
 defaultConfig = Config
-    { cfgAgentId                = 0
+    { cfgAgentId                = UserId 0
     , cfgZendesk                = "https://iohk.zendesk.com"
     , cfgToken                  = ""
     , cfgEmail                  = "daedalus-bug-reports@iohk.io"
@@ -23,7 +23,7 @@ defaultConfig = Config
     , cfgKnowledgebase          = []
     , cfgNumOfLogsToAnalyze     = 5
     , cfgIsCommentPublic        = False -- TODO(ks): For now, we need this in CLI.
-    -- * Layers
+    -- Layers
     , cfgIOLayer                = basicIOLayer
     -- TODO(ks): Remove this.
     , cfgDBLayer                = connDBLayer
@@ -32,7 +32,7 @@ defaultConfig = Config
 -- | The empty configuration. Used in tests.
 emptyConfig :: Config
 emptyConfig = Config
-    { cfgAgentId                = 0
+    { cfgAgentId                = UserId 0
     , cfgZendesk                = mempty
     , cfgToken                  = mempty
     , cfgEmail                  = mempty
@@ -40,7 +40,7 @@ emptyConfig = Config
     , cfgKnowledgebase          = mempty
     , cfgNumOfLogsToAnalyze     = 5
     , cfgIsCommentPublic        = True
-    -- * Layers
+    -- Layers
     , cfgIOLayer                = emptyIOLayer
     , cfgDBLayer                = emptyDBLayer
     }
@@ -64,4 +64,3 @@ emptyIOLayer = IOLayer
     , iolLogDebug               = \_     -> pure ()
     , iolLogInfo                = \_     -> pure ()
     }
-

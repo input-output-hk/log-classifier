@@ -42,6 +42,7 @@ data HTTPNetworkLayer m = HTTPNetworkLayer
     , hnlApiCallBare    :: Request -> m BL.ByteString
     }
 
+-- | Basic Http network layer
 basicHTTPNetworkLayer
     :: forall m. (MonadIO m, MonadCatch m, MonadMask m, MonadConc m)
     => SchedulerConfig m
@@ -93,7 +94,7 @@ basicHTTPNetworkLayer shedulerConfig = HTTPNetworkLayer
         pure $ getResponseBody response
 
 
-
+-- | 'HTTPNetworkLayer' with no functionality being implemented
 emptyHTTPNetworkLayer :: HTTPNetworkLayer m
 emptyHTTPNetworkLayer = HTTPNetworkLayer
     { hnlAddJsonBody    = \_ _  -> error "hnlAddJsonBody not implemented!"

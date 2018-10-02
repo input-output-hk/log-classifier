@@ -93,9 +93,13 @@ filterAnalysis as = do
     then throwM NoKnownIssueFound
     else pure $ Map.map (take numberOfErrorText) filteredAnalysis
 
+-- | Extract error texts that's been found from the logs
 extractErrorCodes :: Analysis -> [Text]
 extractErrorCodes as = map (\(Knowledge{..}, _) -> renderErrorCode kErrorCode) $ Map.toList as
 
+-- TODO(hs): Create its own module for these functions
+
+-- | Header to a response
 prettyHeader :: Text
 prettyHeader =
     "Dear user," <>
@@ -104,6 +108,7 @@ prettyHeader =
     "Thank you for contacting the IOHK Technical Support Desk. We appologize for the delay in responding to you. " <>
     "\n"
 
+-- | Footer to a response
 prettyFooter :: TicketInfo -> Text
 prettyFooter ticketInfo =
     "\n\n" <>
@@ -128,18 +133,21 @@ prettyFormatAnalysis as ticketInfo =
     foundIssues         =
         foldr (\(Knowledge{..}, _) acc -> acc <> "\n- " <> kFAQNumber) "" $ Map.toList as
 
+-- | Response stating no known issue were found
 prettyFormatNoIssues :: TicketInfo -> Text
 prettyFormatNoIssues ticketInfo =
     prettyHeader <>
     "We have analyzed the log that you submitted and it appears that you do not have an identifiable technical issue." <>
     prettyFooter ticketInfo
 
+-- | Response stating the log file was corrupted
 prettyFormatLogReadError :: TicketInfo -> Text
 prettyFormatLogReadError ticketInfo =
     prettyHeader <>
     "We tried to analyze the log that you submitted and it appears that your log cannot be processed. Please try sending the log file once again. Please go to https://daedaluswallet.io/faq/ and see Issue 200 for instructions. Please reply to this email with when you respond." <>
     prettyFooter ticketInfo
 
+-- | Response stating no log were attached
 prettyFormatNoLogs :: Text
 prettyFormatNoLogs =
     "Dear user," <> "\n\n" <>

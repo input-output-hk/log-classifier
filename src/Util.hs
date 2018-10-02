@@ -23,6 +23,7 @@ extractLogsFromZip numberOfFiles file = do
   where
     mTake :: Int -> Map k a -> Map k a
     mTake n = Map.fromDistinctAscList . take n . Map.toAscList
+
 -- | Read zipe file
 -- toArchiveOrFail is a partial function, so be careful.
 readZip :: LByteString -> Either ZipFileExceptions (Map FilePath LByteString)

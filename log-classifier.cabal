@@ -15,15 +15,13 @@ cabal-version:       >= 1.10
 
 library
   hs-source-dirs:      src
-  exposed-modules:     Classify
-                       CLI
+  exposed-modules:     CLI
                        Exceptions
                        Lib
                        LogAnalysis.Classifier
                        LogAnalysis.Exceptions
                        LogAnalysis.KnowledgeCSVParser
                        LogAnalysis.Types
-                       Regex
                        Statistics
                        DataSource
                        Configuration
@@ -37,7 +35,6 @@ library
                        DataSource.Http
   ghc-options:         -Wall
   build-depends:       aeson
-                     , array
                      , attoparsec
                      , base >=4.7 && <5
                      , bytestring
@@ -51,7 +48,6 @@ library
                      , unliftio
                      -- 
                      , optparse-applicative
-                     , regex-tdfa
                      , safe-exceptions
                      , text
                      , time
