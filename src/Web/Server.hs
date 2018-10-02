@@ -19,8 +19,10 @@ import           Servant ((:<|>) (..), (:>), Capture, FromHttpApiData (..), Get,
                           Proxy (..), ReqBody, err404)
 import           Servant.Server (Application, Handler (..), Server, serve)
 
-import           DataSource
-import           Lib
+import           DataSource (App, Comment, Config, DataLayer, TicketId (..), TicketInfo,
+                             ZendeskResponse, runApp)
+import           Lib (createBasicDataLayerIO, createConfig, fetchTicket, fetchTicketComments,
+                      processTicket)
 
 ------------------------------------------------------------
 -- API types
@@ -102,8 +104,8 @@ server config dataLayer =
             mTicketId   <- fetchTicket dataLayer ticketId
 
             case mTicketId of
-                Nothing         -> throwM err404
-                Just ticketId'  -> pure ticketId'
+                Nothing        -> throwM err404
+                Just ticketId' -> pure ticketId'
 
     -- | A handler for getting ticket comments.
     handlerGetTicketComments :: TicketId -> Handler [Comment]
