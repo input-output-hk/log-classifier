@@ -2,9 +2,32 @@ module Main where
 
 import           Universum
 
---import           Lib (runZendeskMain)
-import           Web.Server (mainFn)
+import           CLI (CLI (..), getCliArgs)
+import           Lib -- (createBasicDataLayerIO, createConfig)
+import           DataSource
+import           Web.Server (mainServer)
 
+-- | Main entry point.
 main :: IO ()
-main = mainFn
---main = runZendeskMain
+main = mainServer
+
+mainCLI = do
+
+    args        <- getCliArgs
+
+    cfg         <- createConfig
+    dataLayer   <- createBasicDataLayerIO cfg
+
+    case args of
+        CollectEmails                   -> runApp (collectEmails dataLayer) cfg
+        FetchAgents                     -> void $ runApp (fetchAgents dataLayer) cfg
+        FetchTickets                    -> runApp (fetchAndShowTickets dataLayer) cfg
+        FetchTicketsFromTime fromTime   -> runApp (fetchAndShowTicketsFrom dataLayer fromTime) cfg
+        (ProcessTicket ticketId)        -> void $ runApp (processTicketSafe dataLayer (TicketId ticketId)) cfg
+        ProcessTickets                  -> void $ runApp (processTickets dataLayer) cfg
+        ProcessTicketsFromTime fromTime -> runApp (processTicketsFromTime dataLayer fromTime) cfg
+        ShowStatistics                  ->
+            void $ runApp (fetchTickets dataLayer >>= (showStatistics dataLayer)) cfg
+        InspectLocalZip filePath        -> runApp (inspectLocalZipAttachment filePath) cfg
+        ExportData fromTime             -> void $ runApp (exportZendeskDataToLocalDB dataLayer fromTime) cfg
+

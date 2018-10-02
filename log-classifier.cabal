@@ -16,7 +16,6 @@ cabal-version:       >= 1.10
 library
   hs-source-dirs:      src
   exposed-modules:     Classify
-                       CLI
                        Exceptions
                        Lib
                        LogAnalysis.Classifier
@@ -51,11 +50,10 @@ library
                      , transformers-base
                      , unliftio
                      -- 
-                     , optparse-applicative
+                     , time
                      , regex-tdfa
                      , safe-exceptions
                      , text
-                     , time
                      , universum
                      , zip-archive
                      -- Testing
@@ -102,8 +100,10 @@ executable log-classifier-exe
   build-depends:       base >=4.7 && <5
                      , log-classifier
                      , universum
-  other-modules:       Paths_log_classifier
-
+                     , optparse-applicative
+                     , time
+  other-modules:       CLI
+                     , Paths_log_classifier
   default-language:    Haskell2010
   default-extensions: TypeOperators
                       DataKinds

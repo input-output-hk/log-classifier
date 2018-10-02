@@ -2,7 +2,9 @@
 {-# LANGUAGE RecordWildCards   #-}
 
 module Lib
-    ( runZendeskMain
+    ( createBasicDataLayerIO
+    , createConfig
+    -- * library functions
     , collectEmails
     , getZendeskResponses
     , getAttachmentsFromComment
@@ -14,6 +16,11 @@ module Lib
     , listAndSortTickets
     , filterAnalyzedTickets
     , exportZendeskDataToLocalDB
+    , fetchAgents
+    , processTicketsFromTime
+    , fetchAndShowTickets
+    , fetchAndShowTicketsFrom
+    , inspectLocalZipAttachment
     -- * optional
     , fetchTicket
     , fetchTicketComments
@@ -31,7 +38,6 @@ import           Data.Text (isInfixOf, stripEnd)
 import           System.Directory (createDirectoryIfMissing)
 import           System.IO (BufferMode (..), hSetBuffering)
 
-import           CLI (CLI (..), getCliArgs)
 import           Configuration (defaultConfig)
 import           DataSource (App, Attachment (..), AttachmentContent (..), Comment (..),
                              CommentBody (..), Config (..), DBLayer (..), DataLayer (..),
@@ -60,12 +66,11 @@ import           Util (extractLogsFromZip)
 -- Functions
 ------------------------------------------------------------
 
-runZendeskMain :: IO ()
-runZendeskMain = do
+-- | Create configuration.
+createConfig :: IO Config
+createConfig = do
     createDirectoryIfMissing True "logs"
     hSetBuffering stdout NoBuffering
-
-    args        <- getCliArgs
 
     putTextLn "Welcome to Zendesk classifier!"
     token       <- readFile tokenPath       -- Zendesk token
@@ -77,31 +82,14 @@ runZendeskMain = do
 
     connPool    <- createProdConnectionPool
 
-    let cfg     = defaultConfig
-                    { cfgToken         = stripEnd token
-                    , cfgAssignTo      = assignTo
-                    , cfgAgentId       = assignTo
-                    , cfgKnowledgebase = knowledges
-                    , cfgDBLayer       = connPoolDBLayer connPool
-                    }
+    pure defaultConfig
+        { cfgToken         = stripEnd token
+        , cfgAssignTo      = assignTo
+        , cfgAgentId       = assignTo
+        , cfgKnowledgebase = knowledges
+        , cfgDBLayer       = connPoolDBLayer connPool
+        }
 
-    -- We really need to get rid of this...
-    -- We don't need any configuration for this, we could move it down to functions.
-    dataLayer   <- runApp createBasicDataLayer cfg
-
-    -- At this point, the configuration is set up and there is no point in using a pure IO.
-    case args of
-        CollectEmails                   -> runApp (collectEmails dataLayer) cfg
-        FetchAgents                     -> void $ runApp (fetchAgents dataLayer) cfg
-        FetchTickets                    -> runApp (fetchAndShowTickets dataLayer) cfg
-        FetchTicketsFromTime fromTime   -> runApp (fetchAndShowTicketsFrom dataLayer fromTime) cfg
-        (ProcessTicket ticketId)        -> void $ runApp (processTicketSafe dataLayer (TicketId ticketId)) cfg
-        ProcessTickets                  -> void $ runApp (processTickets dataLayer) cfg
-        ProcessTicketsFromTime fromTime -> runApp (processTicketsFromTime dataLayer fromTime) cfg
-        ShowStatistics                  ->
-            void $ runApp (fetchTickets dataLayer >>= (showStatistics dataLayer)) cfg
-        InspectLocalZip filePath        -> runApp (inspectLocalZipAttachment filePath) cfg
-        ExportData fromTime             -> void $ runApp (exportZendeskDataToLocalDB dataLayer fromTime) cfg
   where
     -- Read CSV file and setup knowledge base
     setupKnowledgebaseEnv :: FilePath -> IO [Knowledge]
@@ -112,6 +100,10 @@ runZendeskMain = do
             Left _   -> throwM FailedToParseKnowledgebase
             Right ks -> return ks
 
+-- | Create basic data layer. Do this ONCE!
+createBasicDataLayerIO :: Config -> IO (DataLayer App)
+createBasicDataLayerIO config = runApp createBasicDataLayer config
+  where
     -- | Create a basic @DataLayer@.
     createBasicDataLayer :: App (DataLayer App)
     createBasicDataLayer = do
@@ -125,7 +117,6 @@ runZendeskMain = do
 
         -- create the data layer
         pure $ basicDataLayer (basicHTTPNetworkLayer shedConfig)
-
 
 -- | The function for exporting Zendesk data to our local DB so
 -- we can have faster analysis and runs.
@@ -259,7 +250,7 @@ processTicket dataLayer tId = do
     -- We see 3 HTTP calls here.
     let getTicketInfo       = zlGetTicketInfo dataLayer
     let getTicketComments   = zlGetTicketComments dataLayer
-    let postTicketComment   = zlPostTicketComment dataLayer
+    --let postTicketComment   = zlPostTicketComment dataLayer
 
     mTicketInfo         <- getTicketInfo tId
     comments            <- getTicketComments tId
@@ -271,7 +262,8 @@ processTicket dataLayer tId = do
             zendeskResponse <- getZendeskResponses dataLayer comments attachments ticketInfo
 
             -- post ticket comment
-            postTicketComment ticketInfo zendeskResponse
+            -- Maybe for now we don't need to actually post this, but let the agent post it.
+            --postTicketComment ticketInfo zendeskResponse
 
             pure zendeskResponse
 
