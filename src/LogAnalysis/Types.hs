@@ -29,15 +29,11 @@ import           Test.QuickCheck (Arbitrary (..), Gen, choose, elements, oneof, 
 -- | Identifier for each error
 data ErrorCode
     = ShortStorage         -- ^ Not enough space on hard drive to store block data
-    | UserNameError        -- ^ User is using non-latin characters for username
     | TimeSync             -- ^ User's PC's time is out of sync
     | FileNotFound         -- ^ Some of the files were not installed properly
     | StaleLockFile        -- ^ Open.lock file is corrupted
     | SentLogCorrupted     -- ^ Log file sent to the Zendesk is corrupted
     | DBError              -- ^ Local block data is corrupted
-    | DBPath               -- ^ Daedalus cannot find certain files
-    | CannotGetDBSize      -- ^ Error message of Couidn't pack log files shows up
-    | BalanceError         -- ^ Daedalus shows wrong Ada amount
     | NetworkError         -- ^ Firewall is blocking the connection
     | ConnectionRefused    -- ^ Firewall is blocking the connection
     | ResourceVanished     -- ^ Network error
@@ -100,20 +96,17 @@ instance Show Knowledge where
 -- | Sorted accoring to knowledgebase.
 -- Tag needs to be in lowercase since Zendesk automatically convert any uppercase
 -- lowercase
+
 renderErrorCode :: ErrorCode -> Text
-renderErrorCode DBError              = "db-corrupted"
-renderErrorCode StaleLockFile        = "stale-lock-file"
-renderErrorCode FileNotFound         = "directory-not-found"
-renderErrorCode ShortStorage         = "short-storage"
-renderErrorCode NetworkError         = "network-error"
-renderErrorCode BalanceError         = "incorrect-balance"
-renderErrorCode ResourceVanished     = "resource-vanished"
-renderErrorCode UserNameError        = "user-name-error"
-renderErrorCode ConnectionRefused    = "connection-refused"
-renderErrorCode TimeSync             = "time-out-of-sync"
+renderErrorCode DBError              = "IOHKS-41"
+renderErrorCode StaleLockFile        = "IOHKS-48"
+renderErrorCode FileNotFound         = "IOHKS-35"
+renderErrorCode ShortStorage         = "IOHKS-45"
+renderErrorCode NetworkError         = "IOHKS-36"
+renderErrorCode ResourceVanished     = "IOHKS-12"
+renderErrorCode ConnectionRefused    = "IOHKS-43"
+renderErrorCode TimeSync             = "IOHKS-8"
 renderErrorCode SentLogCorrupted     = "sent-log-corrupted"
-renderErrorCode DBPath               = "db-path-error"
-renderErrorCode CannotGetDBSize      = "cannot-get-db-size"
 renderErrorCode DecompressionFailure = "decompression-failure"
 renderErrorCode Unknown              = "unknown"
 renderErrorCode Error                = "error"

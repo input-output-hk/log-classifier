@@ -30,18 +30,14 @@ quotedText = do
 --- | Parse ErrorCode
 parseErrorCode :: Parser ErrorCode
 parseErrorCode =
-        (string "ShortStorage"      >> return ShortStorage)
-    <|> (string "UserNameError"     >> return UserNameError)
-    <|> (string "TimeSync"          >> return TimeSync)
-    <|> (string "FileNotFound"      >> return FileNotFound)
-    <|> (string "StaleLockFile"     >> return StaleLockFile)
-    <|> (string "DBPath"            >> return DBPath)
-    <|> (string "CannotGetDBSize"   >> return CannotGetDBSize)
-    <|> (string "DBError"           >> return DBError)
-    <|> (string "BalanceError"      >> return BalanceError)
-    <|> (string "NetworkError"      >> return NetworkError)
-    <|> (string "ConnectionRefused" >> return ConnectionRefused)
-    <|> (string "ResourceVanished"  >> return ResourceVanished)
+        (string "IOHKS-45"      >> return ShortStorage)
+    <|> (string "IOHKS-8"          >> return TimeSync)
+    <|> (string "IOHKS-35"      >> return FileNotFound)
+    <|> (string "IOHKS-48"     >> return StaleLockFile)
+    <|> (string "IOHKS-41"           >> return DBError)
+    <|> (string "IOHKS-36"      >> return NetworkError)
+    <|> (string "IOHKS-43" >> return ConnectionRefused)
+    <|> (string "IOHKS-12"  >> return ResourceVanished)
     <|> (string "Unknown"           >> return Unknown)
     <|> (string "Error"             >> return Error)
 
