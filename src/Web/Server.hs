@@ -1,4 +1,6 @@
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE DeriveAnyClass      #-}
+{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -12,12 +14,14 @@ import           Prelude (Show (..))
 import           Universum
 
 import           Data.Aeson
+import qualified Data.ByteString.Lazy as BS
 
 import           Network.Wai.Handler.Warp (run)
 import           Network.Wai.Middleware.RequestLogger (logStdoutDev)
-import           Servant ((:<|>) (..), (:>), Capture, FromHttpApiData (..), Get, JSON, Post,
-                          Proxy (..), ReqBody, err404)
-import           Servant.Server (Application, Handler (..), Server, serve)
+import           Servant ((:<|>) (..), (:>), BasicAuth, BasicAuthCheck (..), BasicAuthData (..),
+                          BasicAuthResult (..), Capture, Context (..), FromHttpApiData (..), Get,
+                          JSON, Post, Proxy (..), ReqBody, err404, serveWithContext)
+import           Servant.Server (Handler (..), Server)
 
 import           DataSource (App, Comment, Config, DataLayer, TicketId (..), TicketInfo,
                              ZendeskResponse, runApp)
@@ -47,6 +51,7 @@ instance Bounded a => Bounded (V1 a) where
 --instance (Read a) => FromHttpApiData (V1 a) where
 --    parseUrlPiece = fmap V1 . readEither . toString
 
+-- A general instance with the wrapper.
 instance (FromHttpApiData a) => FromHttpApiData (V1 a) where
     parseUrlPiece = fmap V1 . parseUrlPiece
 
@@ -71,17 +76,34 @@ type CTicketId      = V1 TicketId
 --type CTicketInfo    = V1 TicketInfo
 --type CComment       = V1 Comment
 
+-- A data type we use to store user credentials.
+data ApplicationUser = ApplicationUser { _username :: Text, _password :: Text }
+    deriving (Eq, Show, Generic, FromJSON, ToJSON)
+
+-- A list of users we use.
+newtype ApplicationUsers = ApplicationUsers [ApplicationUser]
+    deriving (Eq, Show, Generic, FromJSON, ToJSON)
+
+-- | A user we'll grab from the database when we authenticate someone
+newtype User = User { _userName :: Text }
+  deriving (Eq, Show)
+
 ------------------------------------------------------------
 -- API
 ------------------------------------------------------------
 
+type BasicAuthURL = BasicAuth "log-classifier" User
+
 type API
-    =  "api" :> "v1" :> "tickets" :> Capture "ticketId" TicketId :> Get '[JSON] TicketInfo
-  :<|> "api" :> "v1" :> "tickets" :> Capture "ticketId" TicketId :> "comments" :> Get '[JSON] [Comment]
-  :<|> "api" :> "v1" :> "tickets" :> "analysis" :> ReqBody '[JSON] CTicketId :> Post '[JSON] ZendeskResponse
+    =  BasicAuthURL :> "api" :> "v1" :> "tickets" :> Capture "ticketId" TicketId :> Get '[JSON] TicketInfo
+  :<|> BasicAuthURL :> "api" :> "v1" :> "tickets" :> Capture "ticketId" TicketId :> "comments" :> Get '[JSON] [Comment]
+  :<|> BasicAuthURL :> "api" :> "v1" :> "tickets" :> "analysis" :> ReqBody '[JSON] CTicketId :> Post '[JSON] ZendeskResponse
 
+------------------------------------------------------------
+-- Server
+------------------------------------------------------------
 
---type NT source target = forall a. source a -> target a
+-- type NT source target = forall a. source a -> target a
 -- https://kseo.github.io/posts/2017-01-18-natural-transformations-in-servant.html
 -- http://www.parsonsmatt.org/2017/06/21/exceptional_servant_handling.html
 convert :: forall a. IO a -> Handler a
@@ -96,8 +118,8 @@ server config dataLayer =
     :<|>    handlerPostTicketAnalysis
   where
     -- | A handler for fetching the ticket information.
-    handlerGetTicket :: TicketId -> Handler TicketInfo
-    handlerGetTicket ticketId = convert $ runApp fetchTicketEither config
+    handlerGetTicket :: User -> TicketId -> Handler TicketInfo
+    handlerGetTicket _ ticketId = convert $ runApp fetchTicketEither config
       where
         fetchTicketEither :: App TicketInfo
         fetchTicketEither = do
@@ -108,24 +130,59 @@ server config dataLayer =
                 Just ticketId' -> pure ticketId'
 
     -- | A handler for getting ticket comments.
-    handlerGetTicketComments :: TicketId -> Handler [Comment]
-    handlerGetTicketComments ticketId = convert getTicketComments
+    handlerGetTicketComments :: User -> TicketId -> Handler [Comment]
+    handlerGetTicketComments _ ticketId = convert getTicketComments
       where
         getTicketComments :: IO [Comment]
         getTicketComments = runApp (fetchTicketComments dataLayer ticketId) config
 
     -- | A handler for the actual ticket analysis.
-    handlerPostTicketAnalysis :: CTicketId -> Handler ZendeskResponse
-    handlerPostTicketAnalysis (V1 ticketId) = convert $ runApp (processTicket dataLayer ticketId) config
+    handlerPostTicketAnalysis :: User -> CTicketId -> Handler ZendeskResponse
+    handlerPostTicketAnalysis _ (V1 ticketId) = convert $ runApp (processTicket dataLayer ticketId) config
+
 
 -- | Main function call.
 mainServer :: IO ()
 mainServer = do
+
     config      <- createConfig
     dataLayer   <- createBasicDataLayerIO config
 
-    run 4000 (logStdoutDev (app config dataLayer))
+    -- the location where we find our list of users and passwords.
+    usersFile   <- BS.readFile "./app_users.json"
+
+    let applicationUsers :: ApplicationUsers
+        applicationUsers = fromMaybe (error "No app users!") (decode' usersFile)
+
+    -- create the server
+    let serverWithContext =  serveWithContext
+                                    apiProxy
+                                    (basicAuthServerContext applicationUsers)
+                                    (server config dataLayer)
+
+    -- Serve, Servant!
+    run 4000 (logStdoutDev serverWithContext)
   where
-    app :: Config -> DataLayer App -> Application
-    app config dataLayer = serve @API Proxy (server config dataLayer)
+    -- | The API proxy.
+    apiProxy :: Proxy API
+    apiProxy = Proxy
+
+    -- | We need to supply our handlers with the right Context.
+    basicAuthServerContext :: ApplicationUsers -> Context (BasicAuthCheck User ': '[])
+    basicAuthServerContext applicationUsers = ( authCheck applicationUsers ) :. EmptyContext
+      where
+        -- | 'BasicAuthCheck' holds the handler we'll use to verify a username and password.
+        authCheck :: ApplicationUsers -> BasicAuthCheck User
+        authCheck (ApplicationUsers applicationUsers') =
+
+            let check :: BasicAuthData -> IO (BasicAuthResult User)
+                check (BasicAuthData username password) =
+                    if (ApplicationUser usernameText passwordText) `elem` applicationUsers'
+                        then pure (Authorized (User usernameText))
+                        else pure Unauthorized
+                  where
+                    usernameText = decodeUtf8 username
+                    passwordText = decodeUtf8 password
+
+            in BasicAuthCheck check
 
