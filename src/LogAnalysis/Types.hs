@@ -28,15 +28,26 @@ import           Test.QuickCheck (Arbitrary (..), Gen, choose, elements, oneof, 
 
 -- | Identifier for each error
 data ErrorCode
-    = ShortStorage         -- ^ Not enough space on hard drive to store block data
-    | TimeSync             -- ^ User's PC's time is out of sync
-    | FileNotFound         -- ^ Some of the files were not installed properly
-    | StaleLockFile        -- ^ Open.lock file is corrupted
+    = BlockDataCorrupt
+    | CannotConnect
+    | CannotConnectAfter
+    | ConnectionRefused
+    | ConnectLoadHeaders
+    | DBCorruptIO
+    | DBError
+    | FileNotFound
+    | NetworkError
+    | OpenLock
+    | PermCreateFile
+    | PermDenied
+    | ResourceVanished
+    | ShortStorage
+    | StaleLockFile
+    | TimeSync
+    | TLSCert
+    | WalletNotSync
+    | WinReg
     | SentLogCorrupted     -- ^ Log file sent to the Zendesk is corrupted
-    | DBError              -- ^ Local block data is corrupted
-    | NetworkError         -- ^ Firewall is blocking the connection
-    | ConnectionRefused    -- ^ Firewall is blocking the connection
-    | ResourceVanished     -- ^ Network error
     | DecompressionFailure -- ^ The classifier failed to decompress the log file
     | Unknown              -- ^ Unknown error (currently not used)
     | Error                -- ^ Error (currently not used)
@@ -98,14 +109,25 @@ instance Show Knowledge where
 -- lowercase
 
 renderErrorCode :: ErrorCode -> Text
-renderErrorCode DBError              = "IOHKS-41"
-renderErrorCode StaleLockFile        = "IOHKS-48"
+renderErrorCode TLSCert              = "IOHKS-37"
+renderErrorCode WinReg               = "IOHKS-65"
+renderErrorCode OpenLock             = "IOHKS-39"
+renderErrorCode WalletNotSync        = "IOHKS-31"
+renderErrorCode PermCreateFile       = "IOHKS-30"
+renderErrorCode ConnectLoadHeaders   = "IOHKS-10"
+renderErrorCode PermDenied           = "IOHKS-7"
+renderErrorCode DBCorruptIO          = "IOHKS-47"
+renderErrorCode BlockDataCorrupt     = "IOHKS-29"
+renderErrorCode CannotConnectAfter   = "IOHKS-78"
+renderErrorCode CannotConnect        = "IOHKS-79"
 renderErrorCode FileNotFound         = "IOHKS-35"
-renderErrorCode ShortStorage         = "IOHKS-45"
-renderErrorCode NetworkError         = "IOHKS-36"
-renderErrorCode ResourceVanished     = "IOHKS-12"
+renderErrorCode DBError              = "IOHKS-41"
 renderErrorCode ConnectionRefused    = "IOHKS-43"
+renderErrorCode ShortStorage         = "IOHKS-45"
+renderErrorCode StaleLockFile        = "IOHKS-48"
+renderErrorCode ResourceVanished     = "IOHKS-12"
 renderErrorCode TimeSync             = "IOHKS-8"
+renderErrorCode NetworkError         = "IOHKS-36"
 renderErrorCode SentLogCorrupted     = "sent-log-corrupted"
 renderErrorCode DecompressionFailure = "decompression-failure"
 renderErrorCode Unknown              = "unknown"
