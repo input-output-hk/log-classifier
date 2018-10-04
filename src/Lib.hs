@@ -225,7 +225,8 @@ fetchAgents dataLayer = do
 
 -- | 'processTicket' with exception handling
 processTicketSafe :: DataLayer App ->TicketId -> App ()
-processTicketSafe dataLayer tId = catch (void $ processTicket dataLayer tId)
+processTicketSafe dataLayer tId = catch (putTextLn . show =<< (processTicket dataLayer tId))
+--processTicketSafe dataLayer tId = catch (void $ processTicket dataLayer tId)
     -- Print and log any exceptions related to process ticket
     -- TODO(ks): Remove IO from here, return the error.
     (\(e :: ProcessTicketExceptions) -> do
@@ -254,7 +255,7 @@ processTicket dataLayer tId = do
             zendeskResponse <- getZendeskResponses dataLayer comments attachments ticketInfo
 
             -- post ticket comment
-            postTicketComment ticketInfo zendeskResponse
+            --postTicketComment ticketInfo zendeskResponse
 
             pure zendeskResponse
 
