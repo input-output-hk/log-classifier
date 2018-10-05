@@ -238,8 +238,7 @@ processTicketSafe dataLayer tId = catch (void $ processTicket dataLayer tId)
 -- | Process ticket with given 'TicketId'
 processTicket :: HasCallStack => DataLayer App -> TicketId -> App ZendeskResponse
 processTicket dataLayer tId = do
-    printText           <- asksIOLayer iolPrintText
-    appendF             <- asksIOLayer iolAppendFile -- We need to remove this.
+
     -- We see 3 HTTP calls here.
     let getTicketInfo       = zlGetTicketInfo dataLayer
     let getTicketComments   = zlGetTicketComments dataLayer
@@ -258,13 +257,6 @@ processTicket dataLayer tId = do
             postTicketComment ticketInfo zendeskResponse
             -- TODO(ks): Moved back so we can run it in single-threaded mode. Requires a lot of
             -- refactoring to run it in a multi-threaded mode.
-            let ticketId = getTicketId $ zrTicketId zendeskResponse
-            -- Append ticket result.
-            let tags = getTicketTags $ zrTags zendeskResponse
-            forM_ tags $ \tag -> do
-                let formattedTicketIdAndTag = show ticketId <> " " <> tag
-                printText formattedTicketIdAndTag
-                appendF "logs/analysis-result.log" (formattedTicketIdAndTag <> "\n")
 
             pure zendeskResponse
 
