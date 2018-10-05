@@ -6,7 +6,7 @@ module LogAnalysis.KnowledgeCSVParser
 
 import           Universum
 
-import           Data.Attoparsec.Text (Parser, char, endOfLine, takeTill, string)
+import           Data.Attoparsec.Text (Parser, char, endOfLine, string, takeTill)
 
 import           LogAnalysis.Types (ErrorCode (..), Knowledge (..))
 
@@ -30,20 +30,27 @@ quotedText = do
 --- | Parse ErrorCode
 parseErrorCode :: Parser ErrorCode
 parseErrorCode =
-        (string "ShortStorage"      >> return ShortStorage)
-    <|> (string "UserNameError"     >> return UserNameError)
-    <|> (string "TimeSync"          >> return TimeSync)
-    <|> (string "FileNotFound"      >> return FileNotFound)
-    <|> (string "StaleLockFile"     >> return StaleLockFile)
-    <|> (string "DBPath"            >> return DBPath)
-    <|> (string "CannotGetDBSize"   >> return CannotGetDBSize)
-    <|> (string "DBError"           >> return DBError)
-    <|> (string "BalanceError"      >> return BalanceError)
-    <|> (string "NetworkError"      >> return NetworkError)
-    <|> (string "ConnectionRefused" >> return ConnectionRefused)
-    <|> (string "ResourceVanished"  >> return ResourceVanished)
-    <|> (string "Unknown"           >> return Unknown)
-    <|> (string "Error"             >> return Error)
+        (string "TLSCert"              >> return TLSCert)
+    <|> (string "WinReg"               >> return WinReg)
+    <|> (string "openLock"             >> return OpenLock)
+    <|> (string "WalletNotSync"        >> return WalletNotSync)
+    <|> (string "PermCreateFile"       >> return PermCreateFile)
+    <|> (string "ConnectLoadHeaders"   >> return ConnectLoadHeaders)
+    <|> (string "PermDenied"           >> return PermDenied)
+    <|> (string "DBCorruptIO"          >> return DBCorruptIO)
+    <|> (string "BlockDataCorrupt"     >> return BlockDataCorrupt)
+    <|> (string "CannotConnectAfter"   >> return CannotConnectAfter)
+    <|> (string "CannotConnect"        >> return CannotConnect)
+    <|> (string "FileNotFound"         >> return FileNotFound)
+    <|> (string "DBError"              >> return DBError)
+    <|> (string "ConnectionRefused"    >> return ConnectionRefused)
+    <|> (string "ShortStorage"         >> return ShortStorage)
+    <|> (string "StaleLockFile"        >> return StaleLockFile)
+    <|> (string "ResourceVanished"     >> return ResourceVanished)
+    <|> (string "TimeSync"             >> return TimeSync)
+    <|> (string "NetworkError"         >> return NetworkError)
+    <|> (string "Unknown"              >> return Unknown)
+    <|> (string "Error"                >> return Error)
 
 -- | Parse each csv records
 parseKnowledge :: Parser Knowledge  -- not really clean code..
