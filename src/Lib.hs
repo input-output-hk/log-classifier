@@ -255,8 +255,6 @@ processTicket dataLayer tId = do
 
             -- post ticket comment
             postTicketComment ticketInfo zendeskResponse
-            -- TODO(ks): Moved back so we can run it in single-threaded mode. Requires a lot of
-            -- refactoring to run it in a multi-threaded mode.
 
             pure zendeskResponse
 
