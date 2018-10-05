@@ -255,6 +255,15 @@ processTicket dataLayer tId = do
 
             -- post ticket comment
             postTicketComment ticketInfo zendeskResponse
+            -- TODO(ks): Moved back so we can run it in single-threaded mode. Requires a lot of
+            -- refactoring to run it in a multi-threaded mode.
+            let ticketId = getTicketId $ zrTicketId zendeskResponse
+            -- Append ticket result.
+            let tags = getTicketTags $ zrTags zendeskResponse
+            forM_ tags $ \tag -> do
+                let formattedTicketIdAndTag = show ticketId <> " " <> tag
+                printText formattedTicketIdAndTag
+                appendF "logs/analysis-result.log" (formattedTicketIdAndTag <> "\n")
 
             pure zendeskResponse
 
