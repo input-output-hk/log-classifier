@@ -254,7 +254,7 @@ processTicket dataLayer tId = do
             zendeskResponse <- getZendeskResponses dataLayer comments attachments ticketInfo
 
             -- post ticket comment
-            --postTicketComment ticketInfo zendeskResponse
+            postTicketComment ticketInfo zendeskResponse
 
             pure zendeskResponse
 
