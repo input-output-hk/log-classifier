@@ -29,12 +29,15 @@ import           Test.QuickCheck (Arbitrary (..), Gen, choose, elements, oneof, 
 -- | Identifier for each error
 data ErrorCode
     = BlockDataCorrupt
+    | BalanceError         -- ^ Daedalus shows wrong Ada amount
     | CannotConnect
     | CannotConnectAfter
+    | CannotGetDBSize      -- ^ Error message of Couidn't pack log files shows up
     | ConnectionRefused
     | ConnectLoadHeaders
     | DBCorruptIO
     | DBError
+    | DBPath               -- ^ Daedalus cannot find certain files
     | FileNotFound
     | NetworkError
     | OpenLock
@@ -45,6 +48,7 @@ data ErrorCode
     | StaleLockFile
     | TimeSync
     | TLSCert
+    | UserNameError        -- ^ User is using non-latin characters for username
     | WalletNotSync
     | WinReg
     | SentLogCorrupted     -- ^ Log file sent to the Zendesk is corrupted
@@ -120,14 +124,18 @@ renderErrorCode DBCorruptIO          = "db-corrupt-io"
 renderErrorCode BlockDataCorrupt     = "db-corrupt"
 renderErrorCode CannotConnectAfter   = "cannot-connect-after"
 renderErrorCode CannotConnect        = "cannot-connect"
+renderErrorCode CannotGetDBSize      = "cannot-get-db-size"
 renderErrorCode FileNotFound         = "directory-not-found"
 renderErrorCode DBError              = "db-corrupted"
+renderErrorCode DBPath               = "db-path-error"
+renderErrorCode BalanceError         = "incorrect-balance"
 renderErrorCode ConnectionRefused    = "connection-refused"
 renderErrorCode ShortStorage         = "short-storage"
 renderErrorCode StaleLockFile        = "stale-lock-file"
 renderErrorCode ResourceVanished     = "resource-vanished"
 renderErrorCode TimeSync             = "time-out-of-sync"
 renderErrorCode NetworkError         = "network-error"
+renderErrorCode UserNameError        = "user-name-error"
 renderErrorCode SentLogCorrupted     = "sent-log-corrupted"
 renderErrorCode DecompressionFailure = "decompression-failure"
 renderErrorCode Unknown              = "unknown"
