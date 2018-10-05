@@ -238,7 +238,8 @@ processTicketSafe dataLayer tId = catch (void $ processTicket dataLayer tId)
 -- | Process ticket with given 'TicketId'
 processTicket :: HasCallStack => DataLayer App -> TicketId -> App ZendeskResponse
 processTicket dataLayer tId = do
-
+    printText           <- asksIOLayer iolPrintText
+    appendF             <- asksIOLayer iolAppendFile -- We need to remove this.
     -- We see 3 HTTP calls here.
     let getTicketInfo       = zlGetTicketInfo dataLayer
     let getTicketComments   = zlGetTicketComments dataLayer
