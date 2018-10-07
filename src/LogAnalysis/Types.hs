@@ -28,19 +28,30 @@ import           Test.QuickCheck (Arbitrary (..), Gen, choose, elements, oneof, 
 
 -- | Identifier for each error
 data ErrorCode
-    = ShortStorage         -- ^ Not enough space on hard drive to store block data
-    | UserNameError        -- ^ User is using non-latin characters for username
-    | TimeSync             -- ^ User's PC's time is out of sync
-    | FileNotFound         -- ^ Some of the files were not installed properly
-    | StaleLockFile        -- ^ Open.lock file is corrupted
-    | SentLogCorrupted     -- ^ Log file sent to the Zendesk is corrupted
-    | DBError              -- ^ Local block data is corrupted
-    | DBPath               -- ^ Daedalus cannot find certain files
-    | CannotGetDBSize      -- ^ Error message of Couidn't pack log files shows up
+    = BlockDataCorrupt
     | BalanceError         -- ^ Daedalus shows wrong Ada amount
-    | NetworkError         -- ^ Firewall is blocking the connection
-    | ConnectionRefused    -- ^ Firewall is blocking the connection
-    | ResourceVanished     -- ^ Network error
+    | CannotConnect
+    | CannotConnectAfter
+    | CannotGetDBSize      -- ^ Error message of Couidn't pack log files shows up
+    | ConnectionRefused
+    | ConnectLoadHeaders
+    | DBCorruptIO
+    | DBError
+    | DBPath               -- ^ Daedalus cannot find certain files
+    | FileNotFound
+    | NetworkError
+    | OpenLock
+    | PermCreateFile
+    | PermDenied
+    | ResourceVanished
+    | ShortStorage
+    | StaleLockFile
+    | TimeSync
+    | TLSCert
+    | UserNameError        -- ^ User is using non-latin characters for username
+    | WalletNotSync
+    | WinReg
+    | SentLogCorrupted     -- ^ Log file sent to the Zendesk is corrupted
     | DecompressionFailure -- ^ The classifier failed to decompress the log file
     | Unknown              -- ^ Unknown error (currently not used)
     | Error                -- ^ Error (currently not used)
@@ -100,20 +111,32 @@ instance Show Knowledge where
 -- | Sorted accoring to knowledgebase.
 -- Tag needs to be in lowercase since Zendesk automatically convert any uppercase
 -- lowercase
+
 renderErrorCode :: ErrorCode -> Text
-renderErrorCode DBError              = "db-corrupted"
-renderErrorCode StaleLockFile        = "stale-lock-file"
-renderErrorCode FileNotFound         = "directory-not-found"
-renderErrorCode ShortStorage         = "short-storage"
-renderErrorCode NetworkError         = "network-error"
-renderErrorCode BalanceError         = "incorrect-balance"
-renderErrorCode ResourceVanished     = "resource-vanished"
-renderErrorCode UserNameError        = "user-name-error"
-renderErrorCode ConnectionRefused    = "connection-refused"
-renderErrorCode TimeSync             = "time-out-of-sync"
-renderErrorCode SentLogCorrupted     = "sent-log-corrupted"
-renderErrorCode DBPath               = "db-path-error"
+renderErrorCode TLSCert              = "tls-cert-error"
+renderErrorCode WinReg               = "win-reg-error"
+renderErrorCode OpenLock             = "open-lock"
+renderErrorCode WalletNotSync        = "wallet-not-sync"
+renderErrorCode PermCreateFile       = "permission-create-file"
+renderErrorCode ConnectLoadHeaders   = "connect-load-headers"
+renderErrorCode PermDenied           = "permission-denied"
+renderErrorCode DBCorruptIO          = "db-corrupt-io"
+renderErrorCode BlockDataCorrupt     = "db-corrupt"
+renderErrorCode CannotConnectAfter   = "cannot-connect-after"
+renderErrorCode CannotConnect        = "cannot-connect"
 renderErrorCode CannotGetDBSize      = "cannot-get-db-size"
+renderErrorCode FileNotFound         = "directory-not-found"
+renderErrorCode DBError              = "db-corrupted"
+renderErrorCode DBPath               = "db-path-error"
+renderErrorCode BalanceError         = "incorrect-balance"
+renderErrorCode ConnectionRefused    = "connection-refused"
+renderErrorCode ShortStorage         = "short-storage"
+renderErrorCode StaleLockFile        = "stale-lock-file"
+renderErrorCode ResourceVanished     = "resource-vanished"
+renderErrorCode TimeSync             = "time-out-of-sync"
+renderErrorCode NetworkError         = "network-error"
+renderErrorCode UserNameError        = "user-name-error"
+renderErrorCode SentLogCorrupted     = "sent-log-corrupted"
 renderErrorCode DecompressionFailure = "decompression-failure"
 renderErrorCode Unknown              = "unknown"
 renderErrorCode Error                = "error"
