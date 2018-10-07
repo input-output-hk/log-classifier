@@ -1,5 +1,5 @@
 steps:
   - label: 'stack nix'
-    command: 'nix-shell --run "stack install weeder && /var/lib/buildkite-agent/.local/bin/weeder . --build --test && stack test"' 
+    command: 'nix-shell --run "stack build && stack test"' 
     agents:
       system: x86_64-linux
