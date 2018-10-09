@@ -901,6 +901,32 @@ instance ToJSON Ticket where
                     ]
                 ]
 
+instance ToJSON TicketInfo where
+    toJSON (TicketInfo tId requesterId asigneeId url tags status fields customFields) =
+        object  [ "ticket" .= object
+                    [ "id"              .= tId
+                    , "requester_id"    .= requesterId
+                    , "assignee_id"     .= asigneeId
+                    , "url"             .= url
+                    , "tags"            .= tags
+                    , "status"          .= status
+                    , "fields"          .= fields
+                    , "custom_fields"   .= customFields
+                    ]
+                ]
+
+
+instance ToJSON ZendeskResponse where
+    toJSON (ZendeskResponse zrTicketId zrComment zrTags zrIsPublic) =
+        object  [ "zendesk_reponse" .= object
+                    [ "ticket_id"       .= zrTicketId
+                    , "ticket_comment"  .= zrComment
+                    , "ticket_tags"     .= zrTags
+                    , "is_public"       .= zrIsPublic
+                    ]
+                ]
+
+
 ------------------------------------------------------------
 -- Ord instances
 ------------------------------------------------------------
