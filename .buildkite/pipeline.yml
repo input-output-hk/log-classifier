@@ -1,5 +1,6 @@
 steps:
   - label: 'stack nix'
-    command: 'nix-shell --run "stack build && stack test"' 
+    # we are using Nix with Stack anyway, so we are implicitly testing that as well.
+    command: 'stack build && stack test' 
     agents:
       system: x86_64-linux
