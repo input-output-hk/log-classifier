@@ -276,7 +276,7 @@ postTicketComment httpNetworkLayer ticketInfo zendeskResponse = do
 -- | Create response ticket
 createResponseTicket :: UserId -> TicketInfo -> ZendeskResponse -> Ticket
 createResponseTicket agentId TicketInfo{..} ZendeskResponse{..} =
-    let analyzedTag = renderTicketStatus AnalyzedByScriptV1_5_2
+    let analyzedTag = renderTicketStatus AnalyzedByScriptV1_6_0
         -- Nub so it won't post duplicate tags
         allTags    = nub $ [analyzedTag] <> getTicketTags tiTags <> getTicketTags zrTags
         -- We remove the @ToBeAnalyzed@ tag.

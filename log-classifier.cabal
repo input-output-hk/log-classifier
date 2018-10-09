@@ -1,5 +1,5 @@
 name:                log-classifier
-version:             1.5.2.0
+version:             1.6.0.0
 synopsis:            Log classifier for a Cardano node
 description:         Please see the README
 homepage:            https://github.com/input-output-hk/log-classifier#readme

@@ -426,7 +426,8 @@ data TicketTag
     | AnalyzedByScriptV1_4_5  -- ^ Ticket has been analyzed by the version 1.4.5
     | AnalyzedByScriptV1_5_0  -- ^ Ticket has been analyzed by the version 1.5.0
     | AnalyzedByScriptV1_5_1  -- ^ Ticket has been analyzed by the version 1.5.1
-    | AnalyzedByScriptV1_5_2  -- ^ Ticket has been analyzed by the version 1.5.1
+    | AnalyzedByScriptV1_5_2  -- ^ Ticket has been analyzed by the version 1.5.2
+    | AnalyzedByScriptV1_6_0  -- ^ Ticket has been analyzed by the version 1.6.0
     | ToBeAnalyzed            -- ^ Ticket needs to be analyzed
     | NoKnownIssue            -- ^ Ticket had no known issue
     | NoLogAttached           -- ^ Log file not attached
@@ -973,6 +974,7 @@ renderTicketStatus AnalyzedByScriptV1_4_5 = "analyzed-by-script-v1.4.5"
 renderTicketStatus AnalyzedByScriptV1_5_0 = "analyzed-by-script-v1.5.0"
 renderTicketStatus AnalyzedByScriptV1_5_1 = "analyzed-by-script-v1.5.1"
 renderTicketStatus AnalyzedByScriptV1_5_2 = "analyzed-by-script-v1.5.2"
+renderTicketStatus AnalyzedByScriptV1_6_0 = "analyzed-by-script-v1.6.0"
 renderTicketStatus ToBeAnalyzed           = "to_be_analysed" -- https://iohk.zendesk.com/agent/admin/tags
 renderTicketStatus NoKnownIssue           = "no-known-issues"
 renderTicketStatus NoLogAttached          = "no-log-files"
