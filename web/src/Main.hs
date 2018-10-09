@@ -7,7 +7,7 @@ import           Lib (createBasicDataLayerIO, createConfig, exportZendeskDataToL
                       fetchAndShowTickets, fetchAndShowTicketsFrom, fetchTickets,
                       inspectLocalZipAttachment, processTicketSafe, processTickets,
                       processTicketsFromTime, showStatistics)
-import           Web.Server (mainServer)
+import           Server (mainServer)
 
 -- | Main entry point.
 main :: IO ()
