@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
 
@@ -29,6 +30,11 @@ import           Universum
 
 import           UnliftIO.Async (mapConcurrently)
 
+<<<<<<< 88c4cea847162e0760fdd3fcff7ffd2521561c2f:classifier/src/Lib.hs
+=======
+import           Control.Exception.Safe (Handler (..), catches)
+import           Data.Attoparsec.Text.Lazy (eitherResult, parse)
+>>>>>>> [TSD-148] Refactor inspectAttachment (WIP):src/Lib.hs
 import qualified Data.ByteString.Lazy as BS
 import           Data.Attoparsec.Text.Lazy (eitherResult, parse)
 import           Data.List (nub)
@@ -369,62 +375,100 @@ inspectAttachments dataLayer ticketInfo attachments = do
     handleMaybe Nothing  = throwM $ AttachmentNotFound (tiId ticketInfo)
     handleMaybe (Just a) = return a
 
+<<<<<<< 88c4cea847162e0760fdd3fcff7ffd2521561c2f:classifier/src/Lib.hs
+=======
+-- | Inspection of the local zip.
+-- This function prints out the analysis result on the console.
+inspectLocalZipAttachment :: FilePath -> App ()
+inspectLocalZipAttachment filePath = do
+
+    config          <- ask
+    printText       <- asksIOLayer iolPrintText
+
+    -- Read the zip file
+    fileContent     <- liftIO $ BS.readFile filePath
+    let eResults = extractLogsFromZip 100 fileContent
+
+    case eResults of
+        Left (err :: ZipFileExceptions) ->
+            printText $ show err
+        Right result -> do
+            let analysisEnv = setupAnalysis $ cfgKnowledgebase config
+            eitherAnalysisResult    <- try $ extractIssuesFromLogs result analysisEnv
+
+            case eitherAnalysisResult of
+                Right analysisResult -> do
+                    let errorCodes = extractErrorCodes analysisResult
+
+                    printText "Analysis result:"
+                    void $ mapM (printText . show) analysisResult
+
+                    printText "Error codes:"
+                    void $ mapM printText errorCodes
+
+                Left (e :: LogAnalysisException) ->
+                    printText $ show e
+
+-- In order to test if the exception handling is done correctly, I'd need to make stubs of 'extractLogsFromZip'
+-- and 'extractIssuesFromLogs'
+-- type ExtractLogFunc = Int -> LByteString -> Either ZipFileExceptions [LogFile]
+-- type ExtractErrorCodeFunc = [LogFile] -> Analysis -> m Analysis
+-- inspectAttachment :: (MonadCatch m) 
+--                   => Config 
+--                   -> TicketInfo 
+--                   -> AttachmentContent
+--                   -> ExtractLogFunc 
+--                   -> ExtractErrorcodeFunc
+--                   -> m ZendeskResponse
+-- or add an layer to 'Config' but just for these two functions..?
+-- Another option is to intentionally create an corrupted log file but that'd need some research
+
+>>>>>>> [TSD-148] Refactor inspectAttachment (WIP):src/Lib.hs
 -- | Given number of file of inspect, knowledgebase and attachment,
 -- analyze the logs and return the results.
 inspectAttachment :: (MonadCatch m) => Config -> TicketInfo -> AttachmentContent -> m ZendeskResponse
-inspectAttachment Config{..} ticketInfo@TicketInfo{..} attachment = do
+inspectAttachment Config{..} ticketInfo attachment =
+    flip catches [Handler handleZipFileException, Handler handleLogAnalysisException] $ do
 
-    let analysisEnv = setupAnalysis cfgKnowledgebase
-    let eLogFiles = extractLogsFromZip cfgNumOfLogsToAnalyze (getAttachmentContent attachment)
+        let analysisEnv = setupAnalysis cfgKnowledgebase
+        -- Basically fromEither but such function does not exist
+        let logFiles    = either throwM id $ extractLogsFromZip cfgNumOfLogsToAnalyze
+                        $ getAttachmentContent attachment
 
-    case eLogFiles of
-        Left _ ->
-            -- Log file was corrupted
-            pure $ ZendeskResponse
-                { zrTicketId    = tiId
-                , zrComment     = prettyFormatLogReadError ticketInfo
-                , zrTags        = TicketTags [renderErrorCode SentLogCorrupted]
-                , zrIsPublic    = cfgIsCommentPublic
+        -- Perform analysis
+        analysisResult <- extractIssuesFromLogs logFiles analysisEnv
+        let errorCodes  = extractErrorCodes analysisResult
+        let commentRes  = prettyFormatAnalysis analysisResult ticketInfo
+
+        -- (TODO): Generalize somehow
+        pure $ ZendeskResponse
+            { zrTicketId = tiId ticketInfo
+            , zrComment  = commentRes
+            , zrTags     = TicketTags errorCodes
+            , zrIsPublic = cfgIsCommentPublic
+            }
+   where
+     handleZipFileException :: (Monad m) => ZipFileExceptions -> m ZendeskResponse
+     handleZipFileException _ =
+        pure $ mkZendeskErrorResponse (prettyFormatLogReadError ticketInfo) SentLogCorrupted
+
+     handleLogAnalysisException :: (MonadThrow m) => LogAnalysisException -> m ZendeskResponse
+     handleLogAnalysisException = \case
+        LogReadException ->
+            pure $ mkZendeskErrorResponse (prettyFormatLogReadError ticketInfo) DecompressionFailure
+
+        NoKnownIssueFound ->
+            pure $ mkZendeskErrorResponse (prettyFormatNoIssues ticketInfo) NoKnownIssue
+
+        (JSONDecodeFailure errorText) -> throwM $ JSONDecodeFailure errorText
+
+     mkZendeskErrorResponse :: Text -> ErrorCode -> ZendeskResponse
+     mkZendeskErrorResponse comment errorCode = ZendeskResponse
+                { zrTicketId = tiId ticketInfo
+                , zrComment  = comment
+                , zrTags     = TicketTags [renderErrorCode errorCode]
+                , zrIsPublic = cfgIsCommentPublic
                 }
-
-        Right logFiles -> do
-            -- Log files maybe corrupted or issue was not found
-            tryAnalysisResult    <- try $ extractIssuesFromLogs logFiles analysisEnv
-
-            case tryAnalysisResult of
-                Right analysisResult -> do
-                    -- Known issue was found
-                    let errorCodes = extractErrorCodes analysisResult
-                    let commentRes = prettyFormatAnalysis analysisResult ticketInfo
-
-                    pure $ ZendeskResponse
-                        { zrTicketId    = tiId
-                        , zrComment     = commentRes
-                        , zrTags        = TicketTags errorCodes
-                        , zrIsPublic    = cfgIsCommentPublic
-                        }
-
-                Left (analysisException :: LogAnalysisException) ->
-                    case analysisException of
-                        -- Could not read the log files
-                        LogReadException ->
-                            pure $ ZendeskResponse
-                                { zrTicketId    = tiId
-                                , zrComment     = prettyFormatLogReadError ticketInfo
-                                , zrTags        = TicketTags [renderErrorCode DecompressionFailure]
-                                , zrIsPublic    = cfgIsCommentPublic
-                                }
-                        -- No known issue was found
-                        NoKnownIssueFound ->
-                            pure $ ZendeskResponse
-                                { zrTicketId    = tiId
-                                , zrComment     = prettyFormatNoIssues ticketInfo
-                                , zrTags        = TicketTags [renderTicketStatus NoKnownIssue]
-                                , zrIsPublic    = cfgIsCommentPublic
-                                }
-                        JSONDecodeFailure errorText ->
-                            -- Need to respond to an ticket instead of throwing exception
-                            throwM $ JSONDecodeFailure errorText
 
 -- | Filter tickets
 filterAnalyzedTickets :: [TicketInfo] -> [TicketInfo]
