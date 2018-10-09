@@ -411,14 +411,14 @@ inspectLocalZipAttachment filePath = do
 
 -- In order to test if the exception handling is done correctly, I'd need to make stubs of 'extractLogsFromZip'
 -- and 'extractIssuesFromLogs'
--- type ExtractLogFunc = Int -> LByteString -> Either ZipFileExceptions [LogFile]
--- type ExtractErrorCodeFunc = [LogFile] -> Analysis -> m Analysis
+-- type ExtractLogFileFunc = Int -> LByteString -> Either ZipFileExceptions [LogFile]
+-- type ExtractErrorCodeFunc m = [LogFile] -> Analysis -> m Analysis
 -- inspectAttachment :: (MonadCatch m) 
 --                   => Config 
 --                   -> TicketInfo 
 --                   -> AttachmentContent
---                   -> ExtractLogFunc 
---                   -> ExtractErrorcodeFunc
+--                   -> ExtractLogFileFunc 
+--                   -> ExtractErrorcodeFunc m
 --                   -> m ZendeskResponse
 -- or add an layer to 'Config' but just for these two functions..?
 -- Another option is to intentionally create an corrupted log file but that'd need some research
@@ -440,13 +440,7 @@ inspectAttachment Config{..} ticketInfo attachment =
         let errorCodes  = extractErrorCodes analysisResult
         let commentRes  = prettyFormatAnalysis analysisResult ticketInfo
 
-        -- (TODO): Generalize somehow
-        pure $ ZendeskResponse
-            { zrTicketId = tiId ticketInfo
-            , zrComment  = commentRes
-            , zrTags     = TicketTags errorCodes
-            , zrIsPublic = cfgIsCommentPublic
-            }
+        pure $ mkZendeskResponse commentRes errorCodes
    where
      handleZipFileException :: (Monad m) => ZipFileExceptions -> m ZendeskResponse
      handleZipFileException _ =
@@ -462,13 +456,15 @@ inspectAttachment Config{..} ticketInfo attachment =
 
         (JSONDecodeFailure errorText) -> throwM $ JSONDecodeFailure errorText
 
-     mkZendeskErrorResponse :: Text -> ErrorCode -> ZendeskResponse
-     mkZendeskErrorResponse comment errorCode = ZendeskResponse
+     mkZendeskResponse :: Text -> [Text] -> ZendeskResponse
+     mkZendeskResponse comment errorCodes = ZendeskResponse
                 { zrTicketId = tiId ticketInfo
                 , zrComment  = comment
-                , zrTags     = TicketTags [renderErrorCode errorCode]
+                , zrTags     = TicketTags errorCodes
                 , zrIsPublic = cfgIsCommentPublic
                 }
+     mkZendeskErrorResponse :: Text -> ErrorCode -> ZendeskResponse
+     mkZendeskErrorResponse comment e = mkZendeskResponse comment [renderErrorCode e]
 
 -- | Filter tickets
 filterAnalyzedTickets :: [TicketInfo] -> [TicketInfo]
