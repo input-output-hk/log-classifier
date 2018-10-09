@@ -2,7 +2,9 @@
 {-# LANGUAGE RecordWildCards   #-}
 
 module Lib
-    ( runZendeskMain
+    ( createBasicDataLayerIO
+    , createConfig
+    -- * library functions
     , getZendeskResponses
     , getAttachmentsFromComment
     , processTicket
@@ -16,33 +18,36 @@ module Lib
     -- * Optional
     , fetchTicket
     , fetchTicketComments
+    , fetchAgents
+    , fetchAndShowTickets
+    , fetchAndShowTicketsFrom
+    , inspectLocalZipAttachment
+    , processTicketsFromTime
     ) where
 
 import           Universum
 
 import           UnliftIO.Async (mapConcurrently)
 
-import           Data.Attoparsec.Text.Lazy (eitherResult, parse)
 import qualified Data.ByteString.Lazy as BS
+import           Data.Attoparsec.Text.Lazy (eitherResult, parse)
 import           Data.List (nub)
 import           Data.Text (stripEnd)
 
 import           System.Directory (createDirectoryIfMissing)
 import           System.IO (BufferMode (..), hSetBuffering)
 
-import           CLI (CLI (..), getCliArgs)
 import           Configuration (defaultConfig)
 import           DataSource (App, Attachment (..), AttachmentContent (..), Comment (..),
-                             Config (..), DBLayer (..), DataLayer (..),
-                             DeletedTicket (..), ExportFromTime (..), IOLayer (..), TicketId (..),
-                             TicketInfo (..), TicketStatus (..), TicketTag (..), TicketTags (..),
-                             User (..), UserId (..), ZendeskResponse (..), asksDBLayer, asksIOLayer,
+                             Config (..), DBLayer (..), DataLayer (..), DeletedTicket (..),
+                             ExportFromTime (..), IOLayer (..), TicketId (..), TicketInfo (..),
+                             TicketStatus (..), TicketTag (..), TicketTags (..), User (..),
+                             UserId (..), ZendeskResponse (..), asksDBLayer, asksIOLayer,
                              assignToPath, basicDataLayer, connPoolDBLayer,
                              createProdConnectionPool, knowledgebasePath, renderTicketStatus,
                              runApp, tokenPath)
 
-import           Exceptions (ClassifierExceptions (..), ProcessTicketExceptions (..),
-                             ZipFileExceptions (..))
+import           Exceptions (ClassifierExceptions (..), ProcessTicketExceptions (..), ZipFileExceptions (..))
 import           Http.Layer (basicHTTPNetworkLayer)
 import           Http.Queue (createSchedulerConfig, runScheduler)
 
@@ -59,13 +64,11 @@ import           Util (extractLogsFromZip)
 -- Functions
 ------------------------------------------------------------
 
--- | Main function for the log-classifier
-runZendeskMain :: IO ()
-runZendeskMain = do
+-- | Create configuration.
+createConfig :: IO Config
+createConfig = do
     createDirectoryIfMissing True "logs"
     hSetBuffering stdout NoBuffering
-
-    args        <- getCliArgs
 
     putTextLn "Welcome to Zendesk classifier!"
     token       <- readFile tokenPath       -- Zendesk token
@@ -77,30 +80,14 @@ runZendeskMain = do
 
     connPool    <- createProdConnectionPool
 
-    let cfg     = defaultConfig
-                    { cfgToken         = stripEnd token
-                    , cfgAssignTo      = assignTo
-                    , cfgAgentId       = UserId (fromIntegral assignTo)
-                    , cfgKnowledgebase = knowledges
-                    , cfgDBLayer       = connPoolDBLayer connPool
-                    }
+    pure defaultConfig
+        { cfgToken         = stripEnd token
+        , cfgAssignTo      = assignTo
+        , cfgAgentId       = UserId (fromIntegral assignTo)
+        , cfgKnowledgebase = knowledges
+        , cfgDBLayer       = connPoolDBLayer connPool
+        }
 
-    -- We really need to get rid of this...
-    -- We don't need any configuration for this, we could move it down to functions.
-    dataLayer   <- runApp createBasicDataLayer cfg
-
-    -- At this point, the configuration is set up and there is no point in using a pure IO.
-    case args of
-        FetchAgents                     -> void $ runApp (fetchAgents dataLayer) cfg
-        FetchTickets                    -> runApp (fetchAndShowTickets dataLayer) cfg
-        FetchTicketsFromTime fromTime   -> runApp (fetchAndShowTicketsFrom dataLayer fromTime) cfg
-        (ProcessTicket ticketId)        -> void $ runApp (processTicketSafe dataLayer (TicketId ticketId)) cfg
-        ProcessTickets                  -> void $ runApp (processTickets dataLayer) cfg
-        ProcessTicketsFromTime fromTime -> runApp (processTicketsFromTime dataLayer fromTime) cfg
-        ShowStatistics                  ->
-            void $ runApp (fetchTickets dataLayer >>= (showStatistics dataLayer)) cfg
-        InspectLocalZip filePath        -> runApp (inspectLocalZipAttachment filePath) cfg
-        ExportData fromTime             -> void $ runApp (exportZendeskDataToLocalDB dataLayer fromTime) cfg
   where
     -- Read CSV file and setup knowledge base
     setupKnowledgebaseEnv :: FilePath -> IO [Knowledge]
@@ -111,6 +98,10 @@ runZendeskMain = do
             Left _   -> throwM FailedToParseKnowledgebase
             Right ks -> return ks
 
+-- | Create basic data layer. Do this ONCE!
+createBasicDataLayerIO :: Config -> IO (DataLayer App)
+createBasicDataLayerIO config = runApp createBasicDataLayer config
+  where
     -- | Create a basic @DataLayer@.
     createBasicDataLayer :: App (DataLayer App)
     createBasicDataLayer = do
@@ -124,7 +115,6 @@ runZendeskMain = do
 
         -- create the data layer
         pure $ basicDataLayer (basicHTTPNetworkLayer shedConfig)
-
 
 -- | The function for exporting Zendesk data to our local DB so
 -- we can have faster analysis and runs.
@@ -209,20 +199,6 @@ saveTicketDataToLocalDB (ticket, ticketComments) = do
 
     pure ()
 
-fetchAgents :: DataLayer App -> App [User]
-fetchAgents dataLayer = do
-    Config{..}          <- ask
-
-    let listAdminAgents = zlListAdminAgents dataLayer
-    printText           <- asksIOLayer iolPrintText
-
-    printText "Fetching Zendesk agents"
-
-    agents              <- listAdminAgents
-
-    mapM_ print agents
-    pure agents
-
 -- | 'processTicket' with exception handling
 processTicketSafe :: DataLayer App ->TicketId -> App ()
 processTicketSafe dataLayer tId = catch (void $ processTicket dataLayer tId)
@@ -242,7 +218,7 @@ processTicket dataLayer tId = do
     -- We see 3 HTTP calls here.
     let getTicketInfo       = zlGetTicketInfo dataLayer
     let getTicketComments   = zlGetTicketComments dataLayer
-    let postTicketComment   = zlPostTicketComment dataLayer
+    --let postTicketComment   = zlPostTicketComment dataLayer
 
     mTicketInfo         <- getTicketInfo tId
     comments            <- getTicketComments tId
@@ -254,46 +230,10 @@ processTicket dataLayer tId = do
             zendeskResponse <- getZendeskResponses dataLayer comments attachments ticketInfo
 
             -- post ticket comment
-            postTicketComment ticketInfo zendeskResponse
+            -- Maybe for now we don't need to actually post this, but let the agent post it.
+            --postTicketComment ticketInfo zendeskResponse
 
             pure zendeskResponse
-
--- | When we want to process all tickets from a specific time onwards.
--- Run in parallel.
-processTicketsFromTime :: DataLayer App -> ExportFromTime -> App ()
-processTicketsFromTime dataLayer exportFromTime = do
-
-    allTickets          <- fetchTicketsExportedFromTime dataLayer exportFromTime
-
-    putTextLn $ "There are " <> show (length allTickets) <> " tickets."
-
-    mZendeskResponses   <- mapConcurrently (processTicket dataLayer . tiId) allTickets
-
-    -- This is single-threaded.
-    mapM_ processSingleTicket mZendeskResponses
-
-    putTextLn "All the tickets has been processed."
-  where
-    -- | Process a single ticket after they were analyzed.
-    processSingleTicket :: ZendeskResponse -> App ()
-    processSingleTicket zendeskResponse = do
-
-        -- We first fetch the function from the configuration
-        printText           <- asksIOLayer iolPrintText
-        appendF             <- asksIOLayer iolAppendFile -- We need to remove this.
-
-        let ticketId = getTicketId $ zrTicketId zendeskResponse
-
-        -- Printing id before inspecting the ticket so that when the process stops by the
-        -- corrupted log file, we know which id to blacklist.
-        printText $ "Analyzing ticket id: " <> show ticketId
-
-        let tags = getTicketTags $ zrTags zendeskResponse
-        forM_ tags $ \tag -> do
-            let formattedTicketIdAndTag = show ticketId <> " " <> tag
-            printText formattedTicketIdAndTag
-            appendF "logs/analysis-result.log" (formattedTicketIdAndTag <> "\n")
-
 
 -- | When we want to process all possible tickets.
 processTickets :: HasCallStack => DataLayer App -> App ()
@@ -335,32 +275,6 @@ fetchTicketComments dataLayer ticketId = do
     let getTicketComments   = zlGetTicketComments dataLayer
     getTicketComments ticketId
 
-
--- | Fetch tickets that need to be analyzed and print them on console
-fetchAndShowTickets :: DataLayer App -> App ()
-fetchAndShowTickets dataLayer = do
-    allTickets  <- fetchTickets dataLayer
-
-    putTextLn $ "There are " <> show (length allTickets) <> " tickets."
-
-    output      <- mapConcurrently (pure . show @Text) allTickets
-
-    mapM_ putTextLn output
-
-    putTextLn "All the tickets has been processed."
-
--- | Fetch and show tickets from a specific time.
-fetchAndShowTicketsFrom :: DataLayer App -> ExportFromTime -> App ()
-fetchAndShowTicketsFrom dataLayer exportFromTime = do
-    allTickets <- fetchTicketsExportedFromTime dataLayer exportFromTime
-
-    putTextLn $ "There are " <> show (length allTickets) <> " tickets."
-
-    output      <- mapConcurrently (pure . show @Text) allTickets
-
-    mapM_ putTextLn output
-
-    putTextLn "All the tickets has been processed."
 
 -- | List and sort tickets
 -- TODO(ks): Extract repeating code, generalize.
@@ -455,38 +369,6 @@ inspectAttachments dataLayer ticketInfo attachments = do
     handleMaybe Nothing  = throwM $ AttachmentNotFound (tiId ticketInfo)
     handleMaybe (Just a) = return a
 
--- | Inspection of the local zip.
--- This function prints out the analysis result on the console.
-inspectLocalZipAttachment :: FilePath -> App ()
-inspectLocalZipAttachment filePath = do
-
-    config          <- ask
-    printText       <- asksIOLayer iolPrintText
-
-    -- Read the zip file
-    fileContent     <- liftIO $ BS.readFile filePath
-    let eResults = extractLogsFromZip 100 fileContent
-
-    case eResults of
-        Left (err :: ZipFileExceptions) ->
-            printText $ show err
-        Right result -> do
-            let analysisEnv = setupAnalysis $ cfgKnowledgebase config
-            eitherAnalysisResult    <- try $ extractIssuesFromLogs result analysisEnv
-
-            case eitherAnalysisResult of
-                Right analysisResult -> do
-                    let errorCodes = extractErrorCodes analysisResult
-
-                    printText "Analysis result:"
-                    void $ mapM (printText . show) analysisResult
-
-                    printText "Error codes:"
-                    void $ mapM printText errorCodes
-
-                Left (e :: LogAnalysisException) ->
-                    printText $ show e
-
 -- | Given number of file of inspect, knowledgebase and attachment,
 -- analyze the logs and return the results.
 inspectAttachment :: (MonadCatch m) => Config -> TicketInfo -> AttachmentContent -> m ZendeskResponse
@@ -567,3 +449,117 @@ filterAnalyzedTickets ticketsInfo =
 
     isTicketInGoguenTestnet :: TicketInfo -> Bool
     isTicketInGoguenTestnet TicketInfo{..} = "goguen_testnets" `notElem` getTicketTags tiTags
+
+------------------------------------------------------------
+-- Utility functions
+------------------------------------------------------------
+
+fetchAgents :: DataLayer App -> App [User]
+fetchAgents dataLayer = do
+    Config{..}          <- ask
+
+    let listAdminAgents = zlListAdminAgents dataLayer
+    printText           <- asksIOLayer iolPrintText
+
+    printText "Fetching Zendesk agents"
+
+    agents              <- listAdminAgents
+
+    mapM_ print agents
+    pure agents
+
+-- | Fetch tickets that need to be analyzed and print them on console
+fetchAndShowTickets :: DataLayer App -> App ()
+fetchAndShowTickets dataLayer = do
+    allTickets  <- fetchTickets dataLayer
+
+    putTextLn $ "There are " <> show (length allTickets) <> " tickets."
+
+    output      <- mapConcurrently (pure . show @Text) allTickets
+
+    mapM_ putTextLn output
+
+    putTextLn "All the tickets has been processed."
+
+-- | Fetch and show tickets from a specific time.
+fetchAndShowTicketsFrom :: DataLayer App -> ExportFromTime -> App ()
+fetchAndShowTicketsFrom dataLayer exportFromTime = do
+    allTickets <- fetchTicketsExportedFromTime dataLayer exportFromTime
+
+    putTextLn $ "There are " <> show (length allTickets) <> " tickets."
+
+    output      <- mapConcurrently (pure . show @Text) allTickets
+
+    mapM_ putTextLn output
+
+    putTextLn "All the tickets has been processed."
+
+-- | Inspection of the local zip.
+-- This function prints out the analysis result on the console.
+inspectLocalZipAttachment :: FilePath -> App ()
+inspectLocalZipAttachment filePath = do
+
+    config          <- ask
+    printText       <- asksIOLayer iolPrintText
+
+    -- Read the zip file
+    fileContent     <- liftIO $ BS.readFile filePath
+    let eResults = extractLogsFromZip 100 fileContent
+
+    case eResults of
+        Left (err :: ZipFileExceptions) ->
+            printText $ show err
+        Right result -> do
+            let analysisEnv = setupAnalysis $ cfgKnowledgebase config
+            eitherAnalysisResult    <- try $ extractIssuesFromLogs result analysisEnv
+
+            case eitherAnalysisResult of
+                Right analysisResult -> do
+                    let errorCodes = extractErrorCodes analysisResult
+
+                    printText "Analysis result:"
+                    void $ mapM (printText . show) analysisResult
+
+                    printText "Error codes:"
+                    void $ mapM printText errorCodes
+
+                Left (e :: LogAnalysisException) ->
+                    printText $ show e
+
+-- | When we want to process all tickets from a specific time onwards.
+-- Run in parallel.
+processTicketsFromTime :: DataLayer App -> ExportFromTime -> App ()
+processTicketsFromTime dataLayer exportFromTime = do
+
+    allTickets          <- fetchTicketsExportedFromTime dataLayer exportFromTime
+
+    putTextLn $ "There are " <> show (length allTickets) <> " tickets."
+
+    mZendeskResponses   <- mapConcurrently (processTicket dataLayer . tiId) allTickets
+
+    -- This is single-threaded.
+    mapM_ processSingleTicket mZendeskResponses
+
+    putTextLn "All the tickets has been processed."
+  where
+    -- | Process a single ticket after they were analyzed.
+    processSingleTicket :: ZendeskResponse -> App ()
+    processSingleTicket zendeskResponse = do
+
+        -- We first fetch the function from the configuration
+        printText           <- asksIOLayer iolPrintText
+        appendF             <- asksIOLayer iolAppendFile -- We need to remove this.
+
+        let ticketId = getTicketId $ zrTicketId zendeskResponse
+
+        -- Printing id before inspecting the ticket so that when the process stops by the
+        -- corrupted log file, we know which id to blacklist.
+        printText $ "Analyzing ticket id: " <> show ticketId
+
+        let tags = getTicketTags $ zrTags zendeskResponse
+        forM_ tags $ \tag -> do
+            let formattedTicketIdAndTag = show ticketId <> " " <> tag
+            printText formattedTicketIdAndTag
+            appendF "logs/analysis-result.log" (formattedTicketIdAndTag <> "\n")
+
+

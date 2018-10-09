@@ -16,8 +16,7 @@ import           DataSource (ExportFromTime (..))
 import           Data.Time (UTCTime (..), defaultTimeLocale, parseTimeM)
 import           Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 
--- | TODO(ks): Ideally we should drop this and
--- use direct function calls. Move to exe.
+-- | List operations.
 data CLI
     = FetchAgents
     -- ^ List agents

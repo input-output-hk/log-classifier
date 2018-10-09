@@ -3,11 +3,11 @@ let
     packageOverrides = pkgs: rec {
       haskellPackages = pkgs.haskell.packages.ghc822.override {
         overrides = haskellPackagesNew: haskellPackagesOld: rec {
-          universum =
-            pkgs.haskell.lib.dontCheck
-              (haskellPackagesNew.callHackage "universum" "1.1.0" {});
-          log-classifier =
-            (haskellPackagesNew.callCabal2nix "log-classifier" ./. {});
+          universum           = pkgs.haskell.lib.dontCheck (haskellPackagesNew.callHackage "universum" "1.1.0" {});
+          concurrent-output   = pkgs.haskell.lib.dontCheck (haskellPackagesNew.callPackage ./concurrent-output.nix {});
+          # because of http://hackage.haskell.org/package/concurrent-output
+          stm                 = pkgs.haskell.lib.dontCheck (haskellPackagesNew.callPackage ./stm.nix {});
+          log-classifier      = (haskellPackagesNew.callCabal2nix "log-classifier" ./. {});
         };
       };
     };
