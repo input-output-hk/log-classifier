@@ -21,6 +21,7 @@ wallet-new-db/
 db-*/
 wdb-*/
 *.db
+app_users.json
 
 # Keys
 *.key
