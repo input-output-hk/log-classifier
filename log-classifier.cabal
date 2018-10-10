@@ -20,6 +20,7 @@ library
                        LogAnalysis.Classifier
                        LogAnalysis.Exceptions
                        LogAnalysis.KnowledgeCSVParser
+                       LogAnalysis.KnowledgeJSONParser
                        LogAnalysis.Types
                        Statistics
                        DataSource
@@ -40,6 +41,8 @@ library
                      , bytestring
                      , containers
                      , directory
+                     , aeson-pretty
+                     , http-types
                      , http-conduit
                      -- Effects & company
                      , mtl
