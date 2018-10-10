@@ -30,11 +30,8 @@ import           Universum
 
 import           UnliftIO.Async (mapConcurrently)
 
-<<<<<<< 88c4cea847162e0760fdd3fcff7ffd2521561c2f:classifier/src/Lib.hs
-=======
 import           Control.Exception.Safe (Handler (..), catches)
 import           Data.Attoparsec.Text.Lazy (eitherResult, parse)
->>>>>>> [TSD-148] Refactor inspectAttachment (WIP):src/Lib.hs
 import qualified Data.ByteString.Lazy as BS
 import           Data.Attoparsec.Text.Lazy (eitherResult, parse)
 import           Data.List (nub)
@@ -237,7 +234,8 @@ processTicket dataLayer tId = do
 
             -- post ticket comment
             -- Maybe for now we don't need to actually post this, but let the agent post it.
-            --postTicketComment ticketInfo zendeskResponse
+           -- postTicketComment ticketInfo zendeskResponse
+            print zendeskResponse
 
             pure zendeskResponse
 
@@ -360,55 +358,6 @@ getZendeskResponses dataLayer comments attachments ticketInfo
                 , zrIsPublic = cfgIsCommentPublic
                 }
 
--- | Inspect the latest attachment
-inspectAttachments :: DataLayer App -> TicketInfo -> [Attachment] -> App ZendeskResponse
-inspectAttachments dataLayer ticketInfo attachments = do
-
-    config          <- ask
-    let getAttachment   = zlGetAttachment dataLayer
-
-    lastAttach      <- handleMaybe . safeHead . reverse . sort $ attachments
-    att             <- handleMaybe =<< getAttachment lastAttach
-    inspectAttachment config ticketInfo att
-  where
-    handleMaybe :: Maybe a -> App a
-    handleMaybe Nothing  = throwM $ AttachmentNotFound (tiId ticketInfo)
-    handleMaybe (Just a) = return a
-
-<<<<<<< 88c4cea847162e0760fdd3fcff7ffd2521561c2f:classifier/src/Lib.hs
-=======
--- | Inspection of the local zip.
--- This function prints out the analysis result on the console.
-inspectLocalZipAttachment :: FilePath -> App ()
-inspectLocalZipAttachment filePath = do
-
-    config          <- ask
-    printText       <- asksIOLayer iolPrintText
-
-    -- Read the zip file
-    fileContent     <- liftIO $ BS.readFile filePath
-    let eResults = extractLogsFromZip 100 fileContent
-
-    case eResults of
-        Left (err :: ZipFileExceptions) ->
-            printText $ show err
-        Right result -> do
-            let analysisEnv = setupAnalysis $ cfgKnowledgebase config
-            eitherAnalysisResult    <- try $ extractIssuesFromLogs result analysisEnv
-
-            case eitherAnalysisResult of
-                Right analysisResult -> do
-                    let errorCodes = extractErrorCodes analysisResult
-
-                    printText "Analysis result:"
-                    void $ mapM (printText . show) analysisResult
-
-                    printText "Error codes:"
-                    void $ mapM printText errorCodes
-
-                Left (e :: LogAnalysisException) ->
-                    printText $ show e
-
 -- In order to test if the exception handling is done correctly, I'd need to make stubs of 'extractLogsFromZip'
 -- and 'extractIssuesFromLogs'
 -- type ExtractLogFileFunc = Int -> LByteString -> Either ZipFileExceptions [LogFile]
@@ -423,7 +372,6 @@ inspectLocalZipAttachment filePath = do
 -- or add an layer to 'Config' but just for these two functions..?
 -- Another option is to intentionally create an corrupted log file but that'd need some research
 
->>>>>>> [TSD-148] Refactor inspectAttachment (WIP):src/Lib.hs
 -- | Given number of file of inspect, knowledgebase and attachment,
 -- analyze the logs and return the results.
 inspectAttachment :: (MonadCatch m) => Config -> TicketInfo -> AttachmentContent -> m ZendeskResponse
@@ -431,7 +379,6 @@ inspectAttachment Config{..} ticketInfo attachment =
     flip catches [Handler handleZipFileException, Handler handleLogAnalysisException] $ do
 
         let analysisEnv = setupAnalysis cfgKnowledgebase
-        -- Basically fromEither but such function does not exist
         let logFiles    = either throwM id $ extractLogsFromZip cfgNumOfLogsToAnalyze
                         $ getAttachmentContent attachment
 
@@ -458,11 +405,12 @@ inspectAttachment Config{..} ticketInfo attachment =
 
      mkZendeskResponse :: Text -> [Text] -> ZendeskResponse
      mkZendeskResponse comment errorCodes = ZendeskResponse
-                { zrTicketId = tiId ticketInfo
-                , zrComment  = comment
-                , zrTags     = TicketTags errorCodes
-                , zrIsPublic = cfgIsCommentPublic
-                }
+        { zrTicketId = tiId ticketInfo
+        , zrComment  = comment
+        , zrTags     = TicketTags errorCodes
+        , zrIsPublic = cfgIsCommentPublic
+        }
+
      mkZendeskErrorResponse :: Text -> ErrorCode -> ZendeskResponse
      mkZendeskErrorResponse comment e = mkZendeskResponse comment [renderErrorCode e]
 
