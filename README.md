@@ -9,6 +9,11 @@ The purpose of this project is to analyze Cardano log file and provide a solutio
 ## Installation and Configuration Instructions
 Installation Instructions are available at [INSTALL.md](INSTALL.md)
 
+## Stack or NIX?
+
+https://github.com/reflex-frp/reflex-platform/issues/116
+https://github.com/hexresearch/reflex-material-bootstrap
+
 ## What it is
 
 ![log-classifier](https://user-images.githubusercontent.com/6264437/40305397-b5f182f8-5cfa-11e8-822e-c0c74d3dbce0.png)
