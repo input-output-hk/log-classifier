@@ -9,6 +9,11 @@ The purpose of this project is to analyze Cardano log file and provide a solutio
 ## Installation and Configuration Instructions
 Installation Instructions are available at [INSTALL.md](INSTALL.md)
 
+## Stack or NIX?
+
+https://github.com/reflex-frp/reflex-platform/issues/116
+https://github.com/hexresearch/reflex-material-bootstrap
+
 ## What it is
 
 ![log-classifier](https://user-images.githubusercontent.com/6264437/40305397-b5f182f8-5cfa-11e8-822e-c0c74d3dbce0.png)
@@ -126,7 +131,7 @@ directory-not-found: **
 
 In this case:
 ```terminal
-./log-classifier-exe fetch-tickets-from --time=12.07.2018
+./log-classifier-cli fetch-tickets-from --time=12.07.2018
 ```
 
 ### IOHK help desk agent finds ticket submitted from the end user with log file attached and wants to perform analysis on it
@@ -134,7 +139,7 @@ In this case:
 In this case, one can run the command below.
 
 ```terminal
-./log-classifier-exe process-ticket <TICKET_ID>
+./log-classifier-cli process-ticket <TICKET_ID>
 ```
 
 This will parse the log file attached to the `<TICKET_ID>` and provide the result to the agent using private comment in the Zendesk UI. The agent then use that comment to help troubleshoot the end user.
@@ -144,7 +149,7 @@ This will parse the log file attached to the `<TICKET_ID>` and provide the resul
 In this case, one can run the command below.
 
 ```terminal
-./log-classifier-exe process-tickets
+./log-classifier-cli process-tickets
 ```
 
 This will parse any tickets with log file attached that are sent from the Daedalus bug report. It then post analysis result as private comment on any ticket that it has parsed so that the agents can provide the end user with solution.
@@ -154,7 +159,7 @@ This will parse any tickets with log file attached that are sent from the Daedal
 In this case, one can run the command below.
 
 ```terminal
-./log-classifier-exe show-stats
+./log-classifier-cli show-stats
 ```
 
 This will collect all the tags that are attached to the ticket then group them so that the agent can report the dev team. The team will then categorize/prioritize the issue.
@@ -164,7 +169,7 @@ This will collect all the tags that are attached to the ticket then group them s
 The command should be run as follows:
 
 ```terminal
-./log-classifier-exe inspect-local-zip --file-path="/home/ksaric/Downloads/Windows-Logs.zip"
+./log-classifier-cli inspect-local-zip --file-path="/home/ksaric/Downloads/Windows-Logs.zip"
 ```
 
 This will return the error if the error is encountered or else the report from the analysis.

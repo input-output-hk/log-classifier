@@ -9,7 +9,7 @@ import           Options.Applicative (Parser, ParserInfo, ReadM, argument, auto,
                                       eitherReader, execParser, fullDesc, header, help, helper,
                                       hsubparser, info, infoOption, long, metavar, option, progDesc,
                                       strOption, (<**>))
-import           Paths_log_classifier (version)
+import           Paths_cli (version)
 
 import           DataSource (ExportFromTime (..))
 
