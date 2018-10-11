@@ -1,17 +1,49 @@
+{-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TypeApplications  #-}
 
 module LogAnalysis.KnowledgeJSONParser
        ( parseKnowledgeBaseJSON
+       , processJSON
        ) where
 
-import           Control.Monad
 import           Data.Aeson
 import           Data.Aeson.Encode.Pretty
+import           Data.Aeson.Types
+import           Data.Maybe (fromJust)
+import           GHC.Generics
+import           LogAnalysis.Types (Knowledge (..))
 import           Network.HTTP.Simple
 import           Network.HTTP.Types.Header
-import qualified System.Environment as E
 import           Universum
+
+data Issue = Issue {
+      comment  :: !Array
+    , entityId :: !Text
+    , field    :: !Array
+    , id       :: !Text
+    , tag      :: !Array
+    } deriving (Generic, Show)
+
+{-
+instance FromJSON Issue where
+    parseJSON = \o -> do
+        comment  <- o .: "comment"
+        entityId <- o .: "entityId"
+        field    <- o .: "field"
+        id       <- o .: "id"
+        tag      <- o .: "tag"
+
+        pure Issue
+            { iComment  = comment
+            , iEntityId = entityId
+            , iField    = field
+            , iId       = id
+            , iTag      = tag
+            }
+-}
+
+instance ToJSON Issue
+instance FromJSON Issue
 
 parseKnowledgeBaseJSON :: IO ()
 parseKnowledgeBaseJSON = do
@@ -28,8 +60,14 @@ parseKnowledgeBaseJSON = do
          $ addRequestHeader hContentType "application/json"
          $ setRequestSecure True req'
 
-    res <- httpJSON req
-    liftIO $ Universum.print (getResponseBody res :: Value) -- jsonBody --(Data.Aeson.decode jsonBody :: Maybe Value)
+    json <- getResponseBody <$> httpJSON req
+    processJSON json
+
+processJSON :: Object -> IO ()
+processJSON json = do
+    let out = fromJust $ parseMaybe (.: "id") json :: String
+
+
 {-    Knowledge
         {  kErrorText = "TEXTEX"
         ,  kErrorCode = TimeSync
@@ -38,10 +76,4 @@ parseKnowledgeBaseJSON = do
         ,  kFAQNumber = "204"
         } : []
 
-    key <- E.getEnv "YT_KEY"
-
-getRequestHeaders :: RequestHeaders
-getRequestHeaders = [ ( "Content-Type" , "application/json")
-                    , ( "Authorization" , "Bearer -AxLVv0fegyk-opT.2sG5JGQ3VNHUL08WpWkO3s7tVI")
-                    ]
 -}
