@@ -31,7 +31,6 @@ import           Universum
 import           UnliftIO.Async (mapConcurrently)
 
 import           Control.Exception.Safe (Handler (..), catches)
-import           Data.Attoparsec.Text.Lazy (eitherResult, parse)
 import qualified Data.ByteString.Lazy as BS
 import           Data.Attoparsec.Text.Lazy (eitherResult, parse)
 import           Data.List (nub)
@@ -357,6 +356,21 @@ getZendeskResponses dataLayer comments attachments ticketInfo
                 , zrTags     = TicketTags [renderTicketStatus NoLogAttached]
                 , zrIsPublic = cfgIsCommentPublic
                 }
+
+-- | Inspect the latest attachment
+inspectAttachments :: DataLayer App -> TicketInfo -> [Attachment] -> App ZendeskResponse
+inspectAttachments dataLayer ticketInfo attachments = do
+
+    config          <- ask
+    let getAttachment   = zlGetAttachment dataLayer
+
+    lastAttach      <- handleMaybe . safeHead . reverse . sort $ attachments
+    att             <- handleMaybe =<< getAttachment lastAttach
+    inspectAttachment config ticketInfo att
+  where
+    handleMaybe :: Maybe a -> App a
+    handleMaybe Nothing  = throwM $ AttachmentNotFound (tiId ticketInfo)
+    handleMaybe (Just a) = return a
 
 -- In order to test if the exception handling is done correctly, I'd need to make stubs of 'extractLogsFromZip'
 -- and 'extractIssuesFromLogs'
