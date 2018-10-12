@@ -8,6 +8,7 @@ module Lib
     -- * library functions
     , getZendeskResponses
     , getAttachmentsFromComment
+    , inspectAttachment
     , processTicket
     , processTicketSafe
     , processTickets
@@ -31,8 +32,8 @@ import           Universum
 import           UnliftIO.Async (mapConcurrently)
 
 import           Control.Exception.Safe (Handler (..), catches)
-import qualified Data.ByteString.Lazy as BS
 import           Data.Attoparsec.Text.Lazy (eitherResult, parse)
+import qualified Data.ByteString.Lazy as BS
 import           Data.List (nub)
 import           Data.Text (stripEnd)
 
@@ -49,7 +50,8 @@ import           DataSource (App, Attachment (..), AttachmentContent (..), Comme
                              createProdConnectionPool, knowledgebasePath, renderTicketStatus,
                              runApp, tokenPath)
 
-import           Exceptions (ClassifierExceptions (..), ProcessTicketExceptions (..), ZipFileExceptions (..))
+import           Exceptions (ClassifierExceptions (..), ProcessTicketExceptions (..),
+                             ZipFileExceptions (..))
 import           Http.Layer (basicHTTPNetworkLayer)
 import           Http.Queue (createSchedulerConfig, runScheduler)
 
@@ -58,7 +60,8 @@ import           LogAnalysis.Classifier (extractErrorCodes, extractIssuesFromLog
                                          prettyFormatNoIssues, prettyFormatNoLogs)
 import           LogAnalysis.Exceptions (LogAnalysisException (..))
 import           LogAnalysis.KnowledgeCSVParser (parseKnowLedgeBase)
-import           LogAnalysis.Types (ErrorCode (..), Knowledge, renderErrorCode, setupAnalysis)
+import           LogAnalysis.Types (Analysis, ErrorCode (..), Knowledge, LogFile, renderErrorCode,
+                                    setupAnalysis)
 import           Statistics (showStatistics)
 import           Util (extractLogsFromZip)
 
@@ -234,7 +237,7 @@ processTicket dataLayer tId = do
             -- post ticket comment
             -- Maybe for now we don't need to actually post this, but let the agent post it.
            -- postTicketComment ticketInfo zendeskResponse
-            print zendeskResponse
+           -- print zendeskResponse
 
             pure zendeskResponse
 
@@ -366,38 +369,38 @@ inspectAttachments dataLayer ticketInfo attachments = do
 
     lastAttach      <- handleMaybe . safeHead . reverse . sort $ attachments
     att             <- handleMaybe =<< getAttachment lastAttach
-    inspectAttachment config ticketInfo att
+    inspectAttachment config ticketInfo att extractLogsFromZip extractIssuesFromLogs
   where
     handleMaybe :: Maybe a -> App a
     handleMaybe Nothing  = throwM $ AttachmentNotFound (tiId ticketInfo)
     handleMaybe (Just a) = return a
 
--- In order to test if the exception handling is done correctly, I'd need to make stubs of 'extractLogsFromZip'
--- and 'extractIssuesFromLogs'
--- type ExtractLogFileFunc = Int -> LByteString -> Either ZipFileExceptions [LogFile]
--- type ExtractErrorCodeFunc m = [LogFile] -> Analysis -> m Analysis
--- inspectAttachment :: (MonadCatch m) 
---                   => Config 
---                   -> TicketInfo 
---                   -> AttachmentContent
---                   -> ExtractLogFileFunc 
---                   -> ExtractErrorcodeFunc m
---                   -> m ZendeskResponse
--- or add an layer to 'Config' but just for these two functions..?
--- Another option is to intentionally create an corrupted log file but that'd need some research
+-- This is to enable test cases on 'inspectAttachment'
+-- Perhaps we can add this to 'Config' ?
+type ExtractLogFileFunc = Int -> LByteString -> Either ZipFileExceptions [LogFile]
+type ExtractErrorCodeFunc m = [LogFile] -> Analysis -> m Analysis
+
 
 -- | Given number of file of inspect, knowledgebase and attachment,
 -- analyze the logs and return the results.
-inspectAttachment :: (MonadCatch m) => Config -> TicketInfo -> AttachmentContent -> m ZendeskResponse
-inspectAttachment Config{..} ticketInfo attachment =
+inspectAttachment :: (MonadCatch m)
+                  => Config
+                  -> TicketInfo
+                  -> AttachmentContent
+                  -> ExtractLogFileFunc
+                  -> ExtractErrorCodeFunc m
+                  -> m ZendeskResponse
+inspectAttachment Config{..} ticketInfo attachment extractLogFileFunc extractIssueFunc =
     flip catches [Handler handleZipFileException, Handler handleLogAnalysisException] $ do
 
         let analysisEnv = setupAnalysis cfgKnowledgebase
-        let logFiles    = either throwM id $ extractLogsFromZip cfgNumOfLogsToAnalyze
-                        $ getAttachmentContent attachment
+        -- let logFiles    = either throwM id $ extractLogFileFunc cfgNumOfLogsToAnalyze
+        --                 $ getAttachmentContent attachment
+        logFiles <- either throwM pure $ 
+           extractLogFileFunc cfgNumOfLogsToAnalyze $ getAttachmentContent attachment
 
         -- Perform analysis
-        analysisResult <- extractIssuesFromLogs logFiles analysisEnv
+        analysisResult <- extractIssueFunc logFiles analysisEnv
         let errorCodes  = extractErrorCodes analysisResult
         let commentRes  = prettyFormatAnalysis analysisResult ticketInfo
 
@@ -410,7 +413,7 @@ inspectAttachment Config{..} ticketInfo attachment =
      handleLogAnalysisException :: (MonadThrow m) => LogAnalysisException -> m ZendeskResponse
      handleLogAnalysisException = \case
         LogReadException ->
-            pure $ mkZendeskErrorResponse (prettyFormatLogReadError ticketInfo) DecompressionFailure
+            pure $ mkZendeskErrorResponse (prettyFormatLogReadError ticketInfo) SentLogCorrupted
 
         NoKnownIssueFound ->
             pure $ mkZendeskErrorResponse (prettyFormatNoIssues ticketInfo) NoKnownIssue
