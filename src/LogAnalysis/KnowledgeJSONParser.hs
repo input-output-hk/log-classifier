@@ -2,8 +2,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module LogAnalysis.KnowledgeJSONParser
-       ( parseKnowledgeBaseJSON
-       , processJSON
+       ( parseYTJSON,
+         printYT
        ) where
 
 import           Data.Aeson
@@ -11,20 +11,44 @@ import           Data.Aeson.Encode.Pretty
 import           Data.Aeson.Types
 import           Data.Maybe (fromJust)
 import           GHC.Generics
-import           LogAnalysis.Types (Knowledge (..))
+import           LogAnalysis.Types (ErrorCode (..), Knowledge (..))
 import           Network.HTTP.Simple
 import           Network.HTTP.Types.Header
 import           Universum
 
-data Issue = Issue {
-      comment  :: !Array
+data Issue = Issue
+    { comment  :: !Array
     , entityId :: !Text
-    , field    :: !Array
-    , id       :: !Text
+    , field    :: [Field]
+    , iId      :: !Text
     , tag      :: !Array
-    } deriving (Generic, Show)
+    } deriving (Show)
 
+data Field = Field
+    { name  :: !Text
+    , value :: !Text
+    } deriving (Show)
+
+instance FromJSON Field where
+    parseJSON (Object v) = Field
+        <$> v .: "name"
+        <*> v .: "value"
+
+instance FromJSON Issue where
+    parseJSON (Object v) = Issue
+        <$> v .: "comment"
+        <*> v .: "entityId"
+        <*> v .: "field"
+        <*> v .: "id"
+        <*> v .: "tag"
 {-
+      Knowledge
+          <$> o .: "id" -- kErrorText
+          <*> o .: "id" --kErrorCode
+          <*> o .: "id" -- kProblem
+          <*> o .: "id" -- kSolution
+          <*> o .: "id" -- kFAQNUmber
+
 instance FromJSON Issue where
     parseJSON = \o -> do
         comment  <- o .: "comment"
@@ -42,14 +66,13 @@ instance FromJSON Issue where
             }
 -}
 
-instance ToJSON Issue
-instance FromJSON Issue
+printYT :: IO ()
+printYT = parseYTJSON >>= print
 
-parseKnowledgeBaseJSON :: IO ()
-parseKnowledgeBaseJSON = do
+parseYTJSON :: IO [Issue]
+parseYTJSON = do
     key <- Universum.readFile "tmp-secrets/yt-token"
     let bKey = encodeUtf8 ("Bearer " <> key)
-
     let url = "https://iohk.myjetbrains.com/youtrack/rest/issue/byproject/IOHKS"
 
     req' <- parseRequest url
@@ -57,23 +80,8 @@ parseKnowledgeBaseJSON = do
          = setRequestSecure True
          $ addRequestHeader hAccept "application/json"
          $ addRequestHeader hAuthorization bKey
-         $ addRequestHeader hContentType "application/json"
          $ setRequestSecure True req'
 
-    json <- getResponseBody <$> httpJSON req
-    processJSON json
+    ytJSON <- getResponseBody <$> httpLBS req
+    return $ fromJust (decode ytJSON :: Maybe [Issue])
 
-processJSON :: Object -> IO ()
-processJSON json = do
-    let out = fromJust $ parseMaybe (.: "id") json :: String
-
-
-{-    Knowledge
-        {  kErrorText = "TEXTEX"
-        ,  kErrorCode = TimeSync
-        ,  kProblem   = "PROB"
-        ,  kSolution  = "SOL"
-        ,  kFAQNumber = "204"
-        } : []
-
--}
