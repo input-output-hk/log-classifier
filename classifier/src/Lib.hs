@@ -375,11 +375,9 @@ inspectAttachments dataLayer ticketInfo attachments = do
     handleMaybe Nothing  = throwM $ AttachmentNotFound (tiId ticketInfo)
     handleMaybe (Just a) = return a
 
--- This is to enable test cases on 'inspectAttachment'
--- Perhaps we can add this to 'Config' ?
+-- This is to enable testing on 'inspectAttachment'
 type ExtractLogFileFunc = Int -> LByteString -> Either ZipFileExceptions [LogFile]
 type ExtractErrorCodeFunc m = [LogFile] -> Analysis -> m Analysis
-
 
 -- | Given number of file of inspect, knowledgebase and attachment,
 -- analyze the logs and return the results.
@@ -429,7 +427,7 @@ inspectAttachment Config{..} ticketInfo attachment extractLogFileFunc extractIss
         }
 
      mkZendeskErrorResponse :: Text -> ErrorCode -> ZendeskResponse
-     mkZendeskErrorResponse comment e = mkZendeskResponse comment [renderErrorCode e]
+     mkZendeskErrorResponse comment errorCode = mkZendeskResponse comment [renderErrorCode errorCode]
 
 -- | Filter tickets
 filterAnalyzedTickets :: [TicketInfo] -> [TicketInfo]
