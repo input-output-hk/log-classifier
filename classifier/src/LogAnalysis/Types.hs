@@ -52,7 +52,7 @@ data ErrorCode
     | WalletNotSync
     | WinReg
     | SentLogCorrupted     -- ^ Log file sent to the Zendesk is corrupted
-    | DecompressionFailure -- ^ The classifier failed to decompress the log file
+    | NoKnownIssue
     | Unknown              -- ^ Unknown error (currently not used)
     | Error                -- ^ Error (currently not used)
     deriving (Eq, Ord, Show, Enum)
@@ -137,7 +137,7 @@ renderErrorCode TimeSync             = "time-out-of-sync"
 renderErrorCode NetworkError         = "network-error"
 renderErrorCode UserNameError        = "user-name-error"
 renderErrorCode SentLogCorrupted     = "sent-log-corrupted"
-renderErrorCode DecompressionFailure = "decompression-failure"
+renderErrorCode NoKnownIssue         = "no-known-issue"
 renderErrorCode Unknown              = "unknown"
 renderErrorCode Error                = "error"
 

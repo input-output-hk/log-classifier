@@ -22,13 +22,17 @@ import           DataSource (App, Attachment (..), AttachmentId (..), Comment (.
                              createResponseTicket, createSchema, deleteAllData, emptyDBLayer,
                              emptyDataLayer, insertCommentAttachments, insertTicketComments,
                              insertTicketInfo, renderTicketStatus, runApp, showURL)
-import           Exceptions (ProcessTicketExceptions (..))
+import           Exceptions (ProcessTicketExceptions (..), ZipFileExceptions (..))
 import           Http.Exceptions (HttpNetworkLayerException (..))
 import           Http.Layer (HTTPNetworkLayer (..), emptyHTTPNetworkLayer)
 
 import           Lib (exportZendeskDataToLocalDB, fetchTicket, fetchTicketComments,
-                      filterAnalyzedTickets, getAttachmentsFromComment, listAndSortTickets,
-                      processTicket)
+                      filterAnalyzedTickets, getAttachmentsFromComment, inspectAttachment,
+                      listAndSortTickets, processTicket)
+import           LogAnalysis.Classifier (extractIssuesFromLogs)
+import           LogAnalysis.Exceptions (LogAnalysisException (..))
+import           LogAnalysis.Types (Analysis, ErrorCode (..), LogFile, renderErrorCode,
+                                    setupAnalysis)
 import           Statistics (filterTicketsByStatus, filterTicketsWithAttachments,
                              showAttachmentInfo, showCommentAttachments)
 
@@ -55,6 +59,7 @@ spec =
             -- TODO(rc): showTicketAttachmentsSpec
             -- TODO(rc): showStatisticsSpec
         describe "Zendesk" $ do
+            inspectAttachmentSpec
             validShowURLSpec
             listAndSortTicketsSpec
             processTicketSpec
@@ -796,3 +801,67 @@ withDBSchema dbpath action =
     withConnection dbpath $ \conn -> do
         createSchema conn
         action conn
+
+inspectAttachmentSpec :: Spec
+inspectAttachmentSpec =
+    describe "inspectAttachment" $ modifyMaxSuccess (const 200) $ do
+        prop "should inspect attchment and return zendeskResponse" $
+            \(ticketInfo :: TicketInfo) ->
+                monadicIO $ do
+                    zendeskResponse <- run $ inspectAttachment emptyConfig ticketInfo
+                        mempty emptyExtractLogFunc emptyExtractErrorCodeFunc
+
+                    assert $ tiId ticketInfo == zrTicketId zendeskResponse
+        prop "should return response with tag 'sent-log-corrupted' when it failed to extract logs" $
+            \(ticketInfo :: TicketInfo) ->
+                monadicIO $ do
+                    zendeskResponse <- run $ inspectAttachment emptyConfig ticketInfo
+                        mempty errorExtractLogFunc extractIssuesFromLogs
+
+                    assert $ tiId ticketInfo == zrTicketId zendeskResponse
+                    assert $ zrTags zendeskResponse == TicketTags [renderErrorCode SentLogCorrupted]
+
+        prop "should return response with tag 'sent-log-corrupted' if given log was corrupted" $
+            \(ticketInfo :: TicketInfo) ->
+                monadicIO $ do
+                    zendeskResponse <- run $ inspectAttachment emptyConfig ticketInfo
+                        mempty emptyExtractLogFunc (errorExtractErrorCodeFunc LogReadException)
+
+                    assert $ tiId ticketInfo == zrTicketId zendeskResponse
+                    assert $ zrTags zendeskResponse == TicketTags [renderErrorCode SentLogCorrupted]
+
+        prop "should return zendeskResponse with tag 'no-known-issue' when it failed to extract logs" $
+            \(ticketInfo :: TicketInfo) ->
+                monadicIO $ do
+                    zendeskResponse <- run $ inspectAttachment emptyConfig ticketInfo
+                        mempty emptyExtractLogFunc (errorExtractErrorCodeFunc NoKnownIssueFound)
+
+                    assert $ tiId ticketInfo == zrTicketId zendeskResponse
+                    assert $ zrTags zendeskResponse == TicketTags [renderErrorCode NoKnownIssue]
+
+        prop "should return throw JSONDecodeFailure exception when it fails to decode json file" $
+            \(ticketInfo :: TicketInfo) ->
+                monadicIO $ do
+                    eZendeskResponse <- run . try $ inspectAttachment emptyConfig ticketInfo
+                        mempty emptyExtractLogFunc (errorExtractErrorCodeFunc $ JSONDecodeFailure mempty)
+
+                    assert $ not $ isRight (eZendeskResponse :: Either LogAnalysisException ZendeskResponse)
+  where
+    emptyExtractLogFunc :: Int -> LByteString -> Either ZipFileExceptions [LogFile]
+    emptyExtractLogFunc _ _ = return mempty
+    
+    errorExtractLogFunc :: Int -> LByteString -> Either ZipFileExceptions [LogFile]
+    errorExtractLogFunc _ _ = Left ReadZipFileException
+    
+    emptyExtractErrorCodeFunc :: (Monad m) => [LogFile] -> Analysis -> m Analysis
+    emptyExtractErrorCodeFunc _ _ = return emptyAnalysis
+    
+    errorExtractErrorCodeFunc :: (MonadCatch m) 
+                              => LogAnalysisException
+                              -> [LogFile]
+                              -> Analysis
+                              -> m Analysis
+    errorExtractErrorCodeFunc e _ _ = throwM e
+    
+    emptyAnalysis :: Analysis
+    emptyAnalysis = setupAnalysis mempty

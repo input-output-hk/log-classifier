@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
 
@@ -7,6 +8,7 @@ module Lib
     -- * library functions
     , getZendeskResponses
     , getAttachmentsFromComment
+    , inspectAttachment
     , processTicket
     , processTicketSafe
     , processTickets
@@ -29,8 +31,9 @@ import           Universum
 
 import           UnliftIO.Async (mapConcurrently)
 
-import qualified Data.ByteString.Lazy as BS
+import           Control.Exception.Safe (Handler (..), catches)
 import           Data.Attoparsec.Text.Lazy (eitherResult, parse)
+import qualified Data.ByteString.Lazy as BS
 import           Data.List (nub)
 import           Data.Text (stripEnd)
 
@@ -47,7 +50,8 @@ import           DataSource (App, Attachment (..), AttachmentContent (..), Comme
                              createProdConnectionPool, knowledgebasePath, renderTicketStatus,
                              runApp, tokenPath)
 
-import           Exceptions (ClassifierExceptions (..), ProcessTicketExceptions (..), ZipFileExceptions (..))
+import           Exceptions (ClassifierExceptions (..), ProcessTicketExceptions (..),
+                             ZipFileExceptions (..))
 import           Http.Layer (basicHTTPNetworkLayer)
 import           Http.Queue (createSchedulerConfig, runScheduler)
 
@@ -56,7 +60,8 @@ import           LogAnalysis.Classifier (extractErrorCodes, extractIssuesFromLog
                                          prettyFormatNoIssues, prettyFormatNoLogs)
 import           LogAnalysis.Exceptions (LogAnalysisException (..))
 import           LogAnalysis.KnowledgeCSVParser (parseKnowLedgeBase)
-import           LogAnalysis.Types (ErrorCode (..), Knowledge, renderErrorCode, setupAnalysis)
+import           LogAnalysis.Types (Analysis, ErrorCode (..), Knowledge, LogFile, renderErrorCode,
+                                    setupAnalysis)
 import           Statistics (showStatistics)
 import           Util (extractLogsFromZip)
 
@@ -231,7 +236,8 @@ processTicket dataLayer tId = do
 
             -- post ticket comment
             -- Maybe for now we don't need to actually post this, but let the agent post it.
-            --postTicketComment ticketInfo zendeskResponse
+           -- postTicketComment ticketInfo zendeskResponse
+           -- print zendeskResponse
 
             pure zendeskResponse
 
@@ -363,68 +369,65 @@ inspectAttachments dataLayer ticketInfo attachments = do
 
     lastAttach      <- handleMaybe . safeHead . reverse . sort $ attachments
     att             <- handleMaybe =<< getAttachment lastAttach
-    inspectAttachment config ticketInfo att
+    inspectAttachment config ticketInfo att extractLogsFromZip extractIssuesFromLogs
   where
     handleMaybe :: Maybe a -> App a
     handleMaybe Nothing  = throwM $ AttachmentNotFound (tiId ticketInfo)
     handleMaybe (Just a) = return a
 
+-- This is to enable testing on 'inspectAttachment'
+type ExtractLogFileFunc = Int -> LByteString -> Either ZipFileExceptions [LogFile]
+type ExtractErrorCodeFunc m = [LogFile] -> Analysis -> m Analysis
+
 -- | Given number of file of inspect, knowledgebase and attachment,
 -- analyze the logs and return the results.
-inspectAttachment :: (MonadCatch m) => Config -> TicketInfo -> AttachmentContent -> m ZendeskResponse
-inspectAttachment Config{..} ticketInfo@TicketInfo{..} attachment = do
+inspectAttachment :: (MonadCatch m)
+                  => Config
+                  -> TicketInfo
+                  -> AttachmentContent
+                  -> ExtractLogFileFunc
+                  -> ExtractErrorCodeFunc m
+                  -> m ZendeskResponse
+inspectAttachment Config{..} ticketInfo attachment extractLogFileFunc extractIssueFunc =
+    flip catches [Handler handleZipFileException, Handler handleLogAnalysisException] $ do
 
-    let analysisEnv = setupAnalysis cfgKnowledgebase
-    let eLogFiles = extractLogsFromZip cfgNumOfLogsToAnalyze (getAttachmentContent attachment)
+        let analysisEnv = setupAnalysis cfgKnowledgebase
+        -- let logFiles    = either throwM id $ extractLogFileFunc cfgNumOfLogsToAnalyze
+        --                 $ getAttachmentContent attachment
+        logFiles <- either throwM pure $ 
+           extractLogFileFunc cfgNumOfLogsToAnalyze $ getAttachmentContent attachment
 
-    case eLogFiles of
-        Left _ ->
-            -- Log file was corrupted
-            pure $ ZendeskResponse
-                { zrTicketId    = tiId
-                , zrComment     = prettyFormatLogReadError ticketInfo
-                , zrTags        = TicketTags [renderErrorCode SentLogCorrupted]
-                , zrIsPublic    = cfgIsCommentPublic
-                }
+        -- Perform analysis
+        analysisResult <- extractIssueFunc logFiles analysisEnv
+        let errorCodes  = extractErrorCodes analysisResult
+        let commentRes  = prettyFormatAnalysis analysisResult ticketInfo
 
-        Right logFiles -> do
-            -- Log files maybe corrupted or issue was not found
-            tryAnalysisResult    <- try $ extractIssuesFromLogs logFiles analysisEnv
+        pure $ mkZendeskResponse commentRes errorCodes
+   where
+     handleZipFileException :: (Monad m) => ZipFileExceptions -> m ZendeskResponse
+     handleZipFileException _ =
+        pure $ mkZendeskErrorResponse (prettyFormatLogReadError ticketInfo) SentLogCorrupted
 
-            case tryAnalysisResult of
-                Right analysisResult -> do
-                    -- Known issue was found
-                    let errorCodes = extractErrorCodes analysisResult
-                    let commentRes = prettyFormatAnalysis analysisResult ticketInfo
+     handleLogAnalysisException :: (MonadThrow m) => LogAnalysisException -> m ZendeskResponse
+     handleLogAnalysisException = \case
+        LogReadException ->
+            pure $ mkZendeskErrorResponse (prettyFormatLogReadError ticketInfo) SentLogCorrupted
 
-                    pure $ ZendeskResponse
-                        { zrTicketId    = tiId
-                        , zrComment     = commentRes
-                        , zrTags        = TicketTags errorCodes
-                        , zrIsPublic    = cfgIsCommentPublic
-                        }
+        NoKnownIssueFound ->
+            pure $ mkZendeskErrorResponse (prettyFormatNoIssues ticketInfo) NoKnownIssue
 
-                Left (analysisException :: LogAnalysisException) ->
-                    case analysisException of
-                        -- Could not read the log files
-                        LogReadException ->
-                            pure $ ZendeskResponse
-                                { zrTicketId    = tiId
-                                , zrComment     = prettyFormatLogReadError ticketInfo
-                                , zrTags        = TicketTags [renderErrorCode DecompressionFailure]
-                                , zrIsPublic    = cfgIsCommentPublic
-                                }
-                        -- No known issue was found
-                        NoKnownIssueFound ->
-                            pure $ ZendeskResponse
-                                { zrTicketId    = tiId
-                                , zrComment     = prettyFormatNoIssues ticketInfo
-                                , zrTags        = TicketTags [renderTicketStatus NoKnownIssue]
-                                , zrIsPublic    = cfgIsCommentPublic
-                                }
-                        JSONDecodeFailure errorText ->
-                            -- Need to respond to an ticket instead of throwing exception
-                            throwM $ JSONDecodeFailure errorText
+        (JSONDecodeFailure errorText) -> throwM $ JSONDecodeFailure errorText
+
+     mkZendeskResponse :: Text -> [Text] -> ZendeskResponse
+     mkZendeskResponse comment errorCodes = ZendeskResponse
+        { zrTicketId = tiId ticketInfo
+        , zrComment  = comment
+        , zrTags     = TicketTags errorCodes
+        , zrIsPublic = cfgIsCommentPublic
+        }
+
+     mkZendeskErrorResponse :: Text -> ErrorCode -> ZendeskResponse
+     mkZendeskErrorResponse comment errorCode = mkZendeskResponse comment [renderErrorCode errorCode]
 
 -- | Filter tickets
 filterAnalyzedTickets :: [TicketInfo] -> [TicketInfo]
