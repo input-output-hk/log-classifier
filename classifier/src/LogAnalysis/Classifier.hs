@@ -129,9 +129,9 @@ prettyFormatAnalysis as ticketInfo =
     foundIssues <>
     prettyFooter ticketInfo
   where
-    prettyIssueComment  = "We have analyzed the log that you submitted and it appears that your issue is addressed in the Daedalus FAQ Please go to https://daedaluswallet.io/faq/ and check FAQ Issue(s) listed below to resolve your problem:"
+    prettyIssueComment  = "We have analyzed the log that you submitted and it appears that your issue is addressed in the Daedalus FAQ Please go to https://daedaluswallet.io/faq/ and check IOHKS Issue(s) listed below to resolve your problem:"
     foundIssues         =
-        foldr (\(Knowledge{..}, _) acc -> acc <> "\n- " <> kFAQNumber) "" $ Map.toList as
+        foldr (\(Knowledge{..}, _) acc -> acc <> "\n- " <> kIssue) "" $ Map.toList as
 
 -- | Response stating no known issue were found
 prettyFormatNoIssues :: TicketInfo -> Text

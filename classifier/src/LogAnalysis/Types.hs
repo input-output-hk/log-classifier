@@ -64,12 +64,6 @@ data Knowledge = Knowledge
     -- ^ Text that refers to the IOHKS issue
     ,  kErrorCode :: !ErrorCode
     -- ^ Identity for error code
-    ,  kProblem   :: !Text
-    -- ^ Text describing what is the problem
-    ,  kSolution  :: !Text
-    -- ^ Text describing how to solve the issue
-    ,  kFAQNumber :: !Text
-    -- ^ The FAQ number that will be displayed on the official Cardano FAQ page
     }
 
 -- | File format
@@ -105,9 +99,6 @@ instance Show Knowledge where
         "{  errorText  = " <> Prelude.show kErrorText   <>
         ",  issue      = " <> Prelude.show kIssue       <>
         ",  errorCode  = " <> Prelude.show kErrorCode   <>
-        ",  problem    = " <> Prelude.show kProblem     <>
-        ",  solution   = " <> Prelude.show kSolution    <>
-        ",  FAQNumber  = " <> Prelude.show kFAQNumber   <>
         "}"
 
 -- | Sorted accoring to knowledgebase.
@@ -237,17 +228,11 @@ instance Arbitrary Knowledge where
         errorText <- fromString <$> arbitrary
         issue <- fromString <$> arbitrary
         errorCode <- arbitrary
-        problem   <- fromString <$> arbitrary
-        solution  <- fromString <$> arbitrary
-        faqNumber <- fromString <$> arbitrary
 
         pure $ Knowledge {
               kErrorText = errorText
             , kIssue = issue
             , kErrorCode = errorCode
-            , kProblem   = problem
-            , kSolution  = solution
-            , kFAQNumber = faqNumber
             }
 
 {-

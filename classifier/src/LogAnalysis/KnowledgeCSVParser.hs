@@ -62,9 +62,6 @@ parseKnowledge = do
         {  kErrorText = e
         ,  kIssue = i
         ,  kErrorCode = Unknown
-        ,  kProblem   = ""
-        ,  kSolution  = ""
-        ,  kFAQNumber = ""
         }
 
 -- | Parse CSV file and create knowledgebase
