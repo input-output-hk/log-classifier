@@ -9,6 +9,12 @@ The purpose of this project is to analyze Cardano log file and provide a solutio
 ## Installation and Configuration Instructions
 Installation Instructions are available at [INSTALL.md](INSTALL.md)
 
+## Deployment
+
+- https://youtu.be/NQJVNvxgDqg?t=615
+- https://youtu.be/NQJVNvxgDqg?t=1579
+- https://nixos.org/nixops/manual/#sec-deploying-to-ec2
+
 ## Stack or NIX?
 
 https://github.com/reflex-frp/reflex-platform/issues/116

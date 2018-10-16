@@ -171,7 +171,7 @@ mainServer = do
                                     (server config dataLayer)
 
     -- Serve, Servant!
-    run 4000 (logStdoutDev serverWithContext)
+    run 8100 (logStdoutDev serverWithContext)
   where
     -- | The API proxy.
     apiProxy :: Proxy API
