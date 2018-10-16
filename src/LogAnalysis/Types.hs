@@ -28,29 +28,28 @@ import           Test.QuickCheck (Arbitrary (..), Gen, choose, elements, oneof, 
 
 -- | Identifier for each error
 data ErrorCode
-    = BlockDataCorrupt
-    | BalanceError         -- ^ Daedalus shows wrong Ada amount
-    | CannotConnect
-    | CannotConnectAfter
-    | CannotGetDBSize      -- ^ Error message of Couidn't pack log files shows up
-    | ConnectionRefused
-    | ConnectLoadHeaders
-    | DBCorruptIO
-    | DBError
-    | DBPath               -- ^ Daedalus cannot find certain files
-    | FileNotFound
-    | NetworkError
-    | OpenLock
-    | PermCreateFile
-    | PermDenied
-    | ResourceVanished
-    | ShortStorage
-    | StaleLockFile
-    | TimeSync
-    | TLSCert
-    | UserNameError        -- ^ User is using non-latin characters for username
-    | WalletNotSync
-    | WinReg
+    = IOHKS_29 --BlockDataCorrupt
+    | IOHKS_44 --BalanceError         -- ^ Daedalus shows wrong Ada amount
+    | IOHKS_79 --CannotConnect
+    | IOHKS_78 --CannotConnectAfter
+    | IOHKS_4 --CannotGetDBSize      -- ^ Error message of Couidn't pack log files shows up
+    | IOHKS_43 --ConnectionRefused
+    | IOHKS_10 --ConnectLoadHeaders
+    | IOHKS_47 --DBCorruptIO
+    | IOHKS_41 --DBError
+    | IOHKS_32 --DBPath               -- ^ Daedalus cannot find certain files
+    | IOHKS_35 --FileNotFound
+    | IOHKS_36 --NetworkError
+    | IOHKS_39 --OpenLock
+    | IOHKS_30 --PermCreateFile
+    | IOHKS_7 --PermDenied
+    | IOHKS_12 --ResourceVanished
+    | IOHKS_45 --ShortStorage
+    | IOHKS_48 --StaleLockFile
+    | IOHKS_8 --TimeSync
+    | IOHKS_37 --TLSCert
+    | IOHKS_31 --WalletNotSync
+    | IOHKS_65 --WinReg
     | SentLogCorrupted     -- ^ Log file sent to the Zendesk is corrupted
     | DecompressionFailure -- ^ The classifier failed to decompress the log file
     | Unknown              -- ^ Unknown error (currently not used)
@@ -113,29 +112,28 @@ instance Show Knowledge where
 -- lowercase
 
 renderErrorCode :: ErrorCode -> Text
-renderErrorCode TLSCert              = "tls-cert-error"
-renderErrorCode WinReg               = "win-reg-error"
-renderErrorCode OpenLock             = "open-lock"
-renderErrorCode WalletNotSync        = "wallet-not-sync"
-renderErrorCode PermCreateFile       = "permission-create-file"
-renderErrorCode ConnectLoadHeaders   = "connect-load-headers"
-renderErrorCode PermDenied           = "permission-denied"
-renderErrorCode DBCorruptIO          = "db-corrupt-io"
-renderErrorCode BlockDataCorrupt     = "db-corrupt"
-renderErrorCode CannotConnectAfter   = "cannot-connect-after"
-renderErrorCode CannotConnect        = "cannot-connect"
-renderErrorCode CannotGetDBSize      = "cannot-get-db-size"
-renderErrorCode FileNotFound         = "directory-not-found"
-renderErrorCode DBError              = "db-corrupted"
-renderErrorCode DBPath               = "db-path-error"
-renderErrorCode BalanceError         = "incorrect-balance"
-renderErrorCode ConnectionRefused    = "connection-refused"
-renderErrorCode ShortStorage         = "short-storage"
-renderErrorCode StaleLockFile        = "stale-lock-file"
-renderErrorCode ResourceVanished     = "resource-vanished"
-renderErrorCode TimeSync             = "time-out-of-sync"
-renderErrorCode NetworkError         = "network-error"
-renderErrorCode UserNameError        = "user-name-error"
+renderErrorCode IOHKS_37             = "tls-cert-error"
+renderErrorCode IOHKS_65             = "win-reg-error"
+renderErrorCode IOHKS_39             = "open-lock"
+renderErrorCode IOHKS_31             = "wallet-not-sync"
+renderErrorCode IOHKS_30             = "permission-create-file"
+renderErrorCode IOHKS_10             = "connect-load-headers"
+renderErrorCode IOHKS_7              = "permission-denied"
+renderErrorCode IOHKS_47             = "db-corrupt-io"
+renderErrorCode IOHKS_29             = "db-corrupt"
+renderErrorCode IOHKS_78             = "cannot-connect-after"
+renderErrorCode IOHKS_79             = "cannot-connect"
+renderErrorCode IOHKS_4              = "cannot-get-db-size"
+renderErrorCode IOHKS_35             = "directory-not-found"
+renderErrorCode IOHKS_41             = "db-corrupted"
+renderErrorCode IOHKS_32             = "db-path-error"
+renderErrorCode IOHKS_44             = "incorrect-balance"
+renderErrorCode IOHKS_43             = "connection-refused"
+renderErrorCode IOHKS_45             = "short-storage"
+renderErrorCode IOHKS_48             = "stale-lock-file"
+renderErrorCode IOHKS_12             = "resource-vanished"
+renderErrorCode IOHKS_8              = "time-out-of-sync"
+renderErrorCode IOHKS_36             = "network-error"
 renderErrorCode SentLogCorrupted     = "sent-log-corrupted"
 renderErrorCode DecompressionFailure = "decompression-failure"
 renderErrorCode Unknown              = "unknown"
@@ -229,7 +227,7 @@ instance ToJSON CardanoLog where
 --------------------------------------------------------------------------------
 
 instance Arbitrary ErrorCode where
-    arbitrary = elements [ShortStorage .. Error]
+    arbitrary = elements [IOHKS_45 .. Error]
 
 instance Arbitrary Knowledge where
     arbitrary = do
