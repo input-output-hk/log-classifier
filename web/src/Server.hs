@@ -26,7 +26,7 @@ import           Servant.Server (Handler (..), Server)
 import           DataSource (App, Comment, Config, DataLayer, TicketId (..), TicketInfo,
                              ZendeskResponse, runApp)
 import           Lib (createBasicDataLayerIO, createConfig, fetchTicket, fetchTicketComments,
-                      processTicket)
+                      processTicket, processTickets, fetchTickets)
 
 ------------------------------------------------------------
 -- API types
@@ -96,8 +96,10 @@ type BasicAuthURL = BasicAuth "log-classifier" User
 
 type API
     =  BasicAuthURL :> "api" :> "v1" :> "tickets" :> Capture "ticketId" TicketId :> Get '[JSON] TicketInfo
+  :<|> BasicAuthURL :> "api" :> "v1" :> "tickets" :> Get '[JSON] [TicketInfo]
   :<|> BasicAuthURL :> "api" :> "v1" :> "tickets" :> Capture "ticketId" TicketId :> "comments" :> Get '[JSON] [Comment]
   :<|> BasicAuthURL :> "api" :> "v1" :> "tickets" :> "analysis" :> ReqBody '[JSON] CTicketId :> Post '[JSON] ZendeskResponse
+  :<|> BasicAuthURL :> "api" :> "v1" :> "tickets" :> "analysis" :> Get '[JSON] [ZendeskResponse]
 
 ------------------------------------------------------------
 -- Server
@@ -114,8 +116,10 @@ convert = Handler . ExceptT . try
 server :: Config -> DataLayer App -> Server API
 server config dataLayer =
             handlerGetTicket
+    :<|>    handlerGetTickets
     :<|>    handlerGetTicketComments
     :<|>    handlerPostTicketAnalysis
+    :<|>    handlerPostTicketsAnalysis
   where
     -- | A handler for fetching the ticket information.
     handlerGetTicket :: User -> TicketId -> Handler TicketInfo
@@ -129,6 +133,9 @@ server config dataLayer =
                 Nothing        -> throwM err404
                 Just ticketId' -> pure ticketId'
 
+    handlerGetTickets :: User -> Handler [TicketInfo]
+    handlerGetTickets _ = convert $ runApp (fetchTickets dataLayer) config
+
     -- | A handler for getting ticket comments.
     handlerGetTicketComments :: User -> TicketId -> Handler [Comment]
     handlerGetTicketComments _ ticketId = convert getTicketComments
@@ -139,6 +146,9 @@ server config dataLayer =
     -- | A handler for the actual ticket analysis.
     handlerPostTicketAnalysis :: User -> CTicketId -> Handler ZendeskResponse
     handlerPostTicketAnalysis _ (V1 ticketId) = convert $ runApp (processTicket dataLayer ticketId) config
+
+    handlerPostTicketsAnalysis :: User -> Handler [ZendeskResponse]
+    handlerPostTicketsAnalysis _ = convert $ runApp (processTickets dataLayer) config
 
 
 -- | Main function call.
