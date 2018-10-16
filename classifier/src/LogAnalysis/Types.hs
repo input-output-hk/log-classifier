@@ -60,6 +60,8 @@ data ErrorCode
 data Knowledge = Knowledge
     {  kErrorText :: !Text
     -- ^ Text used for matching error lines
+    ,  kIssue     :: !Text
+    -- ^ Text that refers to the IOHKS issue
     ,  kErrorCode :: !ErrorCode
     -- ^ Identity for error code
     ,  kProblem   :: !Text
@@ -101,6 +103,7 @@ isTxtFormat = \case
 instance Show Knowledge where
     show Knowledge{..} =
         "{  errorText  = " <> Prelude.show kErrorText   <>
+        ",  issue      = " <> Prelude.show kIssue       <>
         ",  errorCode  = " <> Prelude.show kErrorCode   <>
         ",  problem    = " <> Prelude.show kProblem     <>
         ",  solution   = " <> Prelude.show kSolution    <>
@@ -112,32 +115,32 @@ instance Show Knowledge where
 -- lowercase
 
 renderErrorCode :: ErrorCode -> Text
-renderErrorCode IOHKS_37             = "tls-cert-error"
-renderErrorCode IOHKS_65             = "win-reg-error"
-renderErrorCode IOHKS_39             = "open-lock"
-renderErrorCode IOHKS_31             = "wallet-not-sync"
-renderErrorCode IOHKS_30             = "permission-create-file"
-renderErrorCode IOHKS_10             = "connect-load-headers"
-renderErrorCode IOHKS_7              = "permission-denied"
-renderErrorCode IOHKS_47             = "db-corrupt-io"
-renderErrorCode IOHKS_29             = "db-corrupt"
-renderErrorCode IOHKS_78             = "cannot-connect-after"
-renderErrorCode IOHKS_79             = "cannot-connect"
-renderErrorCode IOHKS_4              = "cannot-get-db-size"
-renderErrorCode IOHKS_35             = "directory-not-found"
-renderErrorCode IOHKS_41             = "db-corrupted"
-renderErrorCode IOHKS_32             = "db-path-error"
-renderErrorCode IOHKS_44             = "incorrect-balance"
-renderErrorCode IOHKS_43             = "connection-refused"
-renderErrorCode IOHKS_45             = "short-storage"
-renderErrorCode IOHKS_48             = "stale-lock-file"
-renderErrorCode IOHKS_12             = "resource-vanished"
-renderErrorCode IOHKS_8              = "time-out-of-sync"
-renderErrorCode IOHKS_36             = "network-error"
-renderErrorCode SentLogCorrupted     = "sent-log-corrupted"
-renderErrorCode NoKnownIssue         = "no-known-issue"
-renderErrorCode Unknown              = "unknown"
-renderErrorCode Error                = "error"
+renderErrorCode IOHKS_37         = "tls-cert-error"
+renderErrorCode IOHKS_65         = "win-reg-error"
+renderErrorCode IOHKS_39         = "open-lock"
+renderErrorCode IOHKS_31         = "wallet-not-sync"
+renderErrorCode IOHKS_30         = "permission-create-file"
+renderErrorCode IOHKS_10         = "connect-load-headers"
+renderErrorCode IOHKS_7          = "permission-denied"
+renderErrorCode IOHKS_47         = "db-corrupt-io"
+renderErrorCode IOHKS_29         = "db-corrupt"
+renderErrorCode IOHKS_78         = "cannot-connect-after"
+renderErrorCode IOHKS_79         = "cannot-connect"
+renderErrorCode IOHKS_4          = "cannot-get-db-size"
+renderErrorCode IOHKS_35         = "directory-not-found"
+renderErrorCode IOHKS_41         = "db-corrupted"
+renderErrorCode IOHKS_32         = "db-path-error"
+renderErrorCode IOHKS_44         = "incorrect-balance"
+renderErrorCode IOHKS_43         = "connection-refused"
+renderErrorCode IOHKS_45         = "short-storage"
+renderErrorCode IOHKS_48         = "stale-lock-file"
+renderErrorCode IOHKS_12         = "resource-vanished"
+renderErrorCode IOHKS_8          = "time-out-of-sync"
+renderErrorCode IOHKS_36         = "network-error"
+renderErrorCode SentLogCorrupted = "sent-log-corrupted"
+renderErrorCode NoKnownIssue     = "no-known-issue"
+renderErrorCode Unknown          = "unknown"
+renderErrorCode Error            = "error"
 
 -- | Make LogFile with given Filepath and ByteString
 toLogFile :: FilePath -> ByteString -> LogFile
@@ -154,10 +157,10 @@ setupAnalysis :: [Knowledge] -> Analysis
 setupAnalysis kbase = Map.fromList $ map (\kn -> (kn, [])) kbase
 
 instance Eq Knowledge where
-    e1 == e2 = kErrorCode e1 == kErrorCode e2
+    e1 == e2 = kIssue e1 == kIssue e2
 
 instance Ord Knowledge where
-    e1 <= e2 = kErrorCode e1 <= kErrorCode e2
+    e1 <= e2 = kIssue e1 <= kIssue e2
 
 -- | Cardano log data type
 data CardanoLog = CardanoLog {
@@ -232,6 +235,7 @@ instance Arbitrary ErrorCode where
 instance Arbitrary Knowledge where
     arbitrary = do
         errorText <- fromString <$> arbitrary
+        issue <- fromString <$> arbitrary
         errorCode <- arbitrary
         problem   <- fromString <$> arbitrary
         solution  <- fromString <$> arbitrary
@@ -239,6 +243,7 @@ instance Arbitrary Knowledge where
 
         pure $ Knowledge {
               kErrorText = errorText
+            , kIssue = issue
             , kErrorCode = errorCode
             , kProblem   = problem
             , kSolution  = solution

@@ -57,21 +57,14 @@ parseKnowledge :: Parser Knowledge  -- not really clean code..
 parseKnowledge = do
     e <- quotedText
     _ <- char ','
-    _ <- char '"'
-    c <- parseErrorCode
-    _ <- char '"'
-    _ <- char ','
-    p <- quotedText
-    _ <- char ','
-    s <- quotedText
-    _ <- char ','
-    f <- quotedText
+    i <- quotedText
     return $ Knowledge
         {  kErrorText = e
-        ,  kErrorCode = c
-        ,  kProblem   = p
-        ,  kSolution  = s
-        ,  kFAQNumber = f
+        ,  kIssue = i
+        ,  kErrorCode = Unknown
+        ,  kProblem   = ""
+        ,  kSolution  = ""
+        ,  kFAQNumber = ""
         }
 
 -- | Parse CSV file and create knowledgebase
