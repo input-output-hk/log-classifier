@@ -98,8 +98,8 @@ type API
     =  BasicAuthURL :> "api" :> "v1" :> "tickets" :> Capture "ticketId" TicketId :> Get '[JSON] TicketInfo
   :<|> BasicAuthURL :> "api" :> "v1" :> "tickets" :> Get '[JSON] [TicketInfo]
   :<|> BasicAuthURL :> "api" :> "v1" :> "tickets" :> Capture "ticketId" TicketId :> "comments" :> Get '[JSON] [Comment]
+  :<|> BasicAuthURL :> "api" :> "v1" :> "tickets" :> "analysis" :> Post '[JSON] [ZendeskResponse]
   :<|> BasicAuthURL :> "api" :> "v1" :> "tickets" :> "analysis" :> ReqBody '[JSON] CTicketId :> Post '[JSON] ZendeskResponse
-  :<|> BasicAuthURL :> "api" :> "v1" :> "tickets" :> "analysis" :> Get '[JSON] [ZendeskResponse]
 
 ------------------------------------------------------------
 -- Server
@@ -118,8 +118,8 @@ server config dataLayer =
             handlerGetTicket
     :<|>    handlerGetTickets
     :<|>    handlerGetTicketComments
-    :<|>    handlerPostTicketAnalysis
     :<|>    handlerPostTicketsAnalysis
+    :<|>    handlerPostTicketAnalysis
   where
     -- | A handler for fetching the ticket information.
     handlerGetTicket :: User -> TicketId -> Handler TicketInfo
