@@ -15,6 +15,7 @@ module Lib
     , fetchTickets
     , showStatistics
     , listAndSortTickets
+    , listAndSortUnassignedTickets
     , filterAnalyzedTickets
     , exportZendeskDataToLocalDB
     -- * Optional
@@ -29,7 +30,7 @@ module Lib
 
 import           Universum
 
-import           UnliftIO.Async (mapConcurrently)
+import           UnliftIO.Async (mapConcurrently, forConcurrently)
 
 import           Control.Exception.Safe (Handler (..), catches)
 import           Data.Attoparsec.Text.Lazy (eitherResult, parse)
@@ -262,12 +263,9 @@ processTickets dataLayer = do
 -- | Fetch all tickets that needs to be analyzed
 fetchTickets :: DataLayer App -> App [TicketInfo]
 fetchTickets dataLayer = do
-    sortedTicketIds             <- listAndSortTickets dataLayer
-    sortedUnassignedTicketIds   <- listAndSortUnassignedTickets dataLayer
+    allTickets <- zlListToBeAnalysedTickets dataLayer
 
-    let allTickets = sortedTicketIds <> sortedUnassignedTicketIds
-
-    -- Anything that has a "to_be_analysed" tag
+    -- Any ticket that has a "to_be_analysed" tag
     pure $ filter (elem (renderTicketStatus ToBeAnalyzed) . getTicketTags . tiTags) allTickets
 
 -- | Fetch a single ticket with given 'TicketId'
@@ -476,31 +474,31 @@ fetchAgents dataLayer = do
 -- | Fetch tickets that need to be analyzed and print them on console
 fetchAndShowTickets :: DataLayer App -> App ()
 fetchAndShowTickets dataLayer = do
-    allTickets  <- fetchTickets dataLayer
+    allTickets <- fetchTickets dataLayer
 
-    putTextLn $ "There are " <> show (length allTickets) <> " tickets."
-
-    output      <- mapConcurrently (pure . show @Text) allTickets
-
-    mapM_ putTextLn output
-
-    putTextLn "All the tickets has been processed."
+    showTickets allTickets
 
 -- | Fetch and show tickets from a specific time.
 fetchAndShowTicketsFrom :: DataLayer App -> ExportFromTime -> App ()
 fetchAndShowTicketsFrom dataLayer exportFromTime = do
     allTickets <- fetchTicketsExportedFromTime dataLayer exportFromTime
 
-    putTextLn $ "There are " <> show (length allTickets) <> " tickets."
+    showTickets allTickets
 
-    output      <- mapConcurrently (pure . show @Text) allTickets
+-- | Display all the TicketId and its tags
+showTickets :: [TicketInfo] -> App ()
+showTickets tickets = do
+    putTextLn $ "There are " <> show (length tickets) <> " tickets."
 
+    output <- forConcurrently tickets $ \ticket -> do
+                let ticketId   = getTicketId $ tiId ticket
+                let ticketTags = (sort . getTicketTags . tiTags) ticket
+                pure $ "TicketId: " <> show ticketId <> ", Tags: " <> show ticketTags
     mapM_ putTextLn output
-
-    putTextLn "All the tickets has been processed."
 
 -- | Inspection of the local zip.
 -- This function prints out the analysis result on the console.
+-- Can apply same refactoring as 'inspectAttachment'
 inspectLocalZipAttachment :: FilePath -> App ()
 inspectLocalZipAttachment filePath = do
 
