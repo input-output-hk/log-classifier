@@ -27,31 +27,6 @@ quotedText = do
     _       <- char '"'
     pure result
 
---- | Parse ErrorCode
-parseErrorCode :: Parser ErrorCode
-parseErrorCode =
-        (string "TLSCert"              >> return IOHKS_37)
-    <|> (string "WinReg"               >> return IOHKS_65)
-    <|> (string "openLock"             >> return IOHKS_39)
-    <|> (string "WalletNotSync"        >> return IOHKS_31)
-    <|> (string "PermCreateFile"       >> return IOHKS_30)
-    <|> (string "ConnectLoadHeaders"   >> return IOHKS_10)
-    <|> (string "PermDenied"           >> return IOHKS_7)
-    <|> (string "DBCorruptIO"          >> return IOHKS_47)
-    <|> (string "BlockDataCorrupt"     >> return IOHKS_29)
-    <|> (string "CannotConnectAfter"   >> return IOHKS_78)
-    <|> (string "CannotConnect"        >> return IOHKS_79)
-    <|> (string "FileNotFound"         >> return IOHKS_35)
-    <|> (string "DBError"              >> return IOHKS_41)
-    <|> (string "ConnectionRefused"    >> return IOHKS_43)
-    <|> (string "ShortStorage"         >> return IOHKS_45)
-    <|> (string "StaleLockFile"        >> return IOHKS_48)
-    <|> (string "ResourceVanished"     >> return IOHKS_12)
-    <|> (string "TimeSync"             >> return IOHKS_8)
-    <|> (string "NetworkError"         >> return IOHKS_36)
-    <|> (string "Unknown"              >> return Unknown)
-    <|> (string "Error"                >> return Error)
-
 -- | Parse each csv records
 parseKnowledge :: Parser Knowledge  -- not really clean code..
 parseKnowledge = do
