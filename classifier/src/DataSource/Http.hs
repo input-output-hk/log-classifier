@@ -164,7 +164,7 @@ getTicketComments httpNetworkLayer tId = do
             otherExceptions -> throwM otherExceptions
         Right comments      -> pure comments
 
--- | Return list to tickets with an tag "to_be_analysed"
+-- | Return list to tickets with an tag @to_be_analysed@
 listToBeAnalysedTickets
     :: forall m. (MonadIO m, MonadConc m, MonadReader Config m)
     => HTTPNetworkLayer m

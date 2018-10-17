@@ -9,6 +9,8 @@ module Lib
     , getZendeskResponses
     , getAttachmentsFromComment
     , inspectAttachment
+    , ExtractLogFileFunc
+    , ExtractErrorCodeFunc
     , processTicket
     , processTicketSafe
     , processTickets
@@ -564,5 +566,3 @@ processTicketsFromTime dataLayer exportFromTime = do
             let formattedTicketIdAndTag = show ticketId <> " " <> tag
             printText formattedTicketIdAndTag
             appendF "logs/analysis-result.log" (formattedTicketIdAndTag <> "\n")
-
-
