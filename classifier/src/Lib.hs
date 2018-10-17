@@ -205,7 +205,7 @@ saveTicketDataToLocalDB (ticket, ticketComments) = do
     pure ()
 
 -- | 'processTicket' with exception handling
-processTicketSafe :: DataLayer App ->TicketId -> App ()
+processTicketSafe :: DataLayer App -> TicketId -> App ()
 processTicketSafe dataLayer tId = catch (void $ processTicket dataLayer tId)
     -- Print and log any exceptions related to process ticket
     -- TODO(ks): Remove IO from here, return the error.
@@ -242,7 +242,7 @@ processTicket dataLayer tId = do
             pure zendeskResponse
 
 -- | When we want to process all possible tickets.
-processTickets :: HasCallStack => DataLayer App -> App ()
+processTickets :: HasCallStack => DataLayer App -> App [ZendeskResponse]
 processTickets dataLayer = do
 
     printText <- asksIOLayer iolPrintText
@@ -253,9 +253,11 @@ processTickets dataLayer = do
 
     printText $ "Number of tickets to be analyzed: " <> show (length allTickets)
 
-    mapM_ (processTicketSafe dataLayer . tiId) allTickets
+    zendeskResponses <- mapM (processTicket dataLayer . tiId) allTickets
 
     putTextLn "All the tickets has been processed."
+
+    pure zendeskResponses
 
 -- | Fetch all tickets that needs to be analyzed
 fetchTickets :: DataLayer App -> App [TicketInfo]
