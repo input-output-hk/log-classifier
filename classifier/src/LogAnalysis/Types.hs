@@ -223,7 +223,7 @@ instance ToJSON CardanoLog where
 --------------------------------------------------------------------------------
 
 instance Arbitrary ErrorCode where
-    arbitrary = elements [IOHKS_45 .. Error]
+    arbitrary = elements [SentLogCorrupted .. Error]
 
 instance Arbitrary Knowledge where
     arbitrary = do
