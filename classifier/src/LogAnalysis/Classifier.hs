@@ -10,6 +10,7 @@ module LogAnalysis.Classifier
        , prettyFormatNoIssues
        , prettyFormatNoLogs
        , extractMessages
+       , extractIssues
        ) where
 
 import           Universum
@@ -97,6 +98,8 @@ filterAnalysis as = do
 extractErrorCodes :: Analysis -> [Text]
 extractErrorCodes as = map (\(Knowledge{..}, _) -> renderErrorCode kErrorCode) $ Map.toList as
 
+extractIssues :: Analysis -> [Text]
+extractIssues as = map (\(Knowledge{..}, _) -> kIssue) $ Map.toList as
 -- TODO(hs): Create its own module for these functions
 
 -- | Header to a response

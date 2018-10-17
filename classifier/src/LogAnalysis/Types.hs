@@ -28,7 +28,7 @@ import           Test.QuickCheck (Arbitrary (..), Gen, choose, elements, oneof, 
 
 -- | Identifier for each error
 data ErrorCode
-    = IOHKS_29 --BlockDataCorrupt
+    = {-IOHKS_29 --BlockDataCorrupt
     | IOHKS_44 --BalanceError         -- ^ Daedalus shows wrong Ada amount
     | IOHKS_79 --CannotConnect
     | IOHKS_78 --CannotConnectAfter
@@ -50,7 +50,7 @@ data ErrorCode
     | IOHKS_37 --TLSCert
     | IOHKS_31 --WalletNotSync
     | IOHKS_65 --WinReg
-    | SentLogCorrupted     -- ^ Log file sent to the Zendesk is corrupted
+    |-} SentLogCorrupted     -- ^ Log file sent to the Zendesk is corrupted
     | NoKnownIssue
     | Unknown              -- ^ Unknown error (currently not used)
     | Error                -- ^ Error (currently not used)
@@ -106,6 +106,7 @@ instance Show Knowledge where
 -- lowercase
 
 renderErrorCode :: ErrorCode -> Text
+{-
 renderErrorCode IOHKS_37         = "IOHKS-37"
 renderErrorCode IOHKS_65         = "IOHKS-65"
 renderErrorCode IOHKS_39         = "IOHKS-39"
@@ -128,6 +129,7 @@ renderErrorCode IOHKS_48         = "IOHKS-48"
 renderErrorCode IOHKS_12         = "IOHKS-12"
 renderErrorCode IOHKS_8          = "IOHKS-8"
 renderErrorCode IOHKS_36         = "IOHKS-36"
+-}
 renderErrorCode SentLogCorrupted = "sent-log-corrupted"
 renderErrorCode NoKnownIssue     = "no-known-issue"
 renderErrorCode Unknown          = "unknown"

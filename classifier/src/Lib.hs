@@ -55,7 +55,7 @@ import           Exceptions (ClassifierExceptions (..), ProcessTicketExceptions 
 import           Http.Layer (basicHTTPNetworkLayer)
 import           Http.Queue (createSchedulerConfig, runScheduler)
 
-import           LogAnalysis.Classifier (extractErrorCodes, extractIssuesFromLogs,
+import           LogAnalysis.Classifier (extractErrorCodes, extractIssues, extractIssuesFromLogs,
                                          prettyFormatAnalysis, prettyFormatLogReadError,
                                          prettyFormatNoIssues, prettyFormatNoLogs)
 import           LogAnalysis.Exceptions (LogAnalysisException (..))
@@ -219,7 +219,8 @@ processTicketSafe dataLayer tId = catch (void $ processTicket dataLayer tId)
 -- | Process ticket with given 'TicketId'
 processTicket :: HasCallStack => DataLayer App -> TicketId -> App ZendeskResponse
 processTicket dataLayer tId = do
-
+    printText           <- asksIOLayer iolPrintText
+    appendF             <- asksIOLayer iolAppendFile -- We need to remove this.
     -- We see 3 HTTP calls here.
     let getTicketInfo       = zlGetTicketInfo dataLayer
     let getTicketComments   = zlGetTicketComments dataLayer
@@ -238,7 +239,13 @@ processTicket dataLayer tId = do
             -- Maybe for now we don't need to actually post this, but let the agent post it.
            -- postTicketComment ticketInfo zendeskResponse
            -- print zendeskResponse
-
+            let ticketId = getTicketId $ zrTicketId zendeskResponse
+            -- Append ticket result.
+            let tags = getTicketTags $ zrTags zendeskResponse
+            forM_ tags $ \tag -> do
+                let formattedTicketIdAndTag = show ticketId <> " " <> tag
+                printText formattedTicketIdAndTag
+                appendF "logs/analysis-result.log" (formattedTicketIdAndTag <> "\n")
             pure zendeskResponse
 
 -- | When we want to process all possible tickets.
@@ -394,15 +401,17 @@ inspectAttachment Config{..} ticketInfo attachment extractLogFileFunc extractIss
         let analysisEnv = setupAnalysis cfgKnowledgebase
         -- let logFiles    = either throwM id $ extractLogFileFunc cfgNumOfLogsToAnalyze
         --                 $ getAttachmentContent attachment
-        logFiles <- either throwM pure $ 
+        logFiles <- either throwM pure $
            extractLogFileFunc cfgNumOfLogsToAnalyze $ getAttachmentContent attachment
 
         -- Perform analysis
         analysisResult <- extractIssueFunc logFiles analysisEnv
         let errorCodes  = extractErrorCodes analysisResult
+        let issues = extractIssues analysisResult
+        let mergedIssuesErrorCodes = (issues ++ errorCodes)
         let commentRes  = prettyFormatAnalysis analysisResult ticketInfo
 
-        pure $ mkZendeskResponse commentRes errorCodes
+        pure $ mkZendeskResponse commentRes mergedIssuesErrorCodes
    where
      handleZipFileException :: (Monad m) => ZipFileExceptions -> m ZendeskResponse
      handleZipFileException _ =
@@ -419,10 +428,10 @@ inspectAttachment Config{..} ticketInfo attachment extractLogFileFunc extractIss
         (JSONDecodeFailure errorText) -> throwM $ JSONDecodeFailure errorText
 
      mkZendeskResponse :: Text -> [Text] -> ZendeskResponse
-     mkZendeskResponse comment errorCodes = ZendeskResponse
+     mkZendeskResponse comment mergedIssuesErrorCodes = ZendeskResponse
         { zrTicketId = tiId ticketInfo
         , zrComment  = comment
-        , zrTags     = TicketTags errorCodes
+        , zrTags     = TicketTags mergedIssuesErrorCodes
         , zrIsPublic = cfgIsCommentPublic
         }
 
