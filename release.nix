@@ -1,6 +1,4 @@
 let
-  pkgs = import <nixpkgs> { inherit config; };
-
   config = {
     packageOverrides = pkgs: rec {
       haskellPackages = pkgs.haskell.packages.ghc822.override {
@@ -18,6 +16,8 @@ let
       };
     };
   };
+
+  pkgs = import <nixpkgs> { inherit config; };
 
 in
   { log-classifier-web = pkgs.haskellPackages.log-classifier-web;

@@ -144,15 +144,15 @@ asksDBLayer getter = do
 -- TODO(ks): Move these three below to CLI!
 -- | Path to knowledgebase
 knowledgebasePath :: FilePath
-knowledgebasePath = "./knowledgebase/knowledge.csv"
+knowledgebasePath = "/tmp/knowledgebase/knowledge.csv"
 
 -- | Filepath to token file
 tokenPath :: FilePath
-tokenPath = "./tmp-secrets/token"
+tokenPath = "/tmp/tmp-secrets/token"
 
 -- | Filepath to assign_to file
 assignToPath :: FilePath
-assignToPath = "./tmp-secrets/assign_to"
+assignToPath = "/tmp/tmp-secrets/assign_to"
 
 
 -- | The IOLayer interface that we can expose.

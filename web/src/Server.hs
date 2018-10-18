@@ -159,7 +159,7 @@ mainServer = do
     dataLayer   <- createBasicDataLayerIO config
 
     -- the location where we find our list of users and passwords.
-    usersFile   <- BS.readFile "./app_users.json"
+    usersFile   <- BS.readFile "/tmp/tmp-secrets/app_users.json"
 
     let applicationUsers :: ApplicationUsers
         applicationUsers = fromMaybe (error "No app users!") (decode' usersFile)

@@ -73,6 +73,8 @@ import           Util (extractLogsFromZip)
 -- | Create configuration.
 createConfig :: IO Config
 createConfig = do
+    putTextLn "Starting Zendesk classifier!"
+
     createDirectoryIfMissing True "logs"
     hSetBuffering stdout NoBuffering
 
