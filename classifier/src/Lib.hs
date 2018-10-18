@@ -30,7 +30,7 @@ module Lib
 
 import           Universum
 
-import           UnliftIO.Async (mapConcurrently, forConcurrently)
+import           UnliftIO.Async (mapConcurrently)
 
 import           Control.Exception.Safe (Handler (..), catches)
 import           Data.Attoparsec.Text.Lazy (eitherResult, parse)
@@ -264,7 +264,7 @@ processTickets dataLayer = do
 fetchTickets :: DataLayer App -> App [TicketInfo]
 fetchTickets dataLayer = do
     allTickets <- zlListToBeAnalysedTickets dataLayer
-    
+
     let filteredTickets = sortBy compare $ filterAnalyzedTickets allTickets
     -- Any ticket that has a "to_be_analysed" tag
     pure filteredTickets
@@ -358,7 +358,7 @@ inspectAttachment Config{..} ticketInfo attachment extractLogFileFunc extractIss
         let analysisEnv = setupAnalysis cfgKnowledgebase
         -- let logFiles    = either throwM id $ extractLogFileFunc cfgNumOfLogsToAnalyze
         --                 $ getAttachmentContent attachment
-        logFiles <- either throwM pure $ 
+        logFiles <- either throwM pure $
            extractLogFileFunc cfgNumOfLogsToAnalyze $ getAttachmentContent attachment
 
         -- Perform analysis
@@ -454,11 +454,10 @@ showTickets :: [TicketInfo] -> App ()
 showTickets tickets = do
     putTextLn $ "There are " <> show (length tickets) <> " tickets."
 
-    output <- forConcurrently tickets $ \ticket -> do
-                let ticketId   = getTicketId $ tiId ticket
-                let ticketTags = (sort . getTicketTags . tiTags) ticket
-                pure $ "TicketId: " <> show ticketId <> ", Tags: " <> show ticketTags
-    mapM_ putTextLn output
+    forM_ tickets $ \ticket -> do
+        let ticketId   = getTicketId $ tiId ticket
+        let ticketTags = (sort . getTicketTags . tiTags) ticket
+        putTextLn $ "TicketId: " <> show ticketId <> ", Tags: " <> show ticketTags
 
 -- | Inspection of the local zip.
 -- This function prints out the analysis result on the console.
