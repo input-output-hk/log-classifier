@@ -28,7 +28,7 @@ import           Http.Layer (HTTPNetworkLayer (..), emptyHTTPNetworkLayer)
 
 import           Lib (exportZendeskDataToLocalDB, fetchTicket, fetchTicketComments,
                       filterAnalyzedTickets, getAttachmentsFromComment, inspectAttachment,
-                      listAndSortTickets, processTicket)
+                      fetchTickets, processTicket)
 import           LogAnalysis.Classifier (extractIssuesFromLogs)
 import           LogAnalysis.Exceptions (LogAnalysisException (..))
 import           LogAnalysis.Types (Analysis, ErrorCode (..), LogFile, renderErrorCode,
@@ -61,7 +61,7 @@ spec =
         describe "Zendesk" $ do
             inspectAttachmentSpec
             validShowURLSpec
-            listAndSortTicketsSpec
+            fetchTicketsSpec
             processTicketSpec
             filterAnalyzedTicketsSpec
             createResponseTicketSpec
@@ -160,9 +160,9 @@ parsingFailureSpec =
                         assert . null $ comments
 
 
-listAndSortTicketsSpec :: Spec
-listAndSortTicketsSpec =
-    describe "listAndSortTickets" $ modifyMaxSuccess (const 200) $ do
+fetchTicketsSpec :: Spec
+fetchTicketsSpec =
+    describe "fetchTickets" $ modifyMaxSuccess (const 200) $ do
         it "doesn't return tickets since there are none" $
             forAll arbitrary $ \(ticketInfo :: TicketInfo) ->
 
@@ -171,13 +171,13 @@ listAndSortTicketsSpec =
                     let stubbedDataLayer :: DataLayer App
                         stubbedDataLayer =
                             emptyDataLayer
-                                { zlListAssignedTickets     = \_     -> pure []
+                                { zlListToBeAnalysedTickets =           pure []
                                 , zlGetTicketInfo           = \_     -> pure $ Just ticketInfo
                                 , zlListAdminAgents         =           pure []
                                 }
 
                     let appExecution :: IO [TicketInfo]
-                        appExecution = runApp (listAndSortTickets stubbedDataLayer) stubbedConfig
+                        appExecution = runApp (fetchTickets stubbedDataLayer) stubbedConfig
 
                     tickets <- run appExecution
 
@@ -195,13 +195,13 @@ listAndSortTicketsSpec =
                             let stubbedDataLayer :: DataLayer App
                                 stubbedDataLayer =
                                     emptyDataLayer
-                                        { zlListAssignedTickets     = \_     -> pure listTickets
+                                        { zlListToBeAnalysedTickets =           pure listTickets
                                         , zlGetTicketInfo           = \_     -> pure ticketInfo
                                         , zlListAdminAgents         =           pure agents
                                         }
 
                             let appExecution :: IO [TicketInfo]
-                                appExecution = runApp (listAndSortTickets stubbedDataLayer) stubbedConfig
+                                appExecution = runApp (fetchTickets stubbedDataLayer) stubbedConfig
 
                             tickets <- run appExecution
 
@@ -223,7 +223,7 @@ processTicketSpec =
                         let stubbedDataLayer :: DataLayer App
                             stubbedDataLayer =
                                 emptyDataLayer
-                                    { zlListAssignedTickets     = \_     -> pure listTickets
+                                    { zlListToBeAnalysedTickets =           pure listTickets
                                     , zlGetTicketInfo           = \_     -> pure $ Just ticketInfo
                                     , zlPostTicketComment       = \_ _   -> pure ()
                                     , zlGetTicketComments       = \_     -> pure comments

@@ -16,8 +16,6 @@ module Lib
     , processTickets
     , fetchTickets
     , showStatistics
-    , listAndSortTickets
-    , listAndSortUnassignedTickets
     , filterAnalyzedTickets
     , exportZendeskDataToLocalDB
     -- * Optional
@@ -284,43 +282,6 @@ fetchTicketComments dataLayer ticketId = do
     let getTicketComments   = zlGetTicketComments dataLayer
     getTicketComments ticketId
 
-
--- | List and sort tickets
--- TODO(ks): Extract repeating code, generalize.
-listAndSortTickets :: HasCallStack => DataLayer App -> App [TicketInfo]
-listAndSortTickets dataLayer = do
-
-    Config{..}  <- ask
-
-    let listAgents = zlListAdminAgents dataLayer
-    agents      <- listAgents
-
-    let agentIds :: [UserId]
-        agentIds = map uId agents
-    -- We first fetch the function from the configuration
-    let listTickets = zlListAssignedTickets dataLayer
-
-    ticketInfos <- map concat $ traverse listTickets agentIds
-
-    let filteredTicketIds = filterAnalyzedTickets ticketInfos
-    let sortedTicketIds   = sortBy compare filteredTicketIds
-
-    pure sortedTicketIds
-
--- | Fetch tickets that are unassigned to Zendesk agents
-listAndSortUnassignedTickets :: HasCallStack => DataLayer App -> App [TicketInfo]
-listAndSortUnassignedTickets dataLayer = do
-
-    -- We first fetch the function from the configuration
-    let listUnassignedTickets = zlListUnassignedTickets dataLayer
-
-    ticketInfos             <- listUnassignedTickets
-
-    let filteredTicketIds   = filterAnalyzedTickets ticketInfos
-    let sortedTicketIds     = sortBy compare filteredTicketIds
-
-    pure sortedTicketIds
-
 -- | A pure function for fetching 'Attachment' from 'Comment'
 getAttachmentsFromComment :: [Comment] -> [Attachment]
 getAttachmentsFromComment comments = do
@@ -442,7 +403,6 @@ filterAnalyzedTickets ticketsInfo =
            isTicketOpen ticketInfo
         && isTicketBlacklisted ticketInfo
         && isTicketInGoguenTestnet ticketInfo
-        && hasToBeAnalysedTag ticketInfo
 
     unsolvedTicketStatus :: [TicketStatus]
     unsolvedTicketStatus = map TicketStatus ["new", "open", "hold", "pending"]
@@ -456,9 +416,6 @@ filterAnalyzedTickets ticketsInfo =
 
     isTicketInGoguenTestnet :: TicketInfo -> Bool
     isTicketInGoguenTestnet TicketInfo{..} = "goguen_testnets" `notElem` getTicketTags tiTags
-
-    hasToBeAnalysedTag :: TicketInfo -> Bool
-    hasToBeAnalysedTag TicketInfo{..} = renderTicketStatus ToBeAnalyzed `elem` getTicketTags tiTags
 
 ------------------------------------------------------------
 -- Utility functions
