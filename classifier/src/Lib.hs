@@ -73,6 +73,8 @@ import           Util (extractLogsFromZip)
 -- | Create configuration.
 createConfig :: IO Config
 createConfig = do
+    putTextLn "Starting Zendesk classifier!"
+
     createDirectoryIfMissing True "logs"
     hSetBuffering stdout NoBuffering
 
@@ -224,7 +226,7 @@ processTicket dataLayer tId = do
     -- We see 3 HTTP calls here.
     let getTicketInfo       = zlGetTicketInfo dataLayer
     let getTicketComments   = zlGetTicketComments dataLayer
-    --let postTicketComment   = zlPostTicketComment dataLayer
+    let postTicketComment   = zlPostTicketComment dataLayer
 
     mTicketInfo         <- getTicketInfo tId
     comments            <- getTicketComments tId
@@ -235,10 +237,9 @@ processTicket dataLayer tId = do
         Just ticketInfo -> do
             zendeskResponse <- getZendeskResponses dataLayer comments attachments ticketInfo
 
-            -- post ticket comment
-            -- Maybe for now we don't need to actually post this, but let the agent post it.
-           -- postTicketComment ticketInfo zendeskResponse
-           -- print zendeskResponse
+            -- post ticket comment, Carl said this is ok
+            postTicketComment ticketInfo zendeskResponse
+            print zendeskResponse
 
             pure zendeskResponse
 

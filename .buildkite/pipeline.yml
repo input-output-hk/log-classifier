@@ -1,6 +1,5 @@
 steps:
-  - label: 'stack nix'
-    # we are using Nix with Stack anyway, so we are implicitly testing that as well.
-    command: 'stack build && stack test' 
+  - label: 'nix build'
+    command: 'nix-build --attr log-classifier-web release.nix' 
     agents:
       system: x86_64-linux
