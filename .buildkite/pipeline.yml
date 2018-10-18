@@ -1,5 +1,5 @@
 steps:
-  - label: 'nix build'
-    command: 'nix-build --attr log-classifier-web release.nix' 
+  - label: 'stack build'
+    command: 'stack build && stack test' 
     agents:
       system: x86_64-linux
