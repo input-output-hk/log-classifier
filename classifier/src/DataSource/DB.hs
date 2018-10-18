@@ -129,9 +129,8 @@ connDataLayer :: forall m. (MonadIO m, MonadConc m, MonadCatch m, MonadMask m, M
 connDataLayer = DataLayer
     { zlGetTicketInfo           = \tId -> withProdDatabase $ \conn -> getTicketInfoByTicketId conn tId
     , zlListDeletedTickets      = error "This needs to be combined in a module higher up" -- zlListDeletedTickets basicDataLayer
-    , zlListAssignedTickets     = \uId -> withProdDatabase $ \conn -> getAllAssignedTicketsByUser conn uId
     , zlListRequestedTickets    = \uId -> withProdDatabase $ \conn -> getAllRequestedTicketsByUser conn uId
-    , zlListUnassignedTickets   =         withProdDatabase getAllUnassignedTicketsByUser
+    , zlListToBeAnalysedTickets = error "This needs to be combined in a module higher up"
     , zlListAdminAgents         = error "This needs to be combined in a module higher up" -- zlListAdminAgents basicDataLayer
     , zlGetAttachment           = \att -> withProdDatabase $ \conn -> DataSource.DB.getAttachmentContent conn att
     , zlGetTicketComments       = \tId -> withProdDatabase $ \conn -> getTicketComments conn tId
@@ -166,9 +165,8 @@ connPoolDataLayer
 connPoolDataLayer connPool = DataLayer
     { zlGetTicketInfo           = \tId -> withConnPool connPool $ \conn -> getTicketInfoByTicketId conn tId
     , zlListDeletedTickets      = error "This needs to be combined in a module higher up" -- zlListDeletedTickets basicDataLayer
-    , zlListAssignedTickets     = \uId -> withConnPool connPool $ \conn -> getAllAssignedTicketsByUser conn uId
     , zlListRequestedTickets    = \uId -> withConnPool connPool $ \conn -> getAllRequestedTicketsByUser conn uId
-    , zlListUnassignedTickets   =         withConnPool connPool getAllUnassignedTicketsByUser
+    , zlListToBeAnalysedTickets = error "This needs to be combined in a module higher up"
     , zlListAdminAgents         = error "This needs to be combined in a module higher up" -- zlListAdminAgents basicDataLayer
     , zlGetAttachment           = \att -> withConnPool connPool $ \conn -> DataSource.DB.getAttachmentContent conn att
     , zlGetTicketComments       = \tId -> withConnPool connPool $ \conn -> getTicketComments conn tId
@@ -316,18 +314,6 @@ getTicketInfoByTicketId
 getTicketInfoByTicketId conn ticketId =
     liftIO $ safeHead <$> queryNamed conn
         "SELECT * FROM ticket_info WHERE tId = :id" [":id" := ticketId]
-
-getAllAssignedTicketsByUser
-    :: forall m. (MonadIO m)
-    => Connection
-    -> UserId
-    -> m [TicketInfo]
-getAllAssignedTicketsByUser conn userId =
-    liftIO $ queryNamed conn "SELECT * FROM ticket_info WHERE assignee_id = :id" [":id" := userId]
-
-getAllUnassignedTicketsByUser :: forall m. (MonadIO m) => Connection -> m [TicketInfo]
-getAllUnassignedTicketsByUser conn =
-    liftIO $ query_ conn "SELECT * FROM ticket_info WHERE assignee_id = NULL"
 
 getAllRequestedTicketsByUser :: forall m. (MonadIO m) => Connection -> UserId -> m [TicketInfo]
 getAllRequestedTicketsByUser conn userId =
