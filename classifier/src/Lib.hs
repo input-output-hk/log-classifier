@@ -9,12 +9,13 @@ module Lib
     , getZendeskResponses
     , getAttachmentsFromComment
     , inspectAttachment
+    , ExtractLogFileFunc
+    , ExtractErrorCodeFunc
     , processTicket
     , processTicketSafe
     , processTickets
     , fetchTickets
     , showStatistics
-    , listAndSortTickets
     , filterAnalyzedTickets
     , exportZendeskDataToLocalDB
     -- * Optional
@@ -72,6 +73,8 @@ import           Util (extractLogsFromZip)
 -- | Create configuration.
 createConfig :: IO Config
 createConfig = do
+    putTextLn "Starting Zendesk classifier!"
+
     createDirectoryIfMissing True "logs"
     hSetBuffering stdout NoBuffering
 
@@ -205,7 +208,7 @@ saveTicketDataToLocalDB (ticket, ticketComments) = do
     pure ()
 
 -- | 'processTicket' with exception handling
-processTicketSafe :: DataLayer App ->TicketId -> App ()
+processTicketSafe :: DataLayer App -> TicketId -> App ()
 processTicketSafe dataLayer tId = catch (void $ processTicket dataLayer tId)
     -- Print and log any exceptions related to process ticket
     -- TODO(ks): Remove IO from here, return the error.
@@ -223,7 +226,7 @@ processTicket dataLayer tId = do
     -- We see 3 HTTP calls here.
     let getTicketInfo       = zlGetTicketInfo dataLayer
     let getTicketComments   = zlGetTicketComments dataLayer
-    --let postTicketComment   = zlPostTicketComment dataLayer
+    let postTicketComment   = zlPostTicketComment dataLayer
 
     mTicketInfo         <- getTicketInfo tId
     comments            <- getTicketComments tId
@@ -234,15 +237,14 @@ processTicket dataLayer tId = do
         Just ticketInfo -> do
             zendeskResponse <- getZendeskResponses dataLayer comments attachments ticketInfo
 
-            -- post ticket comment
-            -- Maybe for now we don't need to actually post this, but let the agent post it.
-           -- postTicketComment ticketInfo zendeskResponse
-           -- print zendeskResponse
+            -- post ticket comment, Carl said this is ok
+            postTicketComment ticketInfo zendeskResponse
+            print zendeskResponse
 
             pure zendeskResponse
 
 -- | When we want to process all possible tickets.
-processTickets :: HasCallStack => DataLayer App -> App ()
+processTickets :: HasCallStack => DataLayer App -> App [ZendeskResponse]
 processTickets dataLayer = do
 
     printText <- asksIOLayer iolPrintText
@@ -253,20 +255,20 @@ processTickets dataLayer = do
 
     printText $ "Number of tickets to be analyzed: " <> show (length allTickets)
 
-    mapM_ (processTicketSafe dataLayer . tiId) allTickets
+    zendeskResponses <- mapM (processTicket dataLayer . tiId) allTickets
 
     putTextLn "All the tickets has been processed."
+
+    pure zendeskResponses
 
 -- | Fetch all tickets that needs to be analyzed
 fetchTickets :: DataLayer App -> App [TicketInfo]
 fetchTickets dataLayer = do
-    sortedTicketIds             <- listAndSortTickets dataLayer
-    sortedUnassignedTicketIds   <- listAndSortUnassignedTickets dataLayer
+    allTickets <- zlListToBeAnalysedTickets dataLayer
 
-    let allTickets = sortedTicketIds <> sortedUnassignedTicketIds
-
-    -- Anything that has a "to_be_analysed" tag
-    pure $ filter (elem (renderTicketStatus ToBeAnalyzed) . getTicketTags . tiTags) allTickets
+    let filteredTickets = sortBy compare $ filterAnalyzedTickets allTickets
+    -- Any ticket that has a "to_be_analysed" tag
+    pure filteredTickets
 
 -- | Fetch a single ticket with given 'TicketId'
 fetchTicket :: DataLayer App -> TicketId -> App (Maybe TicketInfo)
@@ -280,43 +282,6 @@ fetchTicketComments :: DataLayer App -> TicketId -> App [Comment]
 fetchTicketComments dataLayer ticketId = do
     let getTicketComments   = zlGetTicketComments dataLayer
     getTicketComments ticketId
-
-
--- | List and sort tickets
--- TODO(ks): Extract repeating code, generalize.
-listAndSortTickets :: HasCallStack => DataLayer App -> App [TicketInfo]
-listAndSortTickets dataLayer = do
-
-    Config{..}  <- ask
-
-    let listAgents = zlListAdminAgents dataLayer
-    agents      <- listAgents
-
-    let agentIds :: [UserId]
-        agentIds = map uId agents
-    -- We first fetch the function from the configuration
-    let listTickets = zlListAssignedTickets dataLayer
-
-    ticketInfos <- map concat $ traverse listTickets agentIds
-
-    let filteredTicketIds = filterAnalyzedTickets ticketInfos
-    let sortedTicketIds   = sortBy compare filteredTicketIds
-
-    pure sortedTicketIds
-
--- | Fetch tickets that are unassigned to Zendesk agents
-listAndSortUnassignedTickets :: HasCallStack => DataLayer App -> App [TicketInfo]
-listAndSortUnassignedTickets dataLayer = do
-
-    -- We first fetch the function from the configuration
-    let listUnassignedTickets = zlListUnassignedTickets dataLayer
-
-    ticketInfos             <- listUnassignedTickets
-
-    let filteredTicketIds   = filterAnalyzedTickets ticketInfos
-    let sortedTicketIds     = sortBy compare filteredTicketIds
-
-    pure sortedTicketIds
 
 -- | A pure function for fetching 'Attachment' from 'Comment'
 getAttachmentsFromComment :: [Comment] -> [Attachment]
@@ -394,7 +359,7 @@ inspectAttachment Config{..} ticketInfo attachment extractLogFileFunc extractIss
         let analysisEnv = setupAnalysis cfgKnowledgebase
         -- let logFiles    = either throwM id $ extractLogFileFunc cfgNumOfLogsToAnalyze
         --                 $ getAttachmentContent attachment
-        logFiles <- either throwM pure $ 
+        logFiles <- either throwM pure $
            extractLogFileFunc cfgNumOfLogsToAnalyze $ getAttachmentContent attachment
 
         -- Perform analysis
@@ -474,31 +439,30 @@ fetchAgents dataLayer = do
 -- | Fetch tickets that need to be analyzed and print them on console
 fetchAndShowTickets :: DataLayer App -> App ()
 fetchAndShowTickets dataLayer = do
-    allTickets  <- fetchTickets dataLayer
+    allTickets <- fetchTickets dataLayer
 
-    putTextLn $ "There are " <> show (length allTickets) <> " tickets."
-
-    output      <- mapConcurrently (pure . show @Text) allTickets
-
-    mapM_ putTextLn output
-
-    putTextLn "All the tickets has been processed."
+    showTickets allTickets
 
 -- | Fetch and show tickets from a specific time.
 fetchAndShowTicketsFrom :: DataLayer App -> ExportFromTime -> App ()
 fetchAndShowTicketsFrom dataLayer exportFromTime = do
     allTickets <- fetchTicketsExportedFromTime dataLayer exportFromTime
 
-    putTextLn $ "There are " <> show (length allTickets) <> " tickets."
+    showTickets allTickets
 
-    output      <- mapConcurrently (pure . show @Text) allTickets
+-- | Display all the TicketId and its tags
+showTickets :: [TicketInfo] -> App ()
+showTickets tickets = do
+    putTextLn $ "There are " <> show (length tickets) <> " tickets."
 
-    mapM_ putTextLn output
-
-    putTextLn "All the tickets has been processed."
+    forM_ tickets $ \ticket -> do
+        let ticketId   = getTicketId $ tiId ticket
+        let ticketTags = (sort . getTicketTags . tiTags) ticket
+        putTextLn $ "TicketId: " <> show ticketId <> ", Tags: " <> show ticketTags
 
 -- | Inspection of the local zip.
 -- This function prints out the analysis result on the console.
+-- Can apply same refactoring as 'inspectAttachment'
 inspectLocalZipAttachment :: FilePath -> App ()
 inspectLocalZipAttachment filePath = do
 
@@ -564,5 +528,3 @@ processTicketsFromTime dataLayer exportFromTime = do
             let formattedTicketIdAndTag = show ticketId <> " " <> tag
             printText formattedTicketIdAndTag
             appendF "logs/analysis-result.log" (formattedTicketIdAndTag <> "\n")
-
-

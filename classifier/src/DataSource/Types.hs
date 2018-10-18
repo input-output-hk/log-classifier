@@ -144,15 +144,15 @@ asksDBLayer getter = do
 -- TODO(ks): Move these three below to CLI!
 -- | Path to knowledgebase
 knowledgebasePath :: FilePath
-knowledgebasePath = "./knowledgebase/knowledge.csv"
+knowledgebasePath = "/tmp/knowledgebase/knowledge.csv"
 
 -- | Filepath to token file
 tokenPath :: FilePath
-tokenPath = "./tmp-secrets/token"
+tokenPath = "/tmp/tmp-secrets/token"
 
 -- | Filepath to assign_to file
 assignToPath :: FilePath
-assignToPath = "./tmp-secrets/assign_to"
+assignToPath = "/tmp/tmp-secrets/assign_to"
 
 
 -- | The IOLayer interface that we can expose.
@@ -207,6 +207,7 @@ data ZendeskAPIUrl
     | UserUnassignedTicketsURL
     | TicketsURL TicketId
     | TicketAgentURL TicketId
+    | ToBeAnalyzedTicketsURL
     | UserInfoURL
     | TicketCommentsURL TicketId
     | ExportDataByTimestamp ExportFromTime
@@ -224,6 +225,7 @@ showURL (TicketAgentURL ticketId)           = "https://iohk.zendesk.com/agent/ti
 showURL (UserInfoURL)                       = "/users/me.json"
 showURL (TicketCommentsURL ticketId)        = "/tickets/" <> toURL ticketId <> "/comments.json"
 showURL (ExportDataByTimestamp time)        = "https://iohk.zendesk.com/api/v2/incremental/tickets.json?start_time=" <> toURL time
+showURL ToBeAnalyzedTicketsURL              = "/search.json?query=" <> urlEncode "type:ticket status<solved tags:to_be_analysed"
 
 -- | Plain @Text@ to @Text@ encoding.
 -- https://en.wikipedia.org/wiki/Percent-encoding

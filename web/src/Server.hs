@@ -26,7 +26,7 @@ import           Servant.Server (Handler (..), Server)
 import           DataSource (App, Comment, Config, DataLayer, TicketId (..), TicketInfo,
                              ZendeskResponse, runApp)
 import           Lib (createBasicDataLayerIO, createConfig, fetchTicket, fetchTicketComments,
-                      processTicket)
+                      processTicket, processTickets, fetchTickets)
 
 ------------------------------------------------------------
 -- API types
@@ -96,7 +96,9 @@ type BasicAuthURL = BasicAuth "log-classifier" User
 
 type API
     =  BasicAuthURL :> "api" :> "v1" :> "tickets" :> Capture "ticketId" TicketId :> Get '[JSON] TicketInfo
+  -- :<|> BasicAuthURL :> "api" :> "v1" :> "tickets" :> Get '[JSON] [TicketInfo]
   :<|> BasicAuthURL :> "api" :> "v1" :> "tickets" :> Capture "ticketId" TicketId :> "comments" :> Get '[JSON] [Comment]
+  -- :<|> BasicAuthURL :> "api" :> "v1" :> "tickets" :> "analysis" :> Post '[JSON] [ZendeskResponse]
   :<|> BasicAuthURL :> "api" :> "v1" :> "tickets" :> "analysis" :> ReqBody '[JSON] CTicketId :> Post '[JSON] ZendeskResponse
 
 ------------------------------------------------------------
@@ -114,7 +116,9 @@ convert = Handler . ExceptT . try
 server :: Config -> DataLayer App -> Server API
 server config dataLayer =
             handlerGetTicket
+    -- :<|>    handlerGetTickets
     :<|>    handlerGetTicketComments
+    -- :<|>    handlerPostTicketsAnalysis
     :<|>    handlerPostTicketAnalysis
   where
     -- | A handler for fetching the ticket information.
@@ -129,6 +133,9 @@ server config dataLayer =
                 Nothing        -> throwM err404
                 Just ticketId' -> pure ticketId'
 
+    _handlerGetTickets :: User -> Handler [TicketInfo]
+    _handlerGetTickets _ = convert $ runApp (fetchTickets dataLayer) config
+
     -- | A handler for getting ticket comments.
     handlerGetTicketComments :: User -> TicketId -> Handler [Comment]
     handlerGetTicketComments _ ticketId = convert getTicketComments
@@ -140,6 +147,9 @@ server config dataLayer =
     handlerPostTicketAnalysis :: User -> CTicketId -> Handler ZendeskResponse
     handlerPostTicketAnalysis _ (V1 ticketId) = convert $ runApp (processTicket dataLayer ticketId) config
 
+    _handlerPostTicketsAnalysis :: User -> Handler [ZendeskResponse]
+    _handlerPostTicketsAnalysis _ = convert $ runApp (processTickets dataLayer) config
+
 
 -- | Main function call.
 mainServer :: IO ()
@@ -149,7 +159,7 @@ mainServer = do
     dataLayer   <- createBasicDataLayerIO config
 
     -- the location where we find our list of users and passwords.
-    usersFile   <- BS.readFile "./app_users.json"
+    usersFile   <- BS.readFile "/tmp/tmp-secrets/app_users.json"
 
     let applicationUsers :: ApplicationUsers
         applicationUsers = fromMaybe (error "No app users!") (decode' usersFile)
@@ -161,7 +171,7 @@ mainServer = do
                                     (server config dataLayer)
 
     -- Serve, Servant!
-    run 4000 (logStdoutDev serverWithContext)
+    run 8100 (logStdoutDev serverWithContext)
   where
     -- | The API proxy.
     apiProxy :: Proxy API
