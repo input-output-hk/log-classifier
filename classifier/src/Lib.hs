@@ -266,9 +266,10 @@ processTickets dataLayer = do
 fetchTickets :: DataLayer App -> App [TicketInfo]
 fetchTickets dataLayer = do
     allTickets <- zlListToBeAnalysedTickets dataLayer
-
+    
+    let filteredTickets = sortBy compare $ filterAnalyzedTickets allTickets
     -- Any ticket that has a "to_be_analysed" tag
-    pure $ filter (elem (renderTicketStatus ToBeAnalyzed) . getTicketTags . tiTags) allTickets
+    pure filteredTickets
 
 -- | Fetch a single ticket with given 'TicketId'
 fetchTicket :: DataLayer App -> TicketId -> App (Maybe TicketInfo)
@@ -441,6 +442,7 @@ filterAnalyzedTickets ticketsInfo =
            isTicketOpen ticketInfo
         && isTicketBlacklisted ticketInfo
         && isTicketInGoguenTestnet ticketInfo
+        && hasToBeAnalysedTag ticketInfo
 
     unsolvedTicketStatus :: [TicketStatus]
     unsolvedTicketStatus = map TicketStatus ["new", "open", "hold", "pending"]
@@ -454,6 +456,9 @@ filterAnalyzedTickets ticketsInfo =
 
     isTicketInGoguenTestnet :: TicketInfo -> Bool
     isTicketInGoguenTestnet TicketInfo{..} = "goguen_testnets" `notElem` getTicketTags tiTags
+
+    hasToBeAnalysedTag :: TicketInfo -> Bool
+    hasToBeAnalysedTag TicketInfo{..} = renderTicketStatus ToBeAnalyzed `elem` getTicketTags tiTags
 
 ------------------------------------------------------------
 -- Utility functions
