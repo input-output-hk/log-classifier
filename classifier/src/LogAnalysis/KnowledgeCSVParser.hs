@@ -36,7 +36,7 @@ parseKnowledge = do
     return $ Knowledge
         {  kErrorText = e
         ,  kIssue = i
-        ,  kErrorCode = Unknown
+        ,  kErrorCode = Nil
         }
 
 -- | Parse CSV file and create knowledgebase

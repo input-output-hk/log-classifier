@@ -96,7 +96,7 @@ filterAnalysis as = do
 
 -- | Extract error texts that's been found from the logs
 extractErrorCodes :: Analysis -> [Text]
-extractErrorCodes as = map (\(Knowledge{..}, _) -> renderErrorCode kErrorCode) $ Map.toList as
+extractErrorCodes as = dropWhile (== "nil") (map (\(Knowledge{..}, _) -> renderErrorCode kErrorCode) $ Map.toList as)
 
 extractIssues :: Analysis -> [Text]
 extractIssues as = map (\(Knowledge{..}, _) -> kIssue) $ Map.toList as

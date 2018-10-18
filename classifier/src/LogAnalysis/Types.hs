@@ -53,7 +53,7 @@ data ErrorCode
     |-} SentLogCorrupted     -- ^ Log file sent to the Zendesk is corrupted
     | NoKnownIssue
     | Unknown              -- ^ Unknown error (currently not used)
-    | Error                -- ^ Error (currently not used)
+    | Nil                -- ^ Error (currently not used)
     deriving (Eq, Ord, Show, Enum)
 
 -- | Record identifying the issue
@@ -133,7 +133,7 @@ renderErrorCode IOHKS_36         = "IOHKS-36"
 renderErrorCode SentLogCorrupted = "sent-log-corrupted"
 renderErrorCode NoKnownIssue     = "no-known-issue"
 renderErrorCode Unknown          = "unknown"
-renderErrorCode Error            = "error"
+renderErrorCode Nil              = "nil"
 
 -- | Make LogFile with given Filepath and ByteString
 toLogFile :: FilePath -> ByteString -> LogFile
@@ -223,7 +223,7 @@ instance ToJSON CardanoLog where
 --------------------------------------------------------------------------------
 
 instance Arbitrary ErrorCode where
-    arbitrary = elements [SentLogCorrupted .. Error]
+    arbitrary = elements [SentLogCorrupted .. Nil]
 
 instance Arbitrary Knowledge where
     arbitrary = do
