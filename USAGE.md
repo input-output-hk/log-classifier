@@ -17,7 +17,7 @@ This is the list of steps to be performed when trying to run the application usi
 
 4. Next, import the requests you require.
 
-With your Postman application running, go to the address [https://www.getpostman.com/collections/3838cc0a894a0e53dc49](https://www.getpostman.com/collections/3838cc0a894a0e53dc49) and simply confirm the import.
+With your Postman application running, go to the address [here](https://www.getpostman.com/collections/018eec85b244921f8b52) and simply confirm the import.
 
 The result should be seen on the left window called "Collections".
 
