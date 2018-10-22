@@ -9,6 +9,10 @@ The purpose of this project is to analyze Cardano log file and provide a solutio
 ## Installation and Configuration Instructions
 Installation Instructions are available at [INSTALL.md](INSTALL.md)
 
+## Usage instructions
+
+Usage instructions are available at [USAGE.md](USAGE.md).
+
 ## Deployment
 
 - https://youtu.be/NQJVNvxgDqg?t=615
