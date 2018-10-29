@@ -11,6 +11,7 @@ Installation Instructions are available at [INSTALL.md](INSTALL.md)
 
 ## Usage instructions
 
+Please note that you have to provide a enviroment variable called `LCPATH` where all the key files are.
 Usage instructions are available at [USAGE.md](USAGE.md).
 
 ## Deployment

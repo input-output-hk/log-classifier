@@ -47,9 +47,8 @@ import           DataSource (App, Attachment (..), AttachmentContent (..), Comme
                              ExportFromTime (..), IOLayer (..), TicketId (..), TicketInfo (..),
                              TicketStatus (..), TicketTag (..), TicketTags (..), User (..),
                              UserId (..), ZendeskResponse (..), asksDBLayer, asksIOLayer,
-                             assignToPath, basicDataLayer, connPoolDBLayer,
-                             createProdConnectionPool, knowledgebasePath, renderTicketStatus,
-                             runApp, tokenPath)
+                             basicDataLayer, connPoolDBLayer, createProdConnectionPool,
+                             renderTicketStatus, runApp)
 
 import           Exceptions (ClassifierExceptions (..), ProcessTicketExceptions (..),
                              ZipFileExceptions (..))
@@ -64,6 +63,7 @@ import           LogAnalysis.KnowledgeCSVParser (parseKnowLedgeBase)
 import           LogAnalysis.Types (Analysis, ErrorCode (..), Knowledge, LogFile, renderErrorCode,
                                     setupAnalysis)
 import           Statistics (showStatistics)
+import           System.Environment (getEnv)
 import           Util (extractLogsFromZip)
 
 ------------------------------------------------------------
@@ -79,9 +79,12 @@ createConfig = do
     hSetBuffering stdout NoBuffering
 
     putTextLn "Welcome to Zendesk classifier!"
-    token       <- readFile tokenPath       -- Zendesk token
-    assignFile  <- readFile assignToPath    -- Select assignee
-    knowledges  <- setupKnowledgebaseEnv knowledgebasePath
+
+    filePath    <- getEnv "LCPATH"
+
+    token       <- readFile $ filePath <> "/token"       -- Zendesk token
+    assignFile  <- readFile $ filePath <> "/assign_to"   -- Select assignee
+    knowledges  <- setupKnowledgebaseEnv $ filePath <> "/knowledge.csv"
     assignTo    <- case readEither assignFile of
         Right agentid -> return agentid
         Left  _       -> throwM FailedToReadAssignFile

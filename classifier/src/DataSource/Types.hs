@@ -40,9 +40,6 @@ module DataSource.Types
     , Config (..)
     , IOLayer (..)
     , DBLayer (..)
-    , knowledgebasePath
-    , tokenPath
-    , assignToPath
     , asksIOLayer
     , asksDBLayer
     , showURL
@@ -140,20 +137,6 @@ asksDBLayer
 asksDBLayer getter = do
     Config{..} <- ask
     pure $ getter cfgDBLayer
-
--- TODO(ks): Move these three below to CLI!
--- | Path to knowledgebase
-knowledgebasePath :: FilePath
-knowledgebasePath = "/tmp/knowledgebase/knowledge.csv"
-
--- | Filepath to token file
-tokenPath :: FilePath
-tokenPath = "/tmp/tmp-secrets/token"
-
--- | Filepath to assign_to file
-assignToPath :: FilePath
-assignToPath = "/tmp/tmp-secrets/assign_to"
-
 
 -- | The IOLayer interface that we can expose.
 -- We want to do this since we want to be able to mock out any function tied to @IO@.
