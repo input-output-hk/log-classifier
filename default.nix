@@ -1,1 +1,1 @@
-(import ./log-classifier.nix).log-classifier
+(import ./release.nix).log-classifier-web
