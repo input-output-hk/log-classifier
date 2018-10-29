@@ -22,11 +22,12 @@ import           Servant ((:<|>) (..), (:>), BasicAuth, BasicAuthCheck (..), Bas
                           BasicAuthResult (..), Capture, Context (..), FromHttpApiData (..), Get,
                           JSON, Post, Proxy (..), ReqBody, err404, serveWithContext)
 import           Servant.Server (Handler (..), Server)
+import           System.Environment (getEnv)
 
 import           DataSource (App, Comment, Config, DataLayer, TicketId (..), TicketInfo,
                              ZendeskResponse, runApp)
 import           Lib (createBasicDataLayerIO, createConfig, fetchTicket, fetchTicketComments,
-                      processTicket, processTickets, fetchTickets)
+                      fetchTickets, processTicket, processTickets)
 
 ------------------------------------------------------------
 -- API types
@@ -159,7 +160,8 @@ mainServer = do
     dataLayer   <- createBasicDataLayerIO config
 
     -- the location where we find our list of users and passwords.
-    usersFile   <- BS.readFile "/tmp/tmp-secrets/app_users.json"
+    filePath    <- getEnv "LCPATH"
+    usersFile   <- BS.readFile $ filePath <> "/app_users.json"
 
     let applicationUsers :: ApplicationUsers
         applicationUsers = fromMaybe (error "No app users!") (decode' usersFile)

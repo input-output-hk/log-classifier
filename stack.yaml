@@ -54,9 +54,10 @@ extra-deps:
 # extra-package-dbs: [ ]
 
 nix:
+  shell-file: stack-shell.nix #shell.nix
   enable: true 
-  shell-file: shell.nix
-  pure: true 
+  #pure: true
+
 # Control whether we use the GHC we find on the path
 # system-ghc: true
 #
