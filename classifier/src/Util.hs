@@ -8,16 +8,38 @@ import           Universum
 import qualified Codec.Archive.Zip as Zip
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Map.Strict as Map
+import           Data.List (delete, isSuffixOf)
 
 import           Exceptions (ZipFileExceptions (..))
-import           LogAnalysis.Types (LogFile(..), toLogFile)
+import           LogAnalysis.Types (LogFile (..), toLogFile)
+
+-- | Given a FilePath, extract an FileName
+takeFileName :: FilePath -> FilePath
+takeFileName path =
+  -- FilePath that ends with "/" is an directory so we return ""
+  if "/" `isSuffixOf` path
+      then ""
+      else case nonEmpty $ splitOn '/' path of
+        Nothing                   -> path
+        Just nonEmptySplittedPath -> last nonEmptySplittedPath
+
+splitOn :: forall a. Eq a => a -> [a] -> [[a]]
+splitOn splitter = go mempty
+  where
+    go :: [[a]] -> [a] -> [[a]]
+    go strList []  = strList
+    go strList ary = do
+      let splittedArray  = takeWhile (/= splitter) ary
+      let updatedArray   = delete splitter $ dropWhile (/= splitter) ary
+      go (strList ++ [splittedArray]) updatedArray
 
 -- | Extract log file from given zip file
 -- TODO(ks): What happens with the other files? We just ignore them?
 extractLogsFromZip :: Int -> LByteString -> Either ZipFileExceptions [LogFile]
 extractLogsFromZip numberOfFiles file = do
     zipMap <- readZip file  -- Read File
-    let extractedLog = Map.toList $ mTake numberOfFiles zipMap
+    let filteredZipMap = Map.filterWithKey (\path _ -> takeFileName path /= "node.json") zipMap
+    let extractedLog   = Map.toList $ mTake numberOfFiles filteredZipMap
     let extractedStrictLogFiles = map (\(path, content) -> toLogFile path $ LBS.toStrict content) extractedLog
     return extractedStrictLogFiles
   where
@@ -35,4 +57,3 @@ readZip rawzip = case Zip.toArchiveOrFail rawzip of
     finishProcessing = Map.fromList . map handleEntry . Zip.zEntries
     handleEntry :: Zip.Entry -> (FilePath, LByteString)
     handleEntry entry = (Zip.eRelativePath entry, Zip.fromEntry entry)
-
