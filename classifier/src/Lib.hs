@@ -466,35 +466,38 @@ showTickets tickets = do
 -- | Inspection of the local zip.
 -- This function prints out the analysis result on the console.
 -- Can apply same refactoring as 'inspectAttachment'
+-- | Inspection of the local zip.
+-- This function prints out the analysis result on the console.
+-- Can apply same refactoring as 'inspectAttachment'
 inspectLocalZipAttachment :: FilePath -> App ()
-inspectLocalZipAttachment filePath = do
+inspectLocalZipAttachment filePath =
+    flip catches [Handler handleZipFileException, Handler handleLogAnalysisException] $ do
+        config          <- ask
+        printText       <- asksIOLayer iolPrintText
 
-    config          <- ask
-    printText       <- asksIOLayer iolPrintText
+        -- Read the zip file
+        fileContent     <- liftIO $ BS.readFile filePath
+        logFiles        <- either throwM pure $ extractLogsFromZip 100 fileContent
 
-    -- Read the zip file
-    fileContent     <- liftIO $ BS.readFile filePath
-    let eResults = extractLogsFromZip 100 fileContent
+        let analysisEnv = setupAnalysis $ cfgKnowledgebase config
+        analysisResult  <- extractIssuesFromLogs logFiles analysisEnv
 
-    case eResults of
-        Left (err :: ZipFileExceptions) ->
-            printText $ show err
-        Right result -> do
-            let analysisEnv = setupAnalysis $ cfgKnowledgebase config
-            eitherAnalysisResult    <- try $ extractIssuesFromLogs result analysisEnv
+        let errorCodes = extractErrorCodes analysisResult
 
-            case eitherAnalysisResult of
-                Right analysisResult -> do
-                    let errorCodes = extractErrorCodes analysisResult
+        printText "Analysis result:"
+        void $ mapM (printText . show) analysisResult
 
-                    printText "Analysis result:"
-                    void $ mapM (printText . show) analysisResult
+        printText "Error codes:"
+        void $ mapM printText errorCodes
+  where
+    handleZipFileException :: ZipFileExceptions -> App ()
+    handleZipFileException = exceptionHandler
 
-                    printText "Error codes:"
-                    void $ mapM printText errorCodes
+    handleLogAnalysisException :: LogAnalysisException -> App ()
+    handleLogAnalysisException = exceptionHandler
 
-                Left (e :: LogAnalysisException) ->
-                    printText $ show e
+    exceptionHandler :: (Exception e) => e -> App ()
+    exceptionHandler = print
 
 -- | When we want to process all tickets from a specific time onwards.
 -- Run in parallel.
