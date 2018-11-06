@@ -466,9 +466,6 @@ showTickets tickets = do
 -- | Inspection of the local zip.
 -- This function prints out the analysis result on the console.
 -- Can apply same refactoring as 'inspectAttachment'
--- | Inspection of the local zip.
--- This function prints out the analysis result on the console.
--- Can apply same refactoring as 'inspectAttachment'
 inspectLocalZipAttachment :: FilePath -> App ()
 inspectLocalZipAttachment filePath =
     flip catches [Handler handleZipFileException, Handler handleLogAnalysisException] $ do
