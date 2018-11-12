@@ -242,7 +242,6 @@ processTicket dataLayer tId = do
 
             -- post ticket comment, Carl said this is ok
             postTicketComment ticketInfo zendeskResponse
-            print zendeskResponse
 
             pure zendeskResponse
 
@@ -468,7 +467,8 @@ showTickets tickets = do
 -- Can apply same refactoring as 'inspectAttachment'
 inspectLocalZipAttachment :: FilePath -> App ()
 inspectLocalZipAttachment filePath =
-    flip catches [Handler handleZipFileException, Handler handleLogAnalysisException] $ do
+    flip catches [ Handler $ exceptionHandler @ZipFileExceptions
+                 , Handler $ exceptionHandler @LogAnalysisException] $ do
         config          <- ask
         printText       <- asksIOLayer iolPrintText
 
@@ -487,12 +487,6 @@ inspectLocalZipAttachment filePath =
         printText "Error codes:"
         void $ mapM printText errorCodes
   where
-    handleZipFileException :: ZipFileExceptions -> App ()
-    handleZipFileException = exceptionHandler
-
-    handleLogAnalysisException :: LogAnalysisException -> App ()
-    handleLogAnalysisException = exceptionHandler
-
     exceptionHandler :: (Exception e) => e -> App ()
     exceptionHandler = print
 
