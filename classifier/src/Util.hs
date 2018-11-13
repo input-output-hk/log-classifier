@@ -10,14 +10,15 @@ import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Map.Strict as Map
 
 import           Exceptions (ZipFileExceptions (..))
-import           LogAnalysis.Types (LogFile(..), toLogFile)
+import           LogAnalysis.Types (LogFile (..), toLogFile)
 
 -- | Extract log file from given zip file
 -- TODO(ks): What happens with the other files? We just ignore them?
 extractLogsFromZip :: Int -> LByteString -> Either ZipFileExceptions [LogFile]
 extractLogsFromZip numberOfFiles file = do
     zipMap <- readZip file  -- Read File
-    let extractedLog = Map.toList $ mTake numberOfFiles zipMap
+    let filteredZipMap = Map.filterWithKey (\path _ -> path /= "node.json") zipMap
+    let extractedLog   = Map.toList $ mTake numberOfFiles filteredZipMap
     let extractedStrictLogFiles = map (\(path, content) -> toLogFile path $ LBS.toStrict content) extractedLog
     return extractedStrictLogFiles
   where
@@ -35,4 +36,3 @@ readZip rawzip = case Zip.toArchiveOrFail rawzip of
     finishProcessing = Map.fromList . map handleEntry . Zip.zEntries
     handleEntry :: Zip.Entry -> (FilePath, LByteString)
     handleEntry entry = (Zip.eRelativePath entry, Zip.fromEntry entry)
-

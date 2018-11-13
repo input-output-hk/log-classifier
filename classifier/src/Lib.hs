@@ -242,7 +242,6 @@ processTicket dataLayer tId = do
 
             -- post ticket comment, Carl said this is ok
             postTicketComment ticketInfo zendeskResponse
-            print zendeskResponse
 
             pure zendeskResponse
 
@@ -467,34 +466,29 @@ showTickets tickets = do
 -- This function prints out the analysis result on the console.
 -- Can apply same refactoring as 'inspectAttachment'
 inspectLocalZipAttachment :: FilePath -> App ()
-inspectLocalZipAttachment filePath = do
+inspectLocalZipAttachment filePath =
+    flip catches [ Handler $ exceptionHandler @ZipFileExceptions
+                 , Handler $ exceptionHandler @LogAnalysisException] $ do
+        config          <- ask
+        printText       <- asksIOLayer iolPrintText
 
-    config          <- ask
-    printText       <- asksIOLayer iolPrintText
+        -- Read the zip file
+        fileContent     <- liftIO $ BS.readFile filePath
+        logFiles        <- either throwM pure $ extractLogsFromZip 100 fileContent
 
-    -- Read the zip file
-    fileContent     <- liftIO $ BS.readFile filePath
-    let eResults = extractLogsFromZip 100 fileContent
+        let analysisEnv = setupAnalysis $ cfgKnowledgebase config
+        analysisResult  <- extractIssuesFromLogs logFiles analysisEnv
 
-    case eResults of
-        Left (err :: ZipFileExceptions) ->
-            printText $ show err
-        Right result -> do
-            let analysisEnv = setupAnalysis $ cfgKnowledgebase config
-            eitherAnalysisResult    <- try $ extractIssuesFromLogs result analysisEnv
+        let errorCodes = extractErrorCodes analysisResult
 
-            case eitherAnalysisResult of
-                Right analysisResult -> do
-                    let errorCodes = extractErrorCodes analysisResult
+        printText "Analysis result:"
+        void $ mapM (printText . show) analysisResult
 
-                    printText "Analysis result:"
-                    void $ mapM (printText . show) analysisResult
-
-                    printText "Error codes:"
-                    void $ mapM printText errorCodes
-
-                Left (e :: LogAnalysisException) ->
-                    printText $ show e
+        printText "Error codes:"
+        void $ mapM printText errorCodes
+  where
+    exceptionHandler :: (Exception e) => e -> App ()
+    exceptionHandler = print
 
 -- | When we want to process all tickets from a specific time onwards.
 -- Run in parallel.
