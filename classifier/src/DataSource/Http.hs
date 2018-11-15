@@ -42,18 +42,17 @@ import           DataSource.Types (Attachment (..), AttachmentContent (..), Comm
 -- We don't want anything to leak out, so we expose only the most relevant information,
 -- anything relating to how it internaly works should NOT be exposed.
 data DataLayer m = DataLayer
-    { zlGetTicketInfo         :: TicketId         -> m (Maybe TicketInfo)
-    , zlListDeletedTickets    ::                     m [DeletedTicket]
-    , zlListRequestedTickets  :: UserId           -> m [TicketInfo]
-    , zlListAssignedTickets   :: UserId           -> m [TicketInfo]
-    , zlListUnassignedTickets ::                     m [TicketInfo]
-    , zlListAdminAgents       ::                     m [User]
-    , zlGetTicketComments     :: TicketId         -> m [Comment]
-    , zlGetAttachment         :: Attachment       -> m (Maybe AttachmentContent)
-    , zlPostTicketComment     :: TicketInfo
-                              -> ZendeskResponse
-                              -> m ()
-    , zlExportTickets         :: ExportFromTime   -> m [TicketInfo]
+    { zlGetTicketInfo           :: TicketId         -> m (Maybe TicketInfo)
+    , zlListDeletedTickets      ::                     m [DeletedTicket]
+    , zlListRequestedTickets    :: UserId           -> m [TicketInfo]
+    , zlListToBeAnalysedTickets ::                     m [TicketInfo]
+    , zlListAdminAgents         ::                     m [User]
+    , zlGetTicketComments       :: TicketId         -> m [Comment]
+    , zlGetAttachment           :: Attachment       -> m (Maybe AttachmentContent)
+    , zlPostTicketComment       :: TicketInfo
+                                -> ZendeskResponse
+                                -> m ()
+    , zlExportTickets           :: ExportFromTime   -> m [TicketInfo]
     }
 
 -- | The basic Zendesk layer.
@@ -69,8 +68,7 @@ basicDataLayer httpNetworkLayer = DataLayer
     { zlGetTicketInfo           = getTicketInfo httpNetworkLayer
     , zlListDeletedTickets      = listDeletedTickets httpNetworkLayer
     , zlListRequestedTickets    = listRequestedTickets httpNetworkLayer
-    , zlListAssignedTickets     = listAssignedTickets httpNetworkLayer
-    , zlListUnassignedTickets   = listUnassignedTickets httpNetworkLayer
+    , zlListToBeAnalysedTickets = listToBeAnalysedTickets httpNetworkLayer
     , zlListAdminAgents         = listAdminAgents httpNetworkLayer
     , zlPostTicketComment       = postTicketComment httpNetworkLayer
     , zlGetAttachment           = getAttachment httpNetworkLayer
@@ -84,8 +82,7 @@ emptyDataLayer = DataLayer
     { zlGetTicketInfo           = \_     -> error "Not implemented zlGetTicketInfo!"
     , zlListDeletedTickets      =           pure []
     , zlListRequestedTickets    = \_     -> error "Not implemented zlListRequestedTickets!"
-    , zlListAssignedTickets     = \_     -> error "Not implemented zlListAssignedTickets!"
-    , zlListUnassignedTickets   =           pure []
+    , zlListToBeAnalysedTickets =           pure []
     , zlListAdminAgents         =           pure []
     , zlPostTicketComment       = \_     -> error "Not implemented zlPostTicketComment!"
     , zlGetAttachment           = \_     -> error "Not implemented zlGetAttachment!"
@@ -161,6 +158,21 @@ getTicketComments httpNetworkLayer tId = do
             otherExceptions -> throwM otherExceptions
         Right comments      -> pure comments
 
+-- | Return list to tickets with an tag @to_be_analysed@
+listToBeAnalysedTickets
+    :: forall m. (MonadIO m, MonadConc m, MonadReader Config m)
+    => HTTPNetworkLayer m
+    -> m [TicketInfo]
+listToBeAnalysedTickets httpNetworkLayer = do
+    cfg <- ask
+
+    let apiCall = hnlApiCall httpNetworkLayer
+
+    let url = showURL ToBeAnalyzedTicketsURL
+    let req = apiRequest cfg url
+
+    iteratePages (apiCall parseJSON) req
+
 -- | Return list of deleted tickets.
 listDeletedTickets
     :: forall m. (MonadIO m, MonadConc m, MonadReader Config m)
@@ -188,37 +200,6 @@ listRequestedTickets httpNetworkLayer userId = do
     let apiCall = hnlApiCall httpNetworkLayer
 
     let url = showURL $ UserRequestedTicketsURL userId
-    let req = apiRequest cfg url
-
-    iteratePages (apiCall parseJSON) req
-
--- | Return list of ticketIds that has been assigned by config user.
-listAssignedTickets
-    :: forall m. (MonadIO m, MonadConc m, MonadReader Config m)
-    => HTTPNetworkLayer m
-    -> UserId
-    -> m [TicketInfo]
-listAssignedTickets httpNetworkLayer userId = do
-    cfg <- ask
-
-    let apiCall = hnlApiCall httpNetworkLayer
-
-    let url = showURL $ UserAssignedTicketsURL userId
-    let req = apiRequest cfg url
-
-    iteratePages (apiCall parseJSON) req
-
--- | Return list of ticketIds that has been unassigned.
-listUnassignedTickets
-    :: forall m. (MonadIO m, MonadConc m, MonadReader Config m)
-    => HTTPNetworkLayer m
-    -> m [TicketInfo]
-listUnassignedTickets httpNetworkLayer = do
-    cfg <- ask
-
-    let apiCall = hnlApiCall httpNetworkLayer
-
-    let url = showURL $ UserUnassignedTicketsURL
     let req = apiRequest cfg url
 
     iteratePages (apiCall parseJSON) req

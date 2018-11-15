@@ -1,6 +1,9 @@
+assign_to
+token
 # Cabal & Stack
 .stack-work/
 */dist
+dist-newstyle/*
 
 # From daedalus-bridge
 node_modules/*

@@ -40,9 +40,6 @@ module DataSource.Types
     , Config (..)
     , IOLayer (..)
     , DBLayer (..)
-    , knowledgebasePath
-    , tokenPath
-    , assignToPath
     , asksIOLayer
     , asksDBLayer
     , showURL
@@ -141,20 +138,6 @@ asksDBLayer getter = do
     Config{..} <- ask
     pure $ getter cfgDBLayer
 
--- TODO(ks): Move these three below to CLI!
--- | Path to knowledgebase
-knowledgebasePath :: FilePath
-knowledgebasePath = "./knowledgebase/knowledge.csv"
-
--- | Filepath to token file
-tokenPath :: FilePath
-tokenPath = "./tmp-secrets/token"
-
--- | Filepath to assign_to file
-assignToPath :: FilePath
-assignToPath = "./tmp-secrets/assign_to"
-
-
 -- | The IOLayer interface that we can expose.
 -- We want to do this since we want to be able to mock out any function tied to @IO@.
 data IOLayer m = IOLayer
@@ -207,6 +190,7 @@ data ZendeskAPIUrl
     | UserUnassignedTicketsURL
     | TicketsURL TicketId
     | TicketAgentURL TicketId
+    | ToBeAnalyzedTicketsURL
     | UserInfoURL
     | TicketCommentsURL TicketId
     | ExportDataByTimestamp ExportFromTime
@@ -224,6 +208,7 @@ showURL (TicketAgentURL ticketId)           = "https://iohk.zendesk.com/agent/ti
 showURL (UserInfoURL)                       = "/users/me.json"
 showURL (TicketCommentsURL ticketId)        = "/tickets/" <> toURL ticketId <> "/comments.json"
 showURL (ExportDataByTimestamp time)        = "https://iohk.zendesk.com/api/v2/incremental/tickets.json?start_time=" <> toURL time
+showURL ToBeAnalyzedTicketsURL              = "/search.json?query=" <> urlEncode "type:ticket status<solved tags:to_be_analysed"
 
 -- | Plain @Text@ to @Text@ encoding.
 -- https://en.wikipedia.org/wiki/Percent-encoding
@@ -429,7 +414,6 @@ data TicketTag
     | AnalyzedByScriptV1_5_2  -- ^ Ticket has been analyzed by the version 1.5.2
     | AnalyzedByScriptV1_6_0  -- ^ Ticket has been analyzed by the version 1.6.0
     | ToBeAnalyzed            -- ^ Ticket needs to be analyzed
-    | NoKnownIssue            -- ^ Ticket had no known issue
     | NoLogAttached           -- ^ Log file not attached
 
 -- | User Id
@@ -976,5 +960,4 @@ renderTicketStatus AnalyzedByScriptV1_5_1 = "analyzed-by-script-v1.5.1"
 renderTicketStatus AnalyzedByScriptV1_5_2 = "analyzed-by-script-v1.5.2"
 renderTicketStatus AnalyzedByScriptV1_6_0 = "analyzed-by-script-v1.6.0"
 renderTicketStatus ToBeAnalyzed           = "to_be_analysed" -- https://iohk.zendesk.com/agent/admin/tags
-renderTicketStatus NoKnownIssue           = "no-known-issues"
 renderTicketStatus NoLogAttached          = "no-log-files"

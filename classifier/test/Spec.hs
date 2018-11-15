@@ -6,7 +6,7 @@ import           Data.List (nub)
 import           Database.SQLite.Simple (Connection (..), NamedParam (..), queryNamed, query_,
                                          withConnection)
 
-import           Test.Hspec (Spec, describe, hspec, it, pending, shouldBe)
+import           Test.Hspec (Spec, describe, hspec, it, shouldBe)
 import           Test.Hspec.QuickCheck (modifyMaxSuccess, prop)
 import           Test.QuickCheck (Gen, arbitrary, elements, forAll, listOf, listOf1, property,
                                   (===))
@@ -22,13 +22,17 @@ import           DataSource (App, Attachment (..), AttachmentId (..), Comment (.
                              createResponseTicket, createSchema, deleteAllData, emptyDBLayer,
                              emptyDataLayer, insertCommentAttachments, insertTicketComments,
                              insertTicketInfo, renderTicketStatus, runApp, showURL)
-import           Exceptions (ProcessTicketExceptions (..))
+import           Exceptions (ProcessTicketExceptions (..), ZipFileExceptions (..))
 import           Http.Exceptions (HttpNetworkLayerException (..))
 import           Http.Layer (HTTPNetworkLayer (..), emptyHTTPNetworkLayer)
 
-import           Lib (exportZendeskDataToLocalDB, fetchTicket, fetchTicketComments,
-                      filterAnalyzedTickets, getAttachmentsFromComment, listAndSortTickets,
+import           Lib (exportZendeskDataToLocalDB, fetchTicket, fetchTicketComments, fetchTickets,
+                      filterAnalyzedTickets, getAttachmentsFromComment, inspectAttachment,
                       processTicket)
+import           LogAnalysis.Classifier (extractIssuesFromLogs)
+import           LogAnalysis.Exceptions (LogAnalysisException (..))
+import           LogAnalysis.Types (Analysis, ErrorCode (..), LogFile, renderErrorCode,
+                                    setupAnalysis)
 import           Statistics (filterTicketsByStatus, filterTicketsWithAttachments,
                              showAttachmentInfo, showCommentAttachments)
 
@@ -55,8 +59,9 @@ spec =
             -- TODO(rc): showTicketAttachmentsSpec
             -- TODO(rc): showStatisticsSpec
         describe "Zendesk" $ do
+            inspectAttachmentSpec
             validShowURLSpec
-            listAndSortTicketsSpec
+            fetchTicketsSpec
             processTicketSpec
             filterAnalyzedTicketsSpec
             createResponseTicketSpec
@@ -155,9 +160,9 @@ parsingFailureSpec =
                         assert . null $ comments
 
 
-listAndSortTicketsSpec :: Spec
-listAndSortTicketsSpec =
-    describe "listAndSortTickets" $ modifyMaxSuccess (const 200) $ do
+fetchTicketsSpec :: Spec
+fetchTicketsSpec =
+    describe "fetchTickets" $ modifyMaxSuccess (const 200) $ do
         it "doesn't return tickets since there are none" $
             forAll arbitrary $ \(ticketInfo :: TicketInfo) ->
 
@@ -166,13 +171,13 @@ listAndSortTicketsSpec =
                     let stubbedDataLayer :: DataLayer App
                         stubbedDataLayer =
                             emptyDataLayer
-                                { zlListAssignedTickets     = \_     -> pure []
+                                { zlListToBeAnalysedTickets =           pure []
                                 , zlGetTicketInfo           = \_     -> pure $ Just ticketInfo
                                 , zlListAdminAgents         =           pure []
                                 }
 
                     let appExecution :: IO [TicketInfo]
-                        appExecution = runApp (listAndSortTickets stubbedDataLayer) stubbedConfig
+                        appExecution = runApp (fetchTickets stubbedDataLayer) stubbedConfig
 
                     tickets <- run appExecution
 
@@ -190,13 +195,13 @@ listAndSortTicketsSpec =
                             let stubbedDataLayer :: DataLayer App
                                 stubbedDataLayer =
                                     emptyDataLayer
-                                        { zlListAssignedTickets     = \_     -> pure listTickets
+                                        { zlListToBeAnalysedTickets =           pure listTickets
                                         , zlGetTicketInfo           = \_     -> pure ticketInfo
                                         , zlListAdminAgents         =           pure agents
                                         }
 
                             let appExecution :: IO [TicketInfo]
-                                appExecution = runApp (listAndSortTickets stubbedDataLayer) stubbedConfig
+                                appExecution = runApp (fetchTickets stubbedDataLayer) stubbedConfig
 
                             tickets <- run appExecution
 
@@ -218,7 +223,7 @@ processTicketSpec =
                         let stubbedDataLayer :: DataLayer App
                             stubbedDataLayer =
                                 emptyDataLayer
-                                    { zlListAssignedTickets     = \_     -> pure listTickets
+                                    { zlListToBeAnalysedTickets =           pure listTickets
                                     , zlGetTicketInfo           = \_     -> pure $ Just ticketInfo
                                     , zlPostTicketComment       = \_ _   -> pure ()
                                     , zlGetTicketComments       = \_     -> pure comments
@@ -355,59 +360,32 @@ isResponseTaggedWithNoLogs :: ZendeskResponse -> Bool
 isResponseTaggedWithNoLogs response = "no-log-files" `elem` getTicketTags (zrTags response)
 
 genCommentWithNoAttachment :: Gen Comment
-genCommentWithNoAttachment = Comment
-    <$> arbitrary
-    <*> arbitrary
-    <*> return mempty
-    <*> arbitrary
-    <*> arbitrary
+genCommentWithNoAttachment = do
+    comment <- arbitrary
+    pure $ comment {cAttachments = mempty}
 
 genCommentWithAttachment :: Gen Comment
-genCommentWithAttachment = Comment
-    <$> arbitrary
-    <*> arbitrary
-    <*> listOf1 arbitrary
-    <*> arbitrary
-    <*> arbitrary
+genCommentWithAttachment = do
+    comment    <- arbitrary
+    attachment <- listOf1 arbitrary
+    pure $ comment {cAttachments = attachment}
 
 genTicketWithStatus :: Gen TicketInfo
-genTicketWithStatus = TicketInfo
-    <$> arbitrary
-    <*> arbitrary
-    <*> arbitrary
-    <*> arbitrary
-    <*> arbitrary
-    <*> (TicketStatus <$> elements ["open", "closed"])
-    <*> arbitrary
-    <*> arbitrary
+genTicketWithStatus = do
+    ticketInfo <- arbitrary
+    status     <- TicketStatus <$> elements ["open", "closed"]
+    pure $ ticketInfo {tiStatus = status}
 
 genTicketWithFilteredTags :: [Text] -> Gen TicketInfo
-genTicketWithFilteredTags tagToBeFiltered = TicketInfo
-    <$> arbitrary
-    <*> arbitrary
-    <*> arbitrary
-    <*> arbitrary
-    <*> return (TicketTags tagToBeFiltered)
-    <*> arbitrary
-    <*> arbitrary
-    <*> arbitrary
+genTicketWithFilteredTags tagToBeFiltered = do
+    ticketInfo <- arbitrary
+    pure $ ticketInfo {tiTags = TicketTags tagToBeFiltered}
 
 genTicketWithUnsolvedStatus :: Gen TicketInfo
-genTicketWithUnsolvedStatus = TicketInfo
-    <$> arbitrary
-    <*> arbitrary
-    <*> arbitrary
-    <*> arbitrary
-    <*> arbitrary
-    <*> (TicketStatus <$> elements ["new", "hold", "open", "pending"])
-    <*> arbitrary
-    <*> arbitrary
-
-processTicketsSpec :: Spec
-processTicketsSpec =
-    describe "processTickets" $ do
-        it "doesn't process tickets" $ do
-            pending
+genTicketWithUnsolvedStatus = do
+    ticketInfo <- arbitrary
+    status     <- TicketStatus <$> elements ["new", "hold", "open", "pending"]
+    pure $ ticketInfo {tiStatus = status}
 
 -- Simple tests to cover it works.
 validShowURLSpec :: Spec
@@ -796,3 +774,67 @@ withDBSchema dbpath action =
     withConnection dbpath $ \conn -> do
         createSchema conn
         action conn
+
+inspectAttachmentSpec :: Spec
+inspectAttachmentSpec =
+    describe "inspectAttachment" $ modifyMaxSuccess (const 200) $ do
+        prop "should inspect attchment and return zendeskResponse" $
+            \(ticketInfo :: TicketInfo) ->
+                monadicIO $ do
+                    zendeskResponse <- run $ inspectAttachment emptyConfig ticketInfo
+                        mempty emptyExtractLogFunc emptyExtractErrorCodeFunc
+
+                    assert $ tiId ticketInfo == zrTicketId zendeskResponse
+        prop "should return response with tag 'sent-log-corrupted' when it failed to extract logs" $
+            \(ticketInfo :: TicketInfo) ->
+                monadicIO $ do
+                    zendeskResponse <- run $ inspectAttachment emptyConfig ticketInfo
+                        mempty errorExtractLogFunc extractIssuesFromLogs
+
+                    assert $ tiId ticketInfo == zrTicketId zendeskResponse
+                    assert $ zrTags zendeskResponse == TicketTags [renderErrorCode SentLogCorrupted]
+
+        prop "should return response with tag 'sent-log-corrupted' if given log was corrupted" $
+            \(ticketInfo :: TicketInfo) ->
+                monadicIO $ do
+                    zendeskResponse <- run $ inspectAttachment emptyConfig ticketInfo
+                        mempty emptyExtractLogFunc (errorExtractErrorCodeFunc LogReadException)
+
+                    assert $ tiId ticketInfo == zrTicketId zendeskResponse
+                    assert $ zrTags zendeskResponse == TicketTags [renderErrorCode SentLogCorrupted]
+
+        prop "should return zendeskResponse with tag 'no-known-issue' when it failed to extract logs" $
+            \(ticketInfo :: TicketInfo) ->
+                monadicIO $ do
+                    zendeskResponse <- run $ inspectAttachment emptyConfig ticketInfo
+                        mempty emptyExtractLogFunc (errorExtractErrorCodeFunc NoKnownIssueFound)
+
+                    assert $ tiId ticketInfo == zrTicketId zendeskResponse
+                    assert $ zrTags zendeskResponse == TicketTags [renderErrorCode NoKnownIssue]
+
+        prop "should return throw JSONDecodeFailure exception when it fails to decode json file" $
+            \(ticketInfo :: TicketInfo) ->
+                monadicIO $ do
+                    eZendeskResponse <- run . try $ inspectAttachment emptyConfig ticketInfo
+                        mempty emptyExtractLogFunc (errorExtractErrorCodeFunc $ JSONDecodeFailure mempty)
+
+                    assert $ not $ isRight (eZendeskResponse :: Either LogAnalysisException ZendeskResponse)
+  where
+    emptyExtractLogFunc :: Int -> LByteString -> Either ZipFileExceptions [LogFile]
+    emptyExtractLogFunc _ _ = return mempty
+
+    errorExtractLogFunc :: Int -> LByteString -> Either ZipFileExceptions [LogFile]
+    errorExtractLogFunc _ _ = Left ReadZipFileException
+
+    emptyExtractErrorCodeFunc :: (Monad m) => [LogFile] -> Analysis -> m Analysis
+    emptyExtractErrorCodeFunc _ _ = return emptyAnalysis
+
+    errorExtractErrorCodeFunc :: (MonadCatch m)
+                              => LogAnalysisException
+                              -> [LogFile]
+                              -> Analysis
+                              -> m Analysis
+    errorExtractErrorCodeFunc e _ _ = throwM e
+
+    emptyAnalysis :: Analysis
+    emptyAnalysis = setupAnalysis mempty
