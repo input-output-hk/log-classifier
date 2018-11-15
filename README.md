@@ -9,6 +9,17 @@ The purpose of this project is to analyze Cardano log file and provide a solutio
 ## Installation and Configuration Instructions
 Installation Instructions are available at [INSTALL.md](INSTALL.md)
 
+## Usage instructions
+
+Please note that you have to provide a enviroment variable called `LCPATH` where all the key files are.
+Usage instructions are available at [USAGE.md](USAGE.md).
+
+## Deployment
+
+- https://youtu.be/NQJVNvxgDqg?t=615
+- https://youtu.be/NQJVNvxgDqg?t=1579
+- https://nixos.org/nixops/manual/#sec-deploying-to-ec2
+
 ## Stack or NIX?
 
 https://github.com/reflex-frp/reflex-platform/issues/116
@@ -81,6 +92,27 @@ This layer is responsible for caching the results that come from the @HTTPLayer@
 ## Requirements
 
 In order to use this, the user must possess an IOHK Zendesk agent ID and API key.
+If you want to deploy this, you also need a `app_users.json` file that looks something like this:
+```
+[
+    { "_username": "ksaric"
+    , "_password": "pass"
+    },
+
+    { "_username": "hshioi"
+    , "_password": "pass2"
+    },
+
+    { "_username": "rcohen"
+    , "_password": "pass3"
+    }
+]
+```
+
+All these files must be provided in `tmp-secrets` with the following names and they will get deployed on the machine along with the application:
+- token
+- assign_to
+- app_users.json
 
 ## Features
 
