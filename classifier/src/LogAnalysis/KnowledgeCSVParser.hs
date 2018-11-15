@@ -14,7 +14,7 @@ import           LogAnalysis.Types (ErrorCode (..), Knowledge (..))
 {-
 
 stack ghci
-fContent <- readFile "./knowledgebase/knowledge.csv"
+fContent <- readFile "./knowledge.csv"
 parseOnly parseKnowLedgeBase fContent
 
 -}
