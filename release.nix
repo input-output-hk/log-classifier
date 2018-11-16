@@ -1,5 +1,3 @@
-# TODO: release.nix is broken
-
 let
   fixedLib     = import ./lib.nix;
   fixedNixpkgs = fixedLib.iohkNix.nixpkgs;
