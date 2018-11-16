@@ -39,8 +39,8 @@ let
     haskellPackages = self.callPackage localLib.iohkNix.haskellPackages {
       inherit forceDontCheck enableProfiling enablePhaseMetrics enableHaddockHydra
         enableBenchmarks fasterBuild enableDebugging enableSplitCheck;
-      pkgsGenerated = pkgs.haskell.packages.ghc822;
-      ghc = pkgs.haskell.compiler.ghc822;
+      pkgsGenerated = pkgs.haskell.packages.ghc843;
+      ghc = pkgs.haskell.compiler.ghc843;
       filter = localLib.isLogClassifier;
       requiredOverlay = ./nix/overlays/required.nix;
     };

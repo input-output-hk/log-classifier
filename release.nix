@@ -48,11 +48,7 @@ in pkgs.lib.fix (jobsets: mapped // {
         all = x: map (system: x.${system}) supportedSystems;
       in
     [
-      #(builtins.concatLists (map lib.attrValues (all jobsets.log-classifier-tests)))
-      logClassiferPkgs.logClassiferPkgs.log-classifier
-      logClassiferPkgs.logClassiferPkgs.log-classifier-web
-      #jobsets.log-classifier-web
-      #jobsets.log-classifier-cli
+      (builtins.concatLists (map lib.attrValues (all jobsets.log-classifier-tests)))
     ];
   });
 })
