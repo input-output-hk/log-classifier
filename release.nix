@@ -20,8 +20,6 @@ with (import (fixedNixpkgs + "/pkgs/top-level/release-lib.nix") {
 
 let
   pkgs = import fixedNixpkgs { config = {}; };
-  haskellPackages = map (name: lib.nameValuePair name supportedSystems) fixedLib.logClassiferPkgList;
-
   platforms = {
     log-classifier-web = supportedSystems;
     log-classifier = supportedSystems;
@@ -36,7 +34,6 @@ let
 
 in pkgs.lib.fix (jobsets: mapped // {
   inherit (pkgs) cabal2nix;
-  nixpkgs = fixedNixpkgs;
   # the result of running every cardano test-suite on 64bit linux
   log-classifier-tests.x86_64-linux = makeTestRuns "x86_64-linux";
   # hydra will create a special aggregate job, that relies on all of these sub-jobs passing
@@ -49,6 +46,8 @@ in pkgs.lib.fix (jobsets: mapped // {
       in
     [
       (builtins.concatLists (map lib.attrValues (all jobsets.log-classifier-tests)))
+      jobsets.log-classifier-web.x86_64-linux
+      jobsets.log-classifier.x86_64-linux
     ];
   });
 })
