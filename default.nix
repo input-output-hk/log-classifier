@@ -44,5 +44,10 @@ let
       filter = localLib.isLogClassifier;
       requiredOverlay = ./nix/overlays/required.nix;
     };
-  });
+  }
+  # fixme: Temporary fix for hydra evaluation
+  // { inherit (self.haskellPackages)
+       log-classifier
+       log-classifier-web;
+     });
 in pkgs.lib.makeScope pkgs.newScope packages
