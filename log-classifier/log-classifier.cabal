@@ -45,7 +45,7 @@ library
                      , monad-control
                      , transformers-base
                      , unliftio
-                     -- 
+                     --
                      , time
                      , safe-exceptions
                      , text
@@ -55,7 +55,7 @@ library
                      , QuickCheck
                      , concurrency
                      -- Database backend
-                     , sqlite-simple 
+                     , sqlite-simple
                      , resource-pool
 
   default-language:    Haskell2010
@@ -87,7 +87,7 @@ test-suite log-classifier-test
   other-modules:       HttpQueueSpec
                      , LogAnalysisSpec
   type:                exitcode-stdio-1.0
-  ghc-options:         -threaded 
+  ghc-options:         -threaded
                        -rtsopts -with-rtsopts=-N
                        -Wall
   build-depends:       base >=4.7 && <5
