@@ -16,4 +16,4 @@
 "Network.Socket.recvBuf: resource vanished","ResourceVanished","resource vanished (Network is down)","IOHKS-12","https://iohk.zendesk.com/hc/en-us/articles/360011321334"
 "useless for the following reason","TimeSync","Daedalus not warning the user about their PC's time not being synced.","IOHKS-8","https://iohk.zendesk.com/hc/en-us/articles/360010230873"
 "Network.Socket.bind: resource busy","NetworkError","Daedalus cannot use port 8090","IOHKS-36","https://iohk.zendesk.com/hc/en-us/articles/360011321334"
-"ZeroBalanceAfterUpdate","IndodaxIssue","IndodaxIssue","IOHKS-44","https://iohk.zendesk.com/hc/en-us/articles/noarticle"
+"Transaction is irrelevant to given wallet","IndodaxIssue","IndodaxIssue","IOHKS-44","https://iohk.zendesk.com/hc/en-us/articles/noarticle"
