@@ -1,4 +1,4 @@
-name:                web
+name:                log-classifier-web
 version:             1.6.0.0
 synopsis:            Log classifier web executable
 description:         Please see the README
@@ -16,7 +16,7 @@ cabal-version:       >= 1.10
 executable log-classifier-web
   hs-source-dirs:      src
   main-is:             Main.hs
-  ghc-options:         -threaded 
+  ghc-options:         -threaded
                        -rtsopts -with-rtsopts=-N
                        -Wall
   build-depends:       base >=4.7 && <5
